@@ -1,0 +1,22 @@
+# Gradle / Android
+.gradle/
+local.properties
+build/
+.cxx/
+samples/android/app/build/
+samples/android/app/.cxx/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.tools/
+
+# Shader build outputs
+core/shaders/*.spv
