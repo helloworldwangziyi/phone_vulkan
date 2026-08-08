@@ -4,7 +4,7 @@ A minimal, self-contained Vulkan rendering framework extracted from `estarx`.
 It separates platform-agnostic rendering code from platform-specific surface
 management, with Android as the first supported platform.
 
-> 📘 **中文学习文档**：详见 `文档/README.md`、`文档/架构设计.md`、`文档/源码导读.md`、`文档/构建指南.md`。
+> 📘 **中文文档**：详见 `文档/README.md`（索引）、`文档/构建指南.md`、`文档/架构设计.md`、`文档/源码导读.md`。
 
 ![Screenshot](estarx_vulkan_screenshot.png)
 
@@ -15,9 +15,12 @@ estarx_vulkan/
 ├── core/                        # Platform-independent Vulkan renderer
 │   ├── include/evk/
 │   │   ├── renderer.h           # evk::Renderer public API
-│   │   └── platform.h           # IPlatform abstraction
+│   │   ├── platform.h           # IPlatform abstraction
+│   │   ├── event.h              # Cross-platform event dispatch API
+│   │   └── log.h                # spdlog-based logging
 │   ├── src/
 │   │   ├── renderer.cpp         # Full Vulkan pipeline (triangle demo)
+│   │   ├── event.cpp            # Event dispatch implementation
 │   │   └── platform_android.cpp # Android platform implementation
 │   └── shaders/
 │       ├── triangle.vert
@@ -26,6 +29,7 @@ estarx_vulkan/
 │   ├── cpp/bridge.cpp
 │   └── java/com/estarx/vulkan/
 ├── samples/android/             # Runnable Android sample app
+├── third_party/spdlog/          # Header-only logging library
 └── CMakeLists.txt               # Framework-level CMake
 ```
 
