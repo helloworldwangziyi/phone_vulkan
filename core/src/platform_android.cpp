@@ -1,9 +1,12 @@
 #include "evk/platform.h"
 
-#include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
 #include <jni.h>
+
+#include <cstdio>
+
+#include "evk/log.h"
 
 namespace evk {
 
@@ -52,15 +55,17 @@ public:
     }
 
     void log(LogLevel level, const char* tag, const char* fmt, va_list args) override {
-        android_LogPriority priority = ANDROID_LOG_INFO;
+        // renderer 传进来的是 printf 风格格式串，先格式化成文本再走 spdlog，
+        // 避免 % 占位符与 fmt 的花括号语法冲突。
+        char buffer[1024];
+        vsnprintf(buffer, sizeof(buffer), fmt, args);
         switch (level) {
-            case LogLevel::Verbose: priority = ANDROID_LOG_VERBOSE; break;
-            case LogLevel::Debug:   priority = ANDROID_LOG_DEBUG;   break;
-            case LogLevel::Info:    priority = ANDROID_LOG_INFO;    break;
-            case LogLevel::Warn:    priority = ANDROID_LOG_WARN;    break;
-            case LogLevel::Error:   priority = ANDROID_LOG_ERROR;   break;
+            case LogLevel::Verbose: SPDLOG_TRACE("[{}] {}", tag, buffer);    break;
+            case LogLevel::Debug:   SPDLOG_DEBUG("[{}] {}", tag, buffer);    break;
+            case LogLevel::Info:    SPDLOG_INFO("[{}] {}", tag, buffer);     break;
+            case LogLevel::Warn:    SPDLOG_WARN("[{}] {}", tag, buffer);     break;
+            case LogLevel::Error:   SPDLOG_ERROR("[{}] {}", tag, buffer);    break;
         }
-        __android_log_vprint(priority, tag, fmt, args);
     }
 
 private:

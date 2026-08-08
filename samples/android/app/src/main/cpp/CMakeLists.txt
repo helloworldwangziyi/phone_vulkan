@@ -9,12 +9,14 @@ set(EVK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..)
 
 add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/platform/android/cpp/bridge.cpp
+    ${EVK_ROOT}/core/src/event.cpp
     ${EVK_ROOT}/core/src/platform_android.cpp
     ${EVK_ROOT}/core/src/renderer.cpp
 )
 
 target_include_directories(estarx_vulkan PUBLIC
     ${EVK_ROOT}/core/include
+    ${EVK_ROOT}/third_party/spdlog/include
 )
 
 if (ANDROID)

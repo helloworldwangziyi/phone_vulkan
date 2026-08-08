@@ -7,11 +7,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Core Vulkan renderer (platform-independent).
 add_library(estarx_vulkan_core STATIC
+    core/src/event.cpp
     core/src/renderer.cpp
 )
 
 target_include_directories(estarx_vulkan_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/third_party/spdlog/include
 )
 
 if (ANDROID)

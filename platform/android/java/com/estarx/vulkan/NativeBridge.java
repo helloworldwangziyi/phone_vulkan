@@ -16,4 +16,5 @@ public final class NativeBridge {
     public static native void nativeResize(int width, int height);
     public static native void nativeRender();
     public static native void nativeDestroy();
+    public static native void nativeOnTouch(int action, float x, float y);
 }

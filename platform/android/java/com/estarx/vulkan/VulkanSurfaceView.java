@@ -2,6 +2,7 @@ package com.estarx.vulkan;
 
 import android.content.Context;
 import android.util.AttributeSet;
+import android.view.MotionEvent;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
@@ -38,5 +39,11 @@ public class VulkanSurfaceView extends SurfaceView implements SurfaceHolder.Call
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         NativeBridge.nativeDestroy();
+    }
+
+    @Override
+    public boolean onTouchEvent(MotionEvent event) {
+        NativeBridge.nativeOnTouch(event.getActionMasked(), event.getX(), event.getY());
+        return true;
     }
 }
