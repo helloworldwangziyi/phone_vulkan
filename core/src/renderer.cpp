@@ -1,4 +1,5 @@
 #include "evk/renderer.h"
+#include "evk/assets/triangle_shaders.h"
 
 #include <algorithm>
 #include <cstring>
@@ -7,432 +8,7 @@
 namespace evk {
 
 // ============================================================================
-// Embedded SPIR-V shaders (compiled from core/shaders/*.glsl)
-// ============================================================================
-
-// triangle.vert (1080 bytes)
-static const uint32_t triangle_vert_spv[] = {
-    0x07230203,
-    0x00010000,
-    0x000d000b,
-    0x00000021,
-    0x00000000,
-    0x00020011,
-    0x00000001,
-    0x0006000b,
-    0x00000001,
-    0x4c534c47,
-    0x6474732e,
-    0x3035342e,
-    0x00000000,
-    0x0003000e,
-    0x00000000,
-    0x00000001,
-    0x0009000f,
-    0x00000000,
-    0x00000004,
-    0x6e69616d,
-    0x00000000,
-    0x0000000d,
-    0x00000012,
-    0x0000001d,
-    0x0000001f,
-    0x00030003,
-    0x00000002,
-    0x000001c2,
-    0x000a0004,
-    0x475f4c47,
-    0x4c474f4f,
-    0x70635f45,
-    0x74735f70,
-    0x5f656c79,
-    0x656e696c,
-    0x7269645f,
-    0x69746365,
-    0x00006576,
-    0x00080004,
-    0x475f4c47,
-    0x4c474f4f,
-    0x6e695f45,
-    0x64756c63,
-    0x69645f65,
-    0x74636572,
-    0x00657669,
-    0x00040005,
-    0x00000004,
-    0x6e69616d,
-    0x00000000,
-    0x00060005,
-    0x0000000b,
-    0x505f6c67,
-    0x65567265,
-    0x78657472,
-    0x00000000,
-    0x00060006,
-    0x0000000b,
-    0x00000000,
-    0x505f6c67,
-    0x7469736f,
-    0x006e6f69,
-    0x00070006,
-    0x0000000b,
-    0x00000001,
-    0x505f6c67,
-    0x746e696f,
-    0x657a6953,
-    0x00000000,
-    0x00070006,
-    0x0000000b,
-    0x00000002,
-    0x435f6c67,
-    0x4470696c,
-    0x61747369,
-    0x0065636e,
-    0x00070006,
-    0x0000000b,
-    0x00000003,
-    0x435f6c67,
-    0x446c6c75,
-    0x61747369,
-    0x0065636e,
-    0x00030005,
-    0x0000000d,
-    0x00000000,
-    0x00050005,
-    0x00000012,
-    0x6f506e69,
-    0x69746973,
-    0x00006e6f,
-    0x00050005,
-    0x0000001d,
-    0x67617266,
-    0x6f6c6f43,
-    0x00000072,
-    0x00040005,
-    0x0000001f,
-    0x6f436e69,
-    0x00726f6c,
-    0x00030047,
-    0x0000000b,
-    0x00000002,
-    0x00050048,
-    0x0000000b,
-    0x00000000,
-    0x0000000b,
-    0x00000000,
-    0x00050048,
-    0x0000000b,
-    0x00000001,
-    0x0000000b,
-    0x00000001,
-    0x00050048,
-    0x0000000b,
-    0x00000002,
-    0x0000000b,
-    0x00000003,
-    0x00050048,
-    0x0000000b,
-    0x00000003,
-    0x0000000b,
-    0x00000004,
-    0x00040047,
-    0x00000012,
-    0x0000001e,
-    0x00000000,
-    0x00040047,
-    0x0000001d,
-    0x0000001e,
-    0x00000000,
-    0x00040047,
-    0x0000001f,
-    0x0000001e,
-    0x00000001,
-    0x00020013,
-    0x00000002,
-    0x00030021,
-    0x00000003,
-    0x00000002,
-    0x00030016,
-    0x00000006,
-    0x00000020,
-    0x00040017,
-    0x00000007,
-    0x00000006,
-    0x00000004,
-    0x00040015,
-    0x00000008,
-    0x00000020,
-    0x00000000,
-    0x0004002b,
-    0x00000008,
-    0x00000009,
-    0x00000001,
-    0x0004001c,
-    0x0000000a,
-    0x00000006,
-    0x00000009,
-    0x0006001e,
-    0x0000000b,
-    0x00000007,
-    0x00000006,
-    0x0000000a,
-    0x0000000a,
-    0x00040020,
-    0x0000000c,
-    0x00000003,
-    0x0000000b,
-    0x0004003b,
-    0x0000000c,
-    0x0000000d,
-    0x00000003,
-    0x00040015,
-    0x0000000e,
-    0x00000020,
-    0x00000001,
-    0x0004002b,
-    0x0000000e,
-    0x0000000f,
-    0x00000000,
-    0x00040017,
-    0x00000010,
-    0x00000006,
-    0x00000002,
-    0x00040020,
-    0x00000011,
-    0x00000001,
-    0x00000010,
-    0x0004003b,
-    0x00000011,
-    0x00000012,
-    0x00000001,
-    0x0004002b,
-    0x00000006,
-    0x00000014,
-    0x00000000,
-    0x0004002b,
-    0x00000006,
-    0x00000015,
-    0x3f800000,
-    0x00040020,
-    0x00000019,
-    0x00000003,
-    0x00000007,
-    0x00040017,
-    0x0000001b,
-    0x00000006,
-    0x00000003,
-    0x00040020,
-    0x0000001c,
-    0x00000003,
-    0x0000001b,
-    0x0004003b,
-    0x0000001c,
-    0x0000001d,
-    0x00000003,
-    0x00040020,
-    0x0000001e,
-    0x00000001,
-    0x0000001b,
-    0x0004003b,
-    0x0000001e,
-    0x0000001f,
-    0x00000001,
-    0x00050036,
-    0x00000002,
-    0x00000004,
-    0x00000000,
-    0x00000003,
-    0x000200f8,
-    0x00000005,
-    0x0004003d,
-    0x00000010,
-    0x00000013,
-    0x00000012,
-    0x00050051,
-    0x00000006,
-    0x00000016,
-    0x00000013,
-    0x00000000,
-    0x00050051,
-    0x00000006,
-    0x00000017,
-    0x00000013,
-    0x00000001,
-    0x00070050,
-    0x00000007,
-    0x00000018,
-    0x00000016,
-    0x00000017,
-    0x00000014,
-    0x00000015,
-    0x00050041,
-    0x00000019,
-    0x0000001a,
-    0x0000000d,
-    0x0000000f,
-    0x0003003e,
-    0x0000001a,
-    0x00000018,
-    0x0004003d,
-    0x0000001b,
-    0x00000020,
-    0x0000001f,
-    0x0003003e,
-    0x0000001d,
-    0x00000020,
-    0x000100fd,
-    0x00010038,
-};
-
-// triangle.frag (572 bytes)
-static const uint32_t triangle_frag_spv[] = {
-    0x07230203,
-    0x00010000,
-    0x000d000b,
-    0x00000013,
-    0x00000000,
-    0x00020011,
-    0x00000001,
-    0x0006000b,
-    0x00000001,
-    0x4c534c47,
-    0x6474732e,
-    0x3035342e,
-    0x00000000,
-    0x0003000e,
-    0x00000000,
-    0x00000001,
-    0x0007000f,
-    0x00000004,
-    0x00000004,
-    0x6e69616d,
-    0x00000000,
-    0x00000009,
-    0x0000000c,
-    0x00030010,
-    0x00000004,
-    0x00000007,
-    0x00030003,
-    0x00000002,
-    0x000001c2,
-    0x000a0004,
-    0x475f4c47,
-    0x4c474f4f,
-    0x70635f45,
-    0x74735f70,
-    0x5f656c79,
-    0x656e696c,
-    0x7269645f,
-    0x69746365,
-    0x00006576,
-    0x00080004,
-    0x475f4c47,
-    0x4c474f4f,
-    0x6e695f45,
-    0x64756c63,
-    0x69645f65,
-    0x74636572,
-    0x00657669,
-    0x00040005,
-    0x00000004,
-    0x6e69616d,
-    0x00000000,
-    0x00050005,
-    0x00000009,
-    0x4374756f,
-    0x726f6c6f,
-    0x00000000,
-    0x00050005,
-    0x0000000c,
-    0x67617266,
-    0x6f6c6f43,
-    0x00000072,
-    0x00040047,
-    0x00000009,
-    0x0000001e,
-    0x00000000,
-    0x00040047,
-    0x0000000c,
-    0x0000001e,
-    0x00000000,
-    0x00020013,
-    0x00000002,
-    0x00030021,
-    0x00000003,
-    0x00000002,
-    0x00030016,
-    0x00000006,
-    0x00000020,
-    0x00040017,
-    0x00000007,
-    0x00000006,
-    0x00000004,
-    0x00040020,
-    0x00000008,
-    0x00000003,
-    0x00000007,
-    0x0004003b,
-    0x00000008,
-    0x00000009,
-    0x00000003,
-    0x00040017,
-    0x0000000a,
-    0x00000006,
-    0x00000003,
-    0x00040020,
-    0x0000000b,
-    0x00000001,
-    0x0000000a,
-    0x0004003b,
-    0x0000000b,
-    0x0000000c,
-    0x00000001,
-    0x0004002b,
-    0x00000006,
-    0x0000000e,
-    0x3f800000,
-    0x00050036,
-    0x00000002,
-    0x00000004,
-    0x00000000,
-    0x00000003,
-    0x000200f8,
-    0x00000005,
-    0x0004003d,
-    0x0000000a,
-    0x0000000d,
-    0x0000000c,
-    0x00050051,
-    0x00000006,
-    0x0000000f,
-    0x0000000d,
-    0x00000000,
-    0x00050051,
-    0x00000006,
-    0x00000010,
-    0x0000000d,
-    0x00000001,
-    0x00050051,
-    0x00000006,
-    0x00000011,
-    0x0000000d,
-    0x00000002,
-    0x00070050,
-    0x00000007,
-    0x00000012,
-    0x0000000f,
-    0x00000010,
-    0x00000011,
-    0x0000000e,
-    0x0003003e,
-    0x00000009,
-    0x00000012,
-    0x000100fd,
-    0x00010038,
-};
-
-// ============================================================================
-// Helpers
+// 辅助函数
 // ============================================================================
 
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
@@ -442,6 +18,7 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     void* userData) {
 
     auto* platform = static_cast<IPlatform*>(userData);
+    // 将 Vulkan 校验消息严重级别映射到渲染器的日志级别。
     LogLevel level = LogLevel::Debug;
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
         level = LogLevel::Error;
@@ -481,7 +58,7 @@ static bool hasExtension(const std::vector<VkExtensionProperties>& props, const 
 }
 
 // ============================================================================
-// Renderer implementation
+// 渲染器实现
 // ============================================================================
 
 Renderer::Renderer(IPlatform* platform) : platform_(platform) {}
@@ -491,6 +68,7 @@ Renderer::~Renderer() {
 }
 
 bool Renderer::initialize() {
+    // 按依赖顺序搭建 Vulkan 栈。每一步都依赖前一步，所以任何一环失败都会立刻停止启动。
     if (!createInstance()) return false;
     if (!createSurface()) return false;
     if (!pickPhysicalDevice()) return false;
@@ -508,6 +86,7 @@ bool Renderer::initialize() {
 }
 
 void Renderer::shutdown() {
+    // 按相反顺序释放资源。设备必须先空闲，才能销毁任何仍在飞行中的对象。
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
 
@@ -527,6 +106,7 @@ void Renderer::shutdown() {
 
     if (instance_ != VK_NULL_HANDLE) {
         if (debugMessenger_ != VK_NULL_HANDLE) {
+            // 调试消息器归实例所有，所以要先销毁它。
             auto func = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
                 vkGetInstanceProcAddr(instance_, "vkDestroyDebugUtilsMessengerEXT"));
             if (func) func(instance_, debugMessenger_, nullptr);
@@ -550,6 +130,7 @@ void Renderer::shutdown() {
 }
 
 bool Renderer::createInstance() {
+    // 实例创建主要是在探测能力：先选 surface 扩展，加载器支持时再加调试扩展。
     VkApplicationInfo appInfo{};
     appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pApplicationName = "estarx_vulkan";
@@ -558,6 +139,7 @@ bool Renderer::createInstance() {
     appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
     appInfo.apiVersion = VK_API_VERSION_1_0;
 
+    // 先放入通用 surface 扩展，再按平台和调试能力补充。
     std::vector<const char*> extensions = {
         VK_KHR_SURFACE_EXTENSION_NAME,
 #ifdef __ANDROID__
@@ -575,6 +157,7 @@ bool Renderer::createInstance() {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
     }
 
+    // 校验层是可选的，只在构建配置要求时启用。
     std::vector<const char*> layers;
 #ifdef EVK_ENABLE_VALIDATION
     layers.push_back("VK_LAYER_KHRONOS_validation");
@@ -620,10 +203,12 @@ bool Renderer::createInstance() {
 }
 
 bool Renderer::createSurface() {
+    // surface 的创建交给平台抽象层处理。
     return platform_->createVulkanSurface(instance_, &surface_);
 }
 
 bool Renderer::pickPhysicalDevice() {
+    // 只保留既能绘制到 surface、又能 present swapchain 图像的设备。
     uint32_t count = 0;
     vkEnumeratePhysicalDevices(instance_, &count, nullptr);
     if (count == 0) {
@@ -642,6 +227,7 @@ bool Renderer::pickPhysicalDevice() {
 
         int graphicsFamily = -1;
         int presentFamily = -1;
+        // 图形队列和呈现队列可能属于不同的队列族。
         for (uint32_t i = 0; i < queueFamilyCount; ++i) {
             if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
                 graphicsFamily = static_cast<int>(i);
@@ -670,6 +256,7 @@ bool Renderer::pickPhysicalDevice() {
 }
 
 bool Renderer::createLogicalDevice() {
+    // 创建最小化的逻辑设备，并申请所需的队列族。
     uint32_t queueFamilyCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &queueFamilyCount, nullptr);
     std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -688,6 +275,7 @@ bool Renderer::createLogicalDevice() {
         }
     }
 
+    // 有些设备一个队列族同时承担两种职责，有些则需要分开的图形和呈现队列。
     std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
     std::vector<uint32_t> uniqueFamilies = {static_cast<uint32_t>(graphicsFamily)};
     if (static_cast<uint32_t>(presentFamily) != static_cast<uint32_t>(graphicsFamily)) {
@@ -727,9 +315,11 @@ bool Renderer::createLogicalDevice() {
 }
 
 bool Renderer::createSwapchain() {
+    // 选择适合当前窗口的 surface 格式、present 模式和尺寸。
     VkSurfaceCapabilitiesKHR caps;
     vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice_, surface_, &caps);
 
+    // 先查询 surface 能力，再决定具体的 swapchain 参数。
     uint32_t formatCount = 0;
     vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice_, surface_, &formatCount, nullptr);
     std::vector<VkSurfaceFormatKHR> formats(formatCount);
@@ -754,6 +344,7 @@ bool Renderer::createSwapchain() {
 
     VkPresentModeKHR presentMode = VK_PRESENT_MODE_FIFO_KHR;
     for (const auto& pm : presentModes) {
+        // 驱动支持时优先用 Mailbox，可降低显示延迟。
         if (pm == VK_PRESENT_MODE_MAILBOX_KHR) {
             presentMode = pm;
             break;
@@ -761,6 +352,7 @@ bool Renderer::createSwapchain() {
     }
 
     VkExtent2D extent;
+    // 如果 surface 固定了尺寸，Vulkan 会直接给出精确的 extent。
     if (caps.currentExtent.width != UINT32_MAX) {
         extent = caps.currentExtent;
     } else {
@@ -789,9 +381,9 @@ bool Renderer::createSwapchain() {
     createInfo.clipped = VK_TRUE;
     createInfo.oldSwapchain = VK_NULL_HANDLE;
 
-    uint32_t queueFamilyIndices[2]; // filled below
+    uint32_t queueFamilyIndices[2]; // 下面填充
 
-    // Re-fetch queue family indices so the swapchain sharing mode is correct.
+    // 重新取一次队列族索引，确保 swapchain 的共享模式正确。
     uint32_t qCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &qCount, nullptr);
     std::vector<VkQueueFamilyProperties> qf(qCount);
@@ -804,6 +396,7 @@ bool Renderer::createSwapchain() {
         if (present) pFamily = i;
     }
 
+    // 如果图形和呈现队列族分开，swapchain 图像需要并发共享。
     if (gFamily != pFamily) {
         queueFamilyIndices[0] = gFamily;
         queueFamilyIndices[1] = pFamily;
@@ -829,6 +422,7 @@ bool Renderer::createSwapchain() {
 }
 
 bool Renderer::createImageViews() {
+    // 每个 swapchain 图像都要创建一个 2D 颜色视图。
     swapchainImageViews_.resize(swapchainImages_.size());
     for (size_t i = 0; i < swapchainImages_.size(); ++i) {
         VkImageViewCreateInfo createInfo{};
@@ -855,6 +449,7 @@ bool Renderer::createImageViews() {
 }
 
 bool Renderer::createRenderPass() {
+    // 这个三角形示例只需要一个颜色附件：清屏、绘制、呈现即可。
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = swapchainImageFormat_;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -913,10 +508,11 @@ VkShaderModule Renderer::createShaderModule(const uint32_t* code, size_t codeSiz
 }
 
 bool Renderer::createGraphicsPipeline() {
+    // 这个示例的管线是固定的。viewport 和 scissor 保持动态，所以缩放时只需重录命令缓冲。
     VkShaderModule vertModule = createShaderModule(
-        triangle_vert_spv, sizeof(triangle_vert_spv));
+        assets::triangle_vert_spv, sizeof(assets::triangle_vert_spv));
     VkShaderModule fragModule = createShaderModule(
-        triangle_frag_spv, sizeof(triangle_frag_spv));
+        assets::triangle_frag_spv, sizeof(assets::triangle_frag_spv));
 
     if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE) {
         return false;
@@ -936,6 +532,7 @@ bool Renderer::createGraphicsPipeline() {
 
     VkPipelineShaderStageCreateInfo stages[] = {vertStage, fragStage};
 
+    // 顶点数据是交错布局：先位置，再颜色。
     VkVertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
     bindingDesc.stride = sizeof(float) * 5;
@@ -1014,6 +611,7 @@ bool Renderer::createGraphicsPipeline() {
         VK_DYNAMIC_STATE_SCISSOR,
     };
 
+    // 保持 viewport 和 scissor 为动态状态；swapchain 的尺寸可能运行时变化。
     VkPipelineDynamicStateCreateInfo dynamicState{};
     dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
     dynamicState.dynamicStateCount = 2;
@@ -1057,6 +655,7 @@ bool Renderer::createGraphicsPipeline() {
 }
 
 bool Renderer::createFramebuffers() {
+    // 每个 swapchain 图像视图都对应一个 framebuffer。
     swapchainFramebuffers_.resize(swapchainImageViews_.size());
     for (size_t i = 0; i < swapchainImageViews_.size(); ++i) {
         VkImageView attachments[] = {swapchainImageViews_[i]};
@@ -1079,6 +678,7 @@ bool Renderer::createFramebuffers() {
 }
 
 bool Renderer::createCommandPool() {
+    // command pool 允许命令缓冲每帧重置并重新录制。
     uint32_t qCount = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice_, &qCount, nullptr);
     std::vector<VkQueueFamilyProperties> qf(qCount);
@@ -1105,8 +705,9 @@ bool Renderer::createCommandPool() {
 }
 
 bool Renderer::createVertexBuffer() {
+    // 这个小样例直接把三角形顶点上传到可见内存，省略了 staging buffer。
     const float vertices[] = {
-        // positions     // colors
+        // 位置          // 颜色
          0.0f, -0.5f,   1.0f, 0.0f, 0.0f,
          0.5f,  0.5f,   0.0f, 1.0f, 0.0f,
         -0.5f,  0.5f,   0.0f, 0.0f, 1.0f,
@@ -1149,6 +750,7 @@ bool Renderer::createVertexBuffer() {
 }
 
 bool Renderer::createCommandBuffers() {
+    // 每个 in-flight 帧配一个主命令缓冲，提交逻辑更简单。
     commandBuffers_.resize(kMaxFramesInFlight);
 
     VkCommandBufferAllocateInfo allocInfo{};
@@ -1165,6 +767,7 @@ bool Renderer::createCommandBuffers() {
 }
 
 bool Renderer::createSyncObjects() {
+    // 双缓冲能让 CPU 和 GPU 有一点重叠，但不会无限堆积帧。
     imageAvailableSemaphores_.resize(kMaxFramesInFlight);
     renderFinishedSemaphores_.resize(kMaxFramesInFlight);
     inFlightFences_.resize(kMaxFramesInFlight);
@@ -1188,6 +791,7 @@ bool Renderer::createSyncObjects() {
 }
 
 void Renderer::cleanupSwapchain() {
+    // 这些资源和 swapchain 的格式、尺寸绑定，所以要一起重建。
     for (auto fb : swapchainFramebuffers_) {
         vkDestroyFramebuffer(device_, fb, nullptr);
     }
@@ -1207,6 +811,7 @@ void Renderer::cleanupSwapchain() {
 }
 
 void Renderer::recreateSwapchain() {
+    // 先等 GPU 空闲，释放依赖 swapchain 的状态，再从头重建。
     vkDeviceWaitIdle(device_);
     cleanupSwapchain();
     createSwapchain();
@@ -1217,22 +822,26 @@ void Renderer::recreateSwapchain() {
 }
 
 void Renderer::setSize(uint32_t width, uint32_t height) {
+    // 真正的重建会在 render() 里做，那时更安全。
     width_ = width;
     height_ = height;
     framebufferResized_ = true;
 }
 
 void Renderer::requestSwapchainRebuild() {
+    // 平台知道 surface 变了，但还不知道准确尺寸时用这个。
     framebufferResized_ = true;
 }
 
 bool Renderer::render() {
+    // 每帧流程：等待 fence、获取图像、录制命令、提交执行、最后呈现。
     vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
 
     uint32_t imageIndex = 0;
     VkResult result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
         imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE, &imageIndex);
 
+    // 这一帧还没来得及渲染，swapchain 就已经失效了。
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         recreateSwapchain();
         return true;
@@ -1275,6 +884,7 @@ bool Renderer::render() {
     presentInfo.pImageIndices = &imageIndex;
 
     result = vkQueuePresentKHR(presentQueue_, &presentInfo);
+    // present 阶段也可能提示 surface 和 swapchain 已经不匹配。
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized_) {
         framebufferResized_ = false;
         recreateSwapchain();
@@ -1288,6 +898,7 @@ bool Renderer::render() {
 }
 
 void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
+    // 把一帧的绘制命令录进可复用的主命令缓冲。
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &beginInfo);
@@ -1314,6 +925,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     viewport.height = static_cast<float>(swapchainExtent_.height);
     viewport.minDepth = 0.0f;
     viewport.maxDepth = 1.0f;
+    // 管线把 viewport 和 scissor 设成动态状态，所以每帧都要重新设置。
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     VkRect2D scissor{};
@@ -1333,6 +945,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
 }
 
 uint32_t Renderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    // 在物理设备的内存类型里找一个满足这些标志位的类型。
     VkPhysicalDeviceMemoryProperties memProps;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &memProps);
 
