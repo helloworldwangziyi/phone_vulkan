@@ -10,36 +10,43 @@ set(EVK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..)
 find_program(GLSLC_EXECUTABLE glslc REQUIRED)
 
 set(EVK_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(EVK_TRIANGLE_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/triangle_shaders.h")
+set(EVK_UI_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/ui_shaders.h")
 file(MAKE_DIRECTORY "${EVK_GENERATED_DIR}/evk/assets")
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${EVK_ROOT}/core/shaders/triangle.vert"
-    "${EVK_ROOT}/core/shaders/triangle.frag"
-    "${EVK_ROOT}/cmake/embed_triangle_shaders.cmake"
+    "${EVK_ROOT}/core/shaders/ui.vert"
+    "${EVK_ROOT}/core/shaders/ui.frag"
+    "${EVK_ROOT}/cmake/embed_shaders.cmake"
 )
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}"
             -DGLSLC_EXECUTABLE=${GLSLC_EXECUTABLE}
-            -DVERT_SRC=${EVK_ROOT}/core/shaders/triangle.vert
-            -DFRAG_SRC=${EVK_ROOT}/core/shaders/triangle.frag
-            -DOUTPUT_HEADER=${EVK_TRIANGLE_SHADER_HEADER}
-            -P "${EVK_ROOT}/cmake/embed_triangle_shaders.cmake"
+            -DSHADER_NAME=ui
+            -DVERT_SRC=${EVK_ROOT}/core/shaders/ui.vert
+            -DFRAG_SRC=${EVK_ROOT}/core/shaders/ui.frag
+            -DOUTPUT_HEADER=${EVK_UI_SHADER_HEADER}
+            -P "${EVK_ROOT}/cmake/embed_shaders.cmake"
     COMMAND_ERROR_IS_FATAL ANY
 )
 
 add_library(estarx_vulkan SHARED
+    app_main.cpp
     ${EVK_ROOT}/platform/android/cpp/bridge.cpp
     ${EVK_ROOT}/core/src/event.cpp
+    ${EVK_ROOT}/core/src/render_loop.cpp
     ${EVK_ROOT}/core/src/platform_android.cpp
     ${EVK_ROOT}/core/src/renderer.cpp
+    ${EVK_ROOT}/core/src/esx_view.cpp
+    ${EVK_ROOT}/core/src/ui/view.cpp
+    ${EVK_ROOT}/core/src/ui/canvas.cpp
 )
 
 target_include_directories(estarx_vulkan
     PUBLIC
         ${EVK_ROOT}/core/include
         ${EVK_ROOT}/third_party/spdlog/include
+        ${EVK_ROOT}/third_party/glm
     PRIVATE
         ${EVK_GENERATED_DIR}
 )

@@ -1,9 +1,13 @@
 #include "evk/renderer.h"
-#include "evk/assets/triangle_shaders.h"
+#include "evk/assets/ui_shaders.h"
 
 #include <algorithm>
 #include <cstring>
 #include <vector>
+
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace evk {
 
@@ -510,9 +514,9 @@ VkShaderModule Renderer::createShaderModule(const uint32_t* code, size_t codeSiz
 bool Renderer::createGraphicsPipeline() {
     // 这个示例的管线是固定的。viewport 和 scissor 保持动态，所以缩放时只需重录命令缓冲。
     VkShaderModule vertModule = createShaderModule(
-        assets::triangle_vert_spv, sizeof(assets::triangle_vert_spv));
+        assets::ui_vert_spv, sizeof(assets::ui_vert_spv));
     VkShaderModule fragModule = createShaderModule(
-        assets::triangle_frag_spv, sizeof(assets::triangle_frag_spv));
+        assets::ui_frag_spv, sizeof(assets::ui_frag_spv));
 
     if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE) {
         return false;
@@ -532,10 +536,10 @@ bool Renderer::createGraphicsPipeline() {
 
     VkPipelineShaderStageCreateInfo stages[] = {vertStage, fragStage};
 
-    // 顶点数据是交错布局：先位置，再颜色。
+    // 顶点数据是 UiVertex 交错布局：先像素坐标(vec2)，再 RGBA 颜色(vec4)。
     VkVertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
-    bindingDesc.stride = sizeof(float) * 5;
+    bindingDesc.stride = sizeof(float) * 6;
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     VkVertexInputAttributeDescription attrs[2];
@@ -545,7 +549,7 @@ bool Renderer::createGraphicsPipeline() {
     attrs[0].offset = 0;
     attrs[1].binding = 0;
     attrs[1].location = 1;
-    attrs[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attrs[1].offset = sizeof(float) * 2;
 
     VkPipelineVertexInputStateCreateInfo vertexInput{};
@@ -585,7 +589,7 @@ bool Renderer::createGraphicsPipeline() {
     rasterizer.rasterizerDiscardEnable = VK_FALSE;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
     rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
     rasterizer.depthBiasEnable = VK_FALSE;
 
@@ -598,7 +602,14 @@ bool Renderer::createGraphicsPipeline() {
     colorBlendAttachment.colorWriteMask =
         VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
         VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    // 标准 SRC_ALPHA 预乘外的普通 alpha 混合，UI 半透明背景需要。
+    colorBlendAttachment.blendEnable = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -617,8 +628,16 @@ bool Renderer::createGraphicsPipeline() {
     dynamicState.dynamicStateCount = 2;
     dynamicState.pDynamicStates = dynamicStates;
 
+    // push constant：像素坐标 → NDC 的正交投影矩阵（mat4 mvp）。
+    VkPushConstantRange pushConstant{};
+    pushConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstant.offset = 0;
+    pushConstant.size = 64;
+
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pushConstant;
 
     if (vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
         logMessage(platform_, LogLevel::Error, "evk", "vkCreatePipelineLayout failed");
@@ -705,14 +724,9 @@ bool Renderer::createCommandPool() {
 }
 
 bool Renderer::createVertexBuffer() {
-    // 这个小样例直接把三角形顶点上传到可见内存，省略了 staging buffer。
-    const float vertices[] = {
-        // 位置          // 颜色
-         0.0f, -0.5f,   1.0f, 0.0f, 0.0f,
-         0.5f,  0.5f,   0.0f, 1.0f, 0.0f,
-        -0.5f,  0.5f,   0.0f, 0.0f, 1.0f,
-    };
-    VkDeviceSize bufferSize = sizeof(vertices);
+    // 动态顶点缓冲：容量 kVertexCapacity 个 UiVertex，每帧按需上传。
+    // HOST_VISIBLE|HOST_COHERENT 内存，省去 staging buffer。
+    VkDeviceSize bufferSize = sizeof(ui::UiVertex) * kVertexCapacity;
 
     VkBufferCreateInfo bufferInfo{};
     bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -740,13 +754,22 @@ bool Renderer::createVertexBuffer() {
     }
 
     vkBindBufferMemory(device_, vertexBuffer_, vertexBufferMemory_, 0);
-
-    void* data = nullptr;
-    vkMapMemory(device_, vertexBufferMemory_, 0, bufferSize, 0, &data);
-    std::memcpy(data, vertices, static_cast<size_t>(bufferSize));
-    vkUnmapMemory(device_, vertexBufferMemory_);
-
     return true;
+}
+
+void Renderer::uploadVertices(const ui::UiVertex* data, uint32_t count) {
+    if (count > kVertexCapacity) {
+        logMessage(platform_, LogLevel::Warn, "evk",
+            "vertex count %u exceeds capacity %u, truncated", count, kVertexCapacity);
+        count = kVertexCapacity;
+    }
+    if (count == 0) {
+        return;
+    }
+    void* mapped = nullptr;
+    vkMapMemory(device_, vertexBufferMemory_, 0, sizeof(ui::UiVertex) * count, 0, &mapped);
+    std::memcpy(mapped, data, sizeof(ui::UiVertex) * count);
+    vkUnmapMemory(device_, vertexBufferMemory_);
 }
 
 bool Renderer::createCommandBuffers() {
@@ -833,7 +856,7 @@ void Renderer::requestSwapchainRebuild() {
     framebufferResized_ = true;
 }
 
-bool Renderer::render() {
+bool Renderer::render(const ui::Canvas& canvas) {
     // 每帧流程：等待 fence、获取图像、录制命令、提交执行、最后呈现。
     vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
 
@@ -850,10 +873,16 @@ bool Renderer::render() {
         return false;
     }
 
+    // acquire 成功后先把本帧顶点写进动态缓冲，再录命令。空 canvas 跳过上传，
+    // 命令录制阶段也不会有 draw，只剩清屏帧。
+    if (!canvas.vertices().empty()) {
+        uploadVertices(canvas.vertices().data(), static_cast<uint32_t>(canvas.vertices().size()));
+    }
+
     vkResetFences(device_, 1, &inFlightFences_[currentFrame_]);
 
     vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
-    recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex);
+    recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, canvas);
 
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -897,7 +926,7 @@ bool Renderer::render() {
     return true;
 }
 
-void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
+void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, const ui::Canvas& canvas) {
     // 把一帧的绘制命令录进可复用的主命令缓冲。
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -928,16 +957,47 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex) {
     // 管线把 viewport 和 scissor 设成动态状态，所以每帧都要重新设置。
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-    VkRect2D scissor{};
-    scissor.offset = {0, 0};
-    scissor.extent = swapchainExtent_;
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-
     VkBuffer vertexBuffers[] = {vertexBuffer_};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
 
-    vkCmdDraw(cmd, 3, 1, 0, 0);
+    // 像素坐标 → NDC 的正交投影（原点在左上角，y 向下）。
+    // 注意 glm::ortho 第三/四参数是 bottom/top：Vulkan 正 viewport 高度下
+    // NDC +y 朝 framebuffer 下方，要 y 向下需传 bottom=0、top=height。
+    glm::mat4 mvp = glm::ortho(0.0f, static_cast<float>(swapchainExtent_.width),
+                               0.0f, static_cast<float>(swapchainExtent_.height),
+                               -1.0f, 1.0f);
+
+    // 逐批绘制：每批共享一个 clip，裁剪矩形取 clip 与 swapchain 的交集。
+    for (const auto& batch : canvas.batches()) {
+        if (batch.vertexCount == 0) {
+            continue;
+        }
+        vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
+                           0, sizeof(mvp), &mvp);
+
+        float sw = static_cast<float>(swapchainExtent_.width);
+        float sh = static_cast<float>(swapchainExtent_.height);
+        ui::Rect clip = ui::Rect::intersect(batch.clip, {0.0f, 0.0f, sw, sh});
+
+        // 转 int32 时 clamp：offset 不小于 0，且 offset+extent 不超出 swapchain。
+        int32_t ox = std::max(0, static_cast<int32_t>(clip.x));
+        int32_t oy = std::max(0, static_cast<int32_t>(clip.y));
+        int32_t ex = std::min(static_cast<int32_t>(clip.x + clip.w),
+                              static_cast<int32_t>(swapchainExtent_.width)) - ox;
+        int32_t ey = std::min(static_cast<int32_t>(clip.y + clip.h),
+                              static_cast<int32_t>(swapchainExtent_.height)) - oy;
+        if (ex <= 0 || ey <= 0) {
+            continue;
+        }
+
+        VkRect2D scissor{};
+        scissor.offset = {ox, oy};
+        scissor.extent = {static_cast<uint32_t>(ex), static_cast<uint32_t>(ey)};
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        vkCmdDraw(cmd, batch.vertexCount, 1, batch.firstVertex, 0);
+    }
 
     vkCmdEndRenderPass(cmd);
 

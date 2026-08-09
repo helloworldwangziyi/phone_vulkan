@@ -1,6 +1,7 @@
 #pragma once
 
 #include "evk/platform.h"
+#include "evk/ui/canvas.h"
 #include <vulkan/vulkan.h>
 #include <cstdint>
 #include <vector>
@@ -8,8 +9,9 @@
 namespace evk {
 
 // A minimal, self-contained Vulkan renderer.
-// It creates a swapchain, render pass, graphics pipeline and renders a
-// colored triangle. The actual native surface is provided by IPlatform.
+// It creates a swapchain, render pass, graphics pipeline and renders the
+// 2D UI geometry collected in an ui::Canvas. The actual native surface is
+// provided by IPlatform.
 class Renderer {
 public:
     explicit Renderer(IPlatform* platform);
@@ -21,8 +23,8 @@ public:
     // Release all Vulkan resources.
     void shutdown();
 
-    // Draw one frame. Returns true on success.
-    bool render();
+    // Draw one frame from the canvas content. Returns true on success.
+    bool render(const ui::Canvas& canvas);
 
     // Notify the renderer that the surface size has changed.
     void setSize(uint32_t width, uint32_t height);
@@ -47,7 +49,10 @@ private:
 
     void cleanupSwapchain();
     void recreateSwapchain();
-    void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex);
+    void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, const ui::Canvas& canvas);
+
+    // 把 UI 顶点上传到动态顶点缓冲；超出容量时截断并告警。
+    void uploadVertices(const ui::UiVertex* data, uint32_t count);
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     VkShaderModule createShaderModule(const uint32_t* code, size_t codeSize);
@@ -91,6 +96,8 @@ private:
 
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
+    // 动态顶点缓冲容量（UiVertex 个数）。
+    static constexpr uint32_t kVertexCapacity = 8192;
 };
 
 } // namespace evk

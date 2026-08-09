@@ -13,11 +13,30 @@ namespace evk {
 class AndroidPlatform : public IPlatform {
 public:
     AndroidPlatform(JNIEnv* env, jobject surface)
-        : env_(env), surface_(surface) {}
+        : env_(env), surface_(surface) {
+        // 析构时要 DeleteGlobalRef，需要 JavaVM 反查/附着当前线程拿 env。
+        env->GetJavaVM(&jvm_);
+    }
 
     ~AndroidPlatform() {
         if (window_) {
             ANativeWindow_release(window_);
+        }
+        // surface_ 是全局引用（见 evkCreateAndroidPlatform），析构时必须释放。
+        if (surface_ && jvm_) {
+            JNIEnv* env = nullptr;
+            bool attached = false;
+            if (jvm_->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK &&
+                jvm_->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+                attached = true;
+            }
+            if (env) {
+                env->DeleteGlobalRef(surface_);
+            }
+            if (attached) {
+                jvm_->DetachCurrentThread();
+            }
+            surface_ = nullptr;
         }
     }
 
@@ -70,7 +89,8 @@ public:
 
 private:
     JNIEnv* env_ = nullptr;
-    jobject surface_ = nullptr;
+    jobject surface_ = nullptr; // 全局引用，析构时 DeleteGlobalRef
+    JavaVM* jvm_ = nullptr;
     ANativeWindow* window_ = nullptr;
 };
 
@@ -96,7 +116,10 @@ extern "C" {
 // Provide these factory functions with C linkage so the JNI bridge does not
 // need to know the class layout.
 evk::IPlatform* evkCreateAndroidPlatform(JNIEnv* env, jobject surface) {
-    return evk::createAndroidPlatform(env, surface);
+    // Java 传来的 surface 是 JNI 局部引用，nativeInit 返回后即失效；
+    // 跨调用持有必须先提升为全局引用（析构时 DeleteGlobalRef，见 ~AndroidPlatform）。
+    jobject globalSurface = surface ? env->NewGlobalRef(surface) : nullptr;
+    return evk::createAndroidPlatform(env, globalSurface);
 }
 
 void evkDestroyAndroidPlatform(evk::IPlatform* platform) {

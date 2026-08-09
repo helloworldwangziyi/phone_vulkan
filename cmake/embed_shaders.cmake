@@ -1,3 +1,6 @@
+if(NOT DEFINED SHADER_NAME)
+    message(FATAL_ERROR "SHADER_NAME is not set")
+endif()
 if(NOT DEFINED GLSLC_EXECUTABLE)
     message(FATAL_ERROR "GLSLC_EXECUTABLE is not set")
 endif()
@@ -14,8 +17,8 @@ endif()
 get_filename_component(output_dir "${OUTPUT_HEADER}" DIRECTORY)
 file(MAKE_DIRECTORY "${output_dir}")
 
-set(vert_spv "${output_dir}/triangle.vert.spv")
-set(frag_spv "${output_dir}/triangle.frag.spv")
+set(vert_spv "${output_dir}/${SHADER_NAME}.vert.spv")
+set(frag_spv "${output_dir}/${SHADER_NAME}.frag.spv")
 
 execute_process(
     COMMAND "${GLSLC_EXECUTABLE}" "${VERT_SRC}" -o "${vert_spv}"
@@ -79,16 +82,16 @@ file(WRITE "${OUTPUT_HEADER}" [==[
 
 namespace evk::assets {
 
-inline constexpr uint32_t triangle_vert_spv[] = {
 ]==]
 )
+file(APPEND "${OUTPUT_HEADER}" "inline constexpr uint32_t ${SHADER_NAME}_vert_spv[] = {\n")
 file(APPEND "${OUTPUT_HEADER}" "${vert_words}")
 file(APPEND "${OUTPUT_HEADER}" [==[
 };
 
-inline constexpr uint32_t triangle_frag_spv[] = {
 ]==]
 )
+file(APPEND "${OUTPUT_HEADER}" "inline constexpr uint32_t ${SHADER_NAME}_frag_spv[] = {\n")
 file(APPEND "${OUTPUT_HEADER}" "${frag_words}")
 file(APPEND "${OUTPUT_HEADER}" [==[
 };
