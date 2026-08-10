@@ -24,16 +24,17 @@ namespace {
 
 esx_view g_root = 0;
 
-void layoutRoot() {
+void layoutRoot(float width, float height) {
     if (g_root != 0) {
-        esx_view_set_bounds(g_root, 0, 0, g_screenWidth, g_screenHeight);
+        esx_view_set_bounds(g_root, 0, 0, width, height);
     }
 }
 
 void onAppStart(evk::EventId /*id*/, esx_view /*view*/, const void* /*data*/) {
     g_root = esx_create_view(ESX_VIEW_GROUP, 0, 0, 0, 0, 0);
     esx_set_root_view(g_root);
-    layoutRoot();
+    // AppStart 之前 nativeInit 已上报过一次 SurfaceChanged，全局尺寸可用。
+    layoutRoot(g_screenWidth, g_screenHeight);
 
     const esx_view panel = panelViewCreate(g_root);
     const esx_view button = buttonViewCreate(g_root);
@@ -46,8 +47,13 @@ struct EventAutoRegister {
     EventAutoRegister() {
         evk::setEventFunc(appEventEntry);
         appRegisterEvent(evk::EventId::AppStart, 0, onAppStart);
+        // 直接使用事件携带的尺寸，避免根视图布局依赖跨 TU 的监听注册顺序。
         appRegisterEvent(evk::EventId::SurfaceChanged, 0,
-                         [](evk::EventId, esx_view, const void*) { layoutRoot(); });
+                         [](evk::EventId, esx_view, const void* data) {
+                             const auto* d = static_cast<const evk::SurfaceChangedData*>(data);
+                             layoutRoot(static_cast<float>(d->width),
+                                        static_cast<float>(d->height));
+                         });
     }
 };
 EventAutoRegister g_autoRegister;

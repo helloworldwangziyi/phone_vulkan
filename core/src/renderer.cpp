@@ -92,6 +92,9 @@ static bool hasExtension(const std::vector<VkExtensionProperties>& props, const 
 // 渲染器实现
 // ============================================================================
 
+// 单次 render() 内"重建交换链 → 重画"的最大重试次数（见 render() 注释）。
+constexpr uint32_t kMaxFrameAttempts = 3;
+
 // 构造只保存平台抽象层指针；所有 Vulkan 对象推迟到 initialize() 里创建。
 Renderer::Renderer(IPlatform* platform) : platform_(platform) {}
 
@@ -464,6 +467,24 @@ bool Renderer::createSwapchain() {
         platform_->getSurfaceSize(&width_, &height_);
         extent.width = std::max(caps.minImageExtent.width, std::min(caps.maxImageExtent.width, width_));
         extent.height = std::max(caps.minImageExtent.height, std::min(caps.maxImageExtent.height, height_));
+    }
+
+    // 90/270 变换下呈现时系统会把 buffer 旋转上屏，buffer 必须是"旋转前"尺寸
+    // （与视觉尺寸互换），否则旋转后再被拉伸适配，画面压扁/偏移。
+    // 平台可能上报旋转前尺寸，也可能上报与 SurfaceView 相同的视觉尺寸。
+    // 仅在 extent 与 SurfaceView 尺寸一致时交换，避免已是旋转前尺寸的平台被重复交换。
+    // width_/height_ 还没上报过（为 0）时无法区分，维持原值；首次 setSize 触发的
+    // 重建会再走到这里修正。
+    const bool rotate90or270 = (caps.currentTransform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+                                caps.currentTransform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR);
+    if (rotate90or270 && width_ != 0 && height_ != 0 &&
+        extent.width == width_ && extent.height == height_) {
+        std::swap(extent.width, extent.height);
+        // 互换后必须仍落在驱动允许的范围内；越界则换回，宁可不做补偿。
+        if (extent.width < caps.minImageExtent.width || extent.width > caps.maxImageExtent.width ||
+            extent.height < caps.minImageExtent.height || extent.height > caps.maxImageExtent.height) {
+            std::swap(extent.width, extent.height);
+        }
     }
 
     // 图像数量取 minImageCount + 1：多一张可减少"等上一帧渲染完"的停顿；
@@ -1102,96 +1123,113 @@ bool Renderer::render(const ui::Canvas& canvas) {
     // 尺寸变化（旋转等）时先重建 swapchain 再画帧：否则本帧会按旧 swapchainExtent_
     // 投影、画进旧尺寸的图像，呈现出去的是变形/裁剪的画面；本渲染器是按需模型，
     // 之后没有新帧覆盖，错误会一直挂到下次事件。
-    if (framebufferResized_) {
-        framebufferResized_ = false;
-        recreateSwapchain();
-    }
-    // 每帧流程：等待 fence、获取图像、录制命令、提交执行、最后呈现。
-    // ① 等本帧槽位的 fence：确保它上一轮的渲染已完成，
-    // 这把 CPU 领先 GPU 的帧数限制在 kMaxFramesInFlight 以内，防止无限堆积。
-    vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
+    //
+    // 整个画帧流程包在有限次重试里：surface 刚变化时驱动状态尚未落定——
+    // 重建查到的 surface 能力可能还是旧尺寸（滞后一拍），acquire/present 也会报
+    // OUT_OF_DATE / SUBOPTIMAL。按需渲染没有"下一帧"来自我修正（持续渲染的引擎
+    // 靠下一帧自然收敛），所以本帧内立刻重建重画，直到交换链与 surface 匹配。
+    for (uint32_t attempt = 0; attempt < kMaxFrameAttempts; ++attempt) {
+        if (framebufferResized_) {
+            framebufferResized_ = false;
+            recreateSwapchain();
+        }
+        // 每帧流程：等待 fence、获取图像、录制命令、提交执行、最后呈现。
+        // ① 等本帧槽位的 fence：确保它上一轮的渲染已完成，
+        // 这把 CPU 领先 GPU 的帧数限制在 kMaxFramesInFlight 以内，防止无限堆积。
+        vkWaitForFences(device_, 1, &inFlightFences_[currentFrame_], VK_TRUE, UINT64_MAX);
 
-    // ② acquire：向交换链申请下一张可写图像；图像就绪时 GPU 会 signal imageAvailableSemaphore。
-    uint32_t imageIndex = 0;
-    VkResult result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
-        imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE, &imageIndex);
+        // ② acquire：向交换链申请下一张可写图像；图像就绪时 GPU 会 signal imageAvailableSemaphore。
+        uint32_t imageIndex = 0;
+        VkResult result = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX,
+            imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE, &imageIndex);
 
-    // 这一帧还没来得及渲染，swapchain 就已经失效了。
-    // OUT_OF_DATE 说明交换链与 surface 已不匹配（尺寸/旋转变化）：立刻重建，本帧直接放弃。
-    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        recreateSwapchain();
+        // 这一帧还没来得及渲染，swapchain 就已经失效了。
+        // OUT_OF_DATE 说明交换链与 surface 已不匹配（尺寸/旋转变化）：
+        // 立刻重建并重试本帧（旧实现直接放弃本帧，按需模型下画面会整帧丢失）。
+        if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+            recreateSwapchain();
+            continue;
+        // SUBOPTIMAL 也算拿到图像（只是与 surface 不再完全匹配），照常渲染，present 后再重建。
+        } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+            logMessage(platform_, LogLevel::Error, "evk", "vkAcquireNextImageKHR failed: %d", result);
+            return false;
+        }
+
+        // acquire 成功后先把本帧顶点写进动态缓冲，再录命令。空 canvas 跳过上传，
+        // 命令录制阶段也不会有 draw，只剩清屏帧。
+        // ③ 上传顶点：赶在命令录制前把数据写进 HOST_VISIBLE 缓冲。
+        if (!canvas.vertices().empty()) {
+            uploadVertices(canvas.vertices().data(), static_cast<uint32_t>(canvas.vertices().size()));
+        }
+
+        // ④ reset fence 必须在确认本帧一定会提交之后做：若提前 reset 又中途 return，
+        // 下一帧 vkWaitForFences 会永远等不到 signal（死锁）。
+        vkResetFences(device_, 1, &inFlightFences_[currentFrame_]);
+
+        // 命令缓冲不能"局部修改"，每帧 reset 后整段重录。
+        vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
+        recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, canvas);
+
+        // ⑤ 组装提交信息：等待条件 + 命令缓冲 + 完成信号。
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+        // waitSemaphore：等 acquire 完成（图像真归我们了）才允许写它。
+        VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
+        // waitStages = COLOR_ATTACHMENT_OUTPUT：只在"写颜色"这个管线阶段前等待，
+        // 之前的阶段（如顶点着色）可以提前跑，提高并行度。
+        VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = waitSemaphores;
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &commandBuffers_[currentFrame_];
+
+        // signalSemaphore：渲染完成后 signal renderFinished，交给 present 等。
+        VkSemaphore signalSemaphores[] = {renderFinishedSemaphores_[currentFrame_]};
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signalSemaphores;
+
+        // 提交到图形队列；末尾的 fence 在这批命令全部执行完后由 GPU 置位，
+        // 正是步骤①等待的那个信号。
+        if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) != VK_SUCCESS) {
+            logMessage(platform_, LogLevel::Error, "evk", "vkQueueSubmit failed");
+            return false;
+        }
+
+        // ⑥ present：把渲染好的图像交回交换链排队上屏。
+        VkPresentInfoKHR presentInfo{};
+        presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+        // present 要等 renderFinished：渲染没完成不能显示，顺序由 semaphore 在 GPU 上保证。
+        presentInfo.waitSemaphoreCount = 1;
+        presentInfo.pWaitSemaphores = signalSemaphores;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pSwapchains = &swapchain_;
+        presentInfo.pImageIndices = &imageIndex;
+
+        result = vkQueuePresentKHR(presentQueue_, &presentInfo);
+        // present 阶段也可能提示 surface 和 swapchain 已经不匹配。
+        // OUT_OF_DATE / SUBOPTIMAL 说明本帧是按不匹配的交换链画的（典型的如旋转后
+        // 第一次重建拿到了旧尺寸）：置标志位并重试，下一趟循环开头重建、用同一
+        // canvas 重画，用户看到的直接就是修正后的画面。
+        if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+            framebufferResized_ = true;
+            continue;
+        } else if (result != VK_SUCCESS) {
+            logMessage(platform_, LogLevel::Error, "evk", "vkQueuePresentKHR failed: %d", result);
+            return false;
+        }
+
+        // ⑦ 轮转帧槽位 0→1→0→1：下一帧换用另一套 semaphore / fence / 命令缓冲。
+        currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
         return true;
-    // SUBOPTIMAL 也算拿到图像（只是与 surface 不再完全匹配），照常渲染，present 后再重建。
-    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkAcquireNextImageKHR failed: %d", result);
-        return false;
     }
 
-    // acquire 成功后先把本帧顶点写进动态缓冲，再录命令。空 canvas 跳过上传，
-    // 命令录制阶段也不会有 draw，只剩清屏帧。
-    // ③ 上传顶点：赶在命令录制前把数据写进 HOST_VISIBLE 缓冲。
-    if (!canvas.vertices().empty()) {
-        uploadVertices(canvas.vertices().data(), static_cast<uint32_t>(canvas.vertices().size()));
-    }
-
-    // ④ reset fence 必须在确认本帧一定会提交之后做：若提前 reset 又中途 return，
-    // 下一帧 vkWaitForFences 会永远等不到 signal（死锁）。
-    vkResetFences(device_, 1, &inFlightFences_[currentFrame_]);
-
-    // 命令缓冲不能"局部修改"，每帧 reset 后整段重录。
-    vkResetCommandBuffer(commandBuffers_[currentFrame_], 0);
-    recordCommandBuffer(commandBuffers_[currentFrame_], imageIndex, canvas);
-
-    // ⑤ 组装提交信息：等待条件 + 命令缓冲 + 完成信号。
-    VkSubmitInfo submitInfo{};
-    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-    // waitSemaphore：等 acquire 完成（图像真归我们了）才允许写它。
-    VkSemaphore waitSemaphores[] = {imageAvailableSemaphores_[currentFrame_]};
-    // waitStages = COLOR_ATTACHMENT_OUTPUT：只在"写颜色"这个管线阶段前等待，
-    // 之前的阶段（如顶点着色）可以提前跑，提高并行度。
-    VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-    submitInfo.waitSemaphoreCount = 1;
-    submitInfo.pWaitSemaphores = waitSemaphores;
-    submitInfo.pWaitDstStageMask = waitStages;
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = &commandBuffers_[currentFrame_];
-
-    // signalSemaphore：渲染完成后 signal renderFinished，交给 present 等。
-    VkSemaphore signalSemaphores[] = {renderFinishedSemaphores_[currentFrame_]};
-    submitInfo.signalSemaphoreCount = 1;
-    submitInfo.pSignalSemaphores = signalSemaphores;
-
-    // 提交到图形队列；末尾的 fence 在这批命令全部执行完后由 GPU 置位，
-    // 正是步骤①等待的那个信号。
-    if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkQueueSubmit failed");
-        return false;
-    }
-
-    // ⑥ present：把渲染好的图像交回交换链排队上屏。
-    VkPresentInfoKHR presentInfo{};
-    presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-    // present 要等 renderFinished：渲染没完成不能显示，顺序由 semaphore 在 GPU 上保证。
-    presentInfo.waitSemaphoreCount = 1;
-    presentInfo.pWaitSemaphores = signalSemaphores;
-    presentInfo.swapchainCount = 1;
-    presentInfo.pSwapchains = &swapchain_;
-    presentInfo.pImageIndices = &imageIndex;
-
-    result = vkQueuePresentKHR(presentQueue_, &presentInfo);
-    // present 阶段也可能提示 surface 和 swapchain 已经不匹配。
-    // OUT_OF_DATE / SUBOPTIMAL 都可能在这里才暴露：只置标志位，
-    // 统一交给下一帧开头的检查做重建（避免 present 后立刻 vkDeviceWaitIdle）。
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
-        framebufferResized_ = true;
-    } else if (result != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkQueuePresentKHR failed: %d", result);
-        return false;
-    }
-
-    // ⑦ 轮转帧槽位 0→1→0→1：下一帧换用另一套 semaphore / fence / 命令缓冲。
-    currentFrame_ = (currentFrame_ + 1) % kMaxFramesInFlight;
+    // 重试耗尽（surface 持续变化中，如快速连续旋转）：放弃本帧不算失败，
+    // 后续尺寸事件还会触发渲染，届时继续收敛。
+    logMessage(platform_, LogLevel::Warn, "evk",
+               "render: swapchain still out of date after %u attempts, frame skipped",
+               kMaxFrameAttempts);
     return true;
 }
 
@@ -1239,12 +1277,15 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
 
-    // 布局/视觉尺寸（app 坐标空间 = 用户实际看到的方向）：
-    // 90/270 度变换下 buffer 宽高与视觉宽高互换。
+    // 布局/视觉尺寸（app 坐标空间 = 用户实际看到的方向）。
     const float bufferW = static_cast<float>(swapchainExtent_.width);
     const float bufferH = static_cast<float>(swapchainExtent_.height);
-    const bool dimsSwapped = (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
-                              surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR);
+    // preTransform 为 90/270 度时，createSwapchain() 已保证 buffer 使用旋转前
+    // 尺寸；这里把宽高换回用户实际看到的布局尺寸，并补偿呈现变换。
+    const bool rotate90or270 = (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+                                surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR);
+    const bool compensate = surfaceTransform_ != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    const bool dimsSwapped = rotate90or270;
     const float visualW = dimsSwapped ? bufferH : bufferW;
     const float visualH = dimsSwapped ? bufferW : bufferH;
 
@@ -1254,29 +1295,29 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     // 效果：窗口左上映射到 NDC (-1,-1)、右下映射到 (1,1)；z 用不到，给 [-1,1] 即可。
     glm::mat4 mvp = glm::ortho(0.0f, visualW, 0.0f, visualH, -1.0f, 1.0f);
 
-    // surface 旋转变换补偿：呈现时系统把 buffer 按 currentTransform 旋转上屏，
+    // 需要补偿时（见上）：呈现时系统把 buffer 按 currentTransform 旋转上屏，
     // 这里预先把 NDC 反向旋转，上屏后内容回到正立方向。
     // 90/180/270 在 NDC 平面内是精确换轴（glm::mat4 按列填充）：
-    if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
-        // (x, y) -> (y, -x)
-        const glm::mat4 rot(0.0f, -1.0f, 0.0f, 0.0f,
-                            1.0f,  0.0f, 0.0f, 0.0f,
-                            0.0f,  0.0f, 1.0f, 0.0f,
-                            0.0f,  0.0f, 0.0f, 1.0f);
+    if (compensate && surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
+        // (x, y) -> (-y, x)
+        const glm::mat4 rot( 0.0f, 1.0f, 0.0f, 0.0f,
+                            -1.0f, 0.0f, 0.0f, 0.0f,
+                             0.0f, 0.0f, 1.0f, 0.0f,
+                             0.0f, 0.0f, 0.0f, 1.0f);
         mvp = rot * mvp;
-    } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
+    } else if (compensate && surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
         // (x, y) -> (-x, -y)
         const glm::mat4 rot(-1.0f,  0.0f, 0.0f, 0.0f,
                              0.0f, -1.0f, 0.0f, 0.0f,
                              0.0f,  0.0f, 1.0f, 0.0f,
                              0.0f,  0.0f, 0.0f, 1.0f);
         mvp = rot * mvp;
-    } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
-        // (x, y) -> (-y, x)
-        const glm::mat4 rot( 0.0f, 1.0f, 0.0f, 0.0f,
-                            -1.0f, 0.0f, 0.0f, 0.0f,
-                             0.0f, 0.0f, 1.0f, 0.0f,
-                             0.0f, 0.0f, 0.0f, 1.0f);
+    } else if (compensate && surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+        // (x, y) -> (y, -x)
+        const glm::mat4 rot(0.0f, -1.0f, 0.0f, 0.0f,
+                            1.0f,  0.0f, 0.0f, 0.0f,
+                            0.0f,  0.0f, 1.0f, 0.0f,
+                            0.0f,  0.0f, 0.0f, 1.0f);
         mvp = rot * mvp;
     }
 
@@ -1293,15 +1334,17 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
         // clip 与屏幕矩形求交（在视觉空间进行，与 app 布局坐标一致）。
         ui::Rect clip = ui::Rect::intersect(batch.clip, {0.0f, 0.0f, visualW, visualH});
 
-        // 视觉空间的 clip 旋转到 buffer 像素空间（与上面的 NDC 补偿同向）：
-        // 90°: (x,y)->(y, W-x-w)，宽高互换；180°: 两轴各自翻转；270°: 90° 的逆。
+        // 需要补偿时，把视觉空间的 clip 旋转到 buffer 像素空间（与上面的 NDC 补偿同向）：
+        // 90°: (x,y)->(H-y-h, x)，宽高互换；180°: 两轴各自翻转；
+        // 270°: (x,y)->(y, W-x-w)，是 90° 的逆。
+        // 无需补偿时 buffer 空间即视觉空间，直接用 clip。
         ui::Rect bclip;
-        if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
-            bclip = {clip.y, visualW - clip.x - clip.w, clip.h, clip.w};
-        } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
-            bclip = {visualW - clip.x - clip.w, visualH - clip.y - clip.h, clip.w, clip.h};
-        } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+        if (compensate && surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
             bclip = {visualH - clip.y - clip.h, clip.x, clip.h, clip.w};
+        } else if (compensate && surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
+            bclip = {visualW - clip.x - clip.w, visualH - clip.y - clip.h, clip.w, clip.h};
+        } else if (compensate && surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+            bclip = {clip.y, visualW - clip.x - clip.w, clip.h, clip.w};
         } else {
             bclip = clip;
         }
