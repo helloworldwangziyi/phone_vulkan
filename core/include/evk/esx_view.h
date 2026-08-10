@@ -59,7 +59,8 @@ evk::ui::View* esxRootView();
 // 帧构建：重算 actual、清 canvas、画背景、逐可见视图发 Draw 事件。
 void esxBuildFrame(evk::ui::Canvas& canvas);
 
-// 触摸分发：DOWN 命中记录目标，MOVE 累计位移超 12px 取消，
+// 可选点击合成 helper：app 在收到原始 Touch 后可调用这里，
+// DOWN 命中记录目标，MOVE 累计位移超 12px 取消，
 // UP 未取消则发 UiClick，CANCEL(action=3) 重置。
 void esxDispatchTouch(int32_t action, float x, float y);
 #endif

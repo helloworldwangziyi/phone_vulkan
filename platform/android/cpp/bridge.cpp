@@ -120,14 +120,13 @@ Java_com_estarx_vulkan_NativeBridge_nativeRender(JNIEnv* /*env*/, jclass /*clazz
 
 // Java: NativeBridge.nativeOnTouch(int, float, float)
 // action 原样透传 Android MotionEvent 常量（0=按下 1=抬起 2=移动）。
+// 这里只回传原始 Touch；是否合成 UiClick 交给 app 侧处理。
 extern "C" JNIEXPORT void JNICALL
 Java_com_estarx_vulkan_NativeBridge_nativeOnTouch(JNIEnv* /*env*/, jclass /*clazz*/,
                                                   jint action, jfloat x, jfloat y) {
     EVK_LOGI("touch event: action={} x={:.1f} y={:.1f}", action, x, y);
     evk::TouchData data{ action, x, y };  // 栈上结构体，仅在 dispatch 期间有效
     evk::dispatchEvent(evk::EventId::Touch, &data);
-    // 同时走视图树的命中测试/点击分发（内部可能再发 UiClick 事件）。
-    esxDispatchTouch(action, x, y);
 }
 
 // Java: NativeBridge.nativeDestroy()

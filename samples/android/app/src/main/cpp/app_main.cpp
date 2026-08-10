@@ -52,6 +52,12 @@ void appEvent(evk::EventId id, const void* data) {
             }
             break;
         }
+        case evk::EventId::Touch: {
+            const auto* d = static_cast<const evk::TouchData*>(data);
+            EVK_LOGI("raw touch action={} at ({:.1f},{:.1f})", d->action, d->x, d->y);
+            esxDispatchTouch(d->action, d->x, d->y);
+            break;
+        }
         case evk::EventId::UiClick: {
             const auto* d = static_cast<const evk::UiClickData*>(data);
             if (d->view == g_button) {

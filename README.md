@@ -2,7 +2,7 @@
 
 A minimal, self-contained 2D rendering framework extracted from `estarx`.
 It separates platform-agnostic code from platform-specific shells,
-with Android (Vulkan) and iOS (Metal) supported.
+with Android (Vulkan) supported.
 
 > 📘 **中文文档**：详见 `文档/README.md`（索引）、`文档/构建指南.md`、`文档/架构设计.md`、`文档/源码导读.md`。
 
@@ -37,14 +37,8 @@ estarx_vulkan/
 ├── platform/android/            # Android JNI bridge + SurfaceView
 │   ├── cpp/bridge.cpp
 │   └── java/com/estarx/vulkan/
-├── platform/ios/                # iOS Obj-C++ shell + Metal renderer
-│   ├── EVKRenderView.{h,mm}     # UIView thin shell (CAMetalLayer-backed)
-│   ├── EVKMetalRenderer.{h,mm}  # Metal renderer for ui::Canvas
-│   └── cpp/bridge.{h,mm}        # view ↔ core forwarding
 ├── samples/android/             # Runnable Android sample app
 │   └── app/src/main/cpp/app_main.cpp  # Sample: builds views, handles events
-├── samples/ios/                 # Runnable iOS sample app (Xcode project,
-│                                #   shares app_main.cpp with the Android sample)
 ├── third_party/
 │   ├── spdlog/                  # Header-only logging library
 │   └── glm/                     # Header-only math library (matrix helpers)
@@ -60,20 +54,6 @@ cd estarx_vulkan
 
 The APK is produced at:
 `samples/android/app/build/outputs/apk/debug/app-debug.apk`
-
-## Build the iOS sample
-
-```bash
-cd estarx_vulkan/samples/ios
-xcodebuild -project estarx_ios.xcodeproj -scheme estarx_ios \
-    -destination 'generic/platform=iOS Simulator' \
-    CODE_SIGNING_ALLOWED=NO build
-```
-
-Or open `samples/ios/estarx_ios.xcodeproj` in Xcode and Run. The iOS sample
-shares the same `app_main.cpp` demo logic as the Android sample; rendering
-goes through the Metal backend in `platform/ios/EVKMetalRenderer` instead of
-the Vulkan core. (Device builds need your own signing team.)
 
 ## Use the framework in your own Android project
 
@@ -104,6 +84,4 @@ the Vulkan core. (Device builds need your own signing team.)
 
 Implement `evk::IPlatform` for your windowing system (GLFW, Win32, etc.) and
 construct `evk::Renderer` with it. Only `createVulkanSurface`, `getSurfaceSize`
-and `log` need to be provided. (iOS does not use this path: Vulkan has no
-native iOS driver, so its shell ships a Metal renderer that consumes the same
-`ui::Canvas` — see `platform/ios/`.)
+and `log` need to be provided.
