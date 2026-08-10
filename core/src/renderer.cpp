@@ -488,6 +488,11 @@ bool Renderer::createSwapchain() {
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     // preTransform 用 surface 当前变换（如手机旋转），交给系统处理而不是自己转。
     createInfo.preTransform = caps.currentTransform;
+    // 记录下来：recordCommandBuffer 的投影与裁剪要按它做旋转补偿，
+    // 否则折叠屏内屏竖持（currentTransform=ROTATE_90）时画面是横的。
+    surfaceTransform_ = caps.currentTransform;
+    logMessage(platform_, LogLevel::Info, "evk", "swapchain extent=%ux%u transform=%d",
+               extent.width, extent.height, static_cast<int>(caps.currentTransform));
     // compositeAlpha 不透明：不与系统里其它内容做 alpha 合成。
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode = presentMode;
@@ -1094,6 +1099,13 @@ void Renderer::requestSwapchainRebuild() {
 }
 
 bool Renderer::render(const ui::Canvas& canvas) {
+    // 尺寸变化（旋转等）时先重建 swapchain 再画帧：否则本帧会按旧 swapchainExtent_
+    // 投影、画进旧尺寸的图像，呈现出去的是变形/裁剪的画面；本渲染器是按需模型，
+    // 之后没有新帧覆盖，错误会一直挂到下次事件。
+    if (framebufferResized_) {
+        framebufferResized_ = false;
+        recreateSwapchain();
+    }
     // 每帧流程：等待 fence、获取图像、录制命令、提交执行、最后呈现。
     // ① 等本帧槽位的 fence：确保它上一轮的渲染已完成，
     // 这把 CPU 领先 GPU 的帧数限制在 kMaxFramesInFlight 以内，防止无限堆积。
@@ -1169,11 +1181,10 @@ bool Renderer::render(const ui::Canvas& canvas) {
 
     result = vkQueuePresentKHR(presentQueue_, &presentInfo);
     // present 阶段也可能提示 surface 和 swapchain 已经不匹配。
-    // OUT_OF_DATE / SUBOPTIMAL 都可能在 present 才暴露；加上平台的 resized 标志，
-    // 三种来源统一处理：清标志、安排重建，但本帧仍算成功。
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || framebufferResized_) {
-        framebufferResized_ = false;
-        recreateSwapchain();
+    // OUT_OF_DATE / SUBOPTIMAL 都可能在这里才暴露：只置标志位，
+    // 统一交给下一帧开头的检查做重建（避免 present 后立刻 vkDeviceWaitIdle）。
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        framebufferResized_ = true;
     } else if (result != VK_SUCCESS) {
         logMessage(platform_, LogLevel::Error, "evk", "vkQueuePresentKHR failed: %d", result);
         return false;
@@ -1228,13 +1239,46 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
 
-    // 像素坐标 → NDC 的正交投影（原点在左上角，y 向下）。
+    // 布局/视觉尺寸（app 坐标空间 = 用户实际看到的方向）：
+    // 90/270 度变换下 buffer 宽高与视觉宽高互换。
+    const float bufferW = static_cast<float>(swapchainExtent_.width);
+    const float bufferH = static_cast<float>(swapchainExtent_.height);
+    const bool dimsSwapped = (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+                              surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR);
+    const float visualW = dimsSwapped ? bufferH : bufferW;
+    const float visualH = dimsSwapped ? bufferW : bufferH;
+
+    // 像素坐标 → NDC 的正交投影（原点在左上角，y 向下，基于视觉尺寸）。
     // 注意 glm::ortho 第三/四参数是 bottom/top：Vulkan 正 viewport 高度下
     // NDC +y 朝 framebuffer 下方，要 y 向下需传 bottom=0、top=height。
     // 效果：窗口左上映射到 NDC (-1,-1)、右下映射到 (1,1)；z 用不到，给 [-1,1] 即可。
-    glm::mat4 mvp = glm::ortho(0.0f, static_cast<float>(swapchainExtent_.width),
-                               0.0f, static_cast<float>(swapchainExtent_.height),
-                               -1.0f, 1.0f);
+    glm::mat4 mvp = glm::ortho(0.0f, visualW, 0.0f, visualH, -1.0f, 1.0f);
+
+    // surface 旋转变换补偿：呈现时系统把 buffer 按 currentTransform 旋转上屏，
+    // 这里预先把 NDC 反向旋转，上屏后内容回到正立方向。
+    // 90/180/270 在 NDC 平面内是精确换轴（glm::mat4 按列填充）：
+    if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
+        // (x, y) -> (y, -x)
+        const glm::mat4 rot(0.0f, -1.0f, 0.0f, 0.0f,
+                            1.0f,  0.0f, 0.0f, 0.0f,
+                            0.0f,  0.0f, 1.0f, 0.0f,
+                            0.0f,  0.0f, 0.0f, 1.0f);
+        mvp = rot * mvp;
+    } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
+        // (x, y) -> (-x, -y)
+        const glm::mat4 rot(-1.0f,  0.0f, 0.0f, 0.0f,
+                             0.0f, -1.0f, 0.0f, 0.0f,
+                             0.0f,  0.0f, 1.0f, 0.0f,
+                             0.0f,  0.0f, 0.0f, 1.0f);
+        mvp = rot * mvp;
+    } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+        // (x, y) -> (-y, x)
+        const glm::mat4 rot( 0.0f, 1.0f, 0.0f, 0.0f,
+                            -1.0f, 0.0f, 0.0f, 0.0f,
+                             0.0f, 0.0f, 1.0f, 0.0f,
+                             0.0f, 0.0f, 0.0f, 1.0f);
+        mvp = rot * mvp;
+    }
 
     // 逐批绘制：每批共享一个 clip，裁剪矩形取 clip 与 swapchain 的交集。
     for (const auto& batch : canvas.batches()) {
@@ -1246,19 +1290,30 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
         vkCmdPushConstants(cmd, pipelineLayout_, VK_SHADER_STAGE_VERTEX_BIT,
                            0, sizeof(mvp), &mvp);
 
-        // clip 与屏幕矩形求交：批的裁剪框可能部分或全部在屏外。
-        float sw = static_cast<float>(swapchainExtent_.width);
-        float sh = static_cast<float>(swapchainExtent_.height);
-        ui::Rect clip = ui::Rect::intersect(batch.clip, {0.0f, 0.0f, sw, sh});
+        // clip 与屏幕矩形求交（在视觉空间进行，与 app 布局坐标一致）。
+        ui::Rect clip = ui::Rect::intersect(batch.clip, {0.0f, 0.0f, visualW, visualH});
+
+        // 视觉空间的 clip 旋转到 buffer 像素空间（与上面的 NDC 补偿同向）：
+        // 90°: (x,y)->(y, W-x-w)，宽高互换；180°: 两轴各自翻转；270°: 90° 的逆。
+        ui::Rect bclip;
+        if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
+            bclip = {clip.y, visualW - clip.x - clip.w, clip.h, clip.w};
+        } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
+            bclip = {visualW - clip.x - clip.w, visualH - clip.y - clip.h, clip.w, clip.h};
+        } else if (surfaceTransform_ == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+            bclip = {visualH - clip.y - clip.h, clip.x, clip.h, clip.w};
+        } else {
+            bclip = clip;
+        }
 
         // 转 int32 时 clamp：offset 不小于 0，且 offset+extent 不超出 swapchain。
         // 左上角 clamp 到 >= 0：scissor 的 offset 不能为负。
-        int32_t ox = std::max(0, static_cast<int32_t>(clip.x));
-        int32_t oy = std::max(0, static_cast<int32_t>(clip.y));
+        int32_t ox = std::max(0, static_cast<int32_t>(bclip.x));
+        int32_t oy = std::max(0, static_cast<int32_t>(bclip.y));
         // 右下角 clamp 到 swapchain 尺寸内，再减去 offset 得到宽高。
-        int32_t ex = std::min(static_cast<int32_t>(clip.x + clip.w),
+        int32_t ex = std::min(static_cast<int32_t>(bclip.x + bclip.w),
                               static_cast<int32_t>(swapchainExtent_.width)) - ox;
-        int32_t ey = std::min(static_cast<int32_t>(clip.y + clip.h),
+        int32_t ey = std::min(static_cast<int32_t>(bclip.y + bclip.h),
                               static_cast<int32_t>(swapchainExtent_.height)) - oy;
         // 交集为空（批完全在屏外）就跳过。
         if (ex <= 0 || ey <= 0) {

@@ -98,7 +98,16 @@ Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass /*clazz*/, jo
     EVK_LOGI("Vulkan renderer initialized");
     // 平台壳的"画一帧"实现注册给 core，App 的 requestRender() 由此触发。
     evk::setFrameFunc(&renderFrame);
-    // App 的第一个事件：业务层（EventFunc）从这里开始接管。
+    // AppStart 之前先报一次 SurfaceChanged：initialize() 成功后 ANativeWindow 已建立，
+    // 取到的是 surface 的真实像素尺寸，App 建视图树时即可按真实像素布局。
+    // 之后的尺寸变化仍由 nativeResize 通道上报。
+    uint32_t surfaceWidth = 0;
+    uint32_t surfaceHeight = 0;
+    g_platform->getSurfaceSize(&surfaceWidth, &surfaceHeight);
+    evk::SurfaceChangedData initSize{ static_cast<int32_t>(surfaceWidth),
+                                      static_cast<int32_t>(surfaceHeight) };
+    evk::dispatchEvent(evk::EventId::SurfaceChanged, &initSize);
+    // 业务层（EventFunc）从这里开始接管。
     evk::dispatchEvent(evk::EventId::AppStart, nullptr);
 }
 

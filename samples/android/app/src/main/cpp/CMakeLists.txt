@@ -32,6 +32,10 @@ execute_process(
 
 add_library(estarx_vulkan SHARED
     app_main.cpp
+    app_event.cpp
+    global.cpp
+    panel_view.cpp
+    button_view.cpp
     ${EVK_ROOT}/platform/android/cpp/bridge.cpp
     ${EVK_ROOT}/core/src/event.cpp
     ${EVK_ROOT}/core/src/render_loop.cpp

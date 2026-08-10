@@ -1,84 +1,53 @@
-// Sample App 层：演示 esx 视图 ABI 的用法。
+// Sample App 入口：把事件分发器挂到 core，AppStart 时建视图树。
+//
+// 事件处理的两种方式（参考 estarxapp 的 app 侧结构）：
+//   1. global 全局监听（global.cpp，静态期自注册）：给全局变量赋值
+//      （真实像素尺寸、缩放比），并转发原始触摸到 core 的点击合成 helper；
+//   2. 视图回调（panel_view.cpp / button_view.cpp，建视图时自注册）：
+//      事件落在视图上时触发，如 Draw 事件触发视图重绘自己。
 //
 // 视图树：
 //   root (GROUP，铺满 surface)
-//   ├── panel  (RECT, 深蓝背景, 100,200 880x600)，Draw 回调里画 RGB 渐变三角形
-//   └── button (RECT, 绿/橙背景, 340,1000 400x160)，点击切换颜色并重绘
-//
-// 事件回调在 .so 加载时即注册（静态初始化），保证 AppStart 不丢失。
+//   ├── panel  (RECT, 深蓝背景)，Draw 回调里画 RGB 渐变三角形
+//   └── button (RECT, 绿/橙背景)，点击切换颜色并重绘
+
+#include "app_event.h"
+#include "button_view.h"
+#include "global.h"
+#include "panel_view.h"
 
 #include "evk/esx_view.h"
 #include "evk/event.h"
 #include "evk/log.h"
-#include "evk/render_loop.h"
 
 namespace {
 
 esx_view g_root = 0;
-esx_view g_panel = 0;
-esx_view g_button = 0;
 
-bool g_buttonOrange = false;
-constexpr uint32_t kButtonGreen = 0x3CB371FF;
-constexpr uint32_t kButtonOrange = 0xE07020FF;
-
-void appEvent(evk::EventId id, const void* data) {
-    switch (id) {
-        case evk::EventId::AppStart: {
-            g_root = esx_create_view(ESX_VIEW_GROUP, 0, 0, 0, 0, 0);
-            esx_set_root_view(g_root);
-
-            g_panel = esx_create_view(ESX_VIEW_RECT, 100, 200, 880, 600, g_root);
-            esx_view_set_background(g_panel, 0x1B2A4AFF); // 深蓝不透明
-
-            g_button = esx_create_view(ESX_VIEW_RECT, 340, 1000, 400, 160, g_root);
-            esx_view_set_background(g_button, kButtonGreen); // 绿色
-            EVK_LOGI("view tree created: root={} panel={} button={}", g_root, g_panel, g_button);
-            break;
-        }
-        case evk::EventId::SurfaceChanged: {
-            const auto* d = static_cast<const evk::SurfaceChangedData*>(data);
-            esx_view_set_bounds(g_root, 0, 0,
-                                static_cast<float>(d->width), static_cast<float>(d->height));
-            break;
-        }
-        case evk::EventId::Draw: {
-            const auto* d = static_cast<const evk::DrawData*>(data);
-            if (d->view == g_panel) {
-                // 红绿蓝渐变三角形，坐标相对 panel 左上角。
-                esx_draw_triangle(g_panel,
-                                  440, 60, 790, 500, 90, 500,
-                                  0xFF0000FF, 0x00FF00FF, 0x0000FFFF);
-            }
-            break;
-        }
-        case evk::EventId::Touch: {
-            const auto* d = static_cast<const evk::TouchData*>(data);
-            EVK_LOGI("raw touch action={} at ({:.1f},{:.1f})", d->action, d->x, d->y);
-            esxDispatchTouch(d->action, d->x, d->y);
-            break;
-        }
-        case evk::EventId::UiClick: {
-            const auto* d = static_cast<const evk::UiClickData*>(data);
-            if (d->view == g_button) {
-                g_buttonOrange = !g_buttonOrange;
-                uint32_t color = g_buttonOrange ? kButtonOrange : kButtonGreen;
-                esx_view_set_background(g_button, color);
-                EVK_LOGI("UiClick on button at ({:.1f},{:.1f}), background -> #{:08X}",
-                         d->x, d->y, color);
-                evk::requestRender();
-            }
-            break;
-        }
-        default:
-            break;
+void layoutRoot() {
+    if (g_root != 0) {
+        esx_view_set_bounds(g_root, 0, 0, g_screenWidth, g_screenHeight);
     }
 }
 
-// 静态初始化自注册：.so load 时即注册事件回调，保证 AppStart 不丢失。
+void onAppStart(evk::EventId /*id*/, esx_view /*view*/, const void* /*data*/) {
+    g_root = esx_create_view(ESX_VIEW_GROUP, 0, 0, 0, 0, 0);
+    esx_set_root_view(g_root);
+    layoutRoot();
+
+    const esx_view panel = panelViewCreate(g_root);
+    const esx_view button = buttonViewCreate(g_root);
+    EVK_LOGI("view tree created: root={} panel={} button={}", g_root, panel, button);
+}
+
+// 静态初始化自注册：.so load 时即把分发器挂到 core 并注册入口监听，
+// 保证 AppStart 不丢失。
 struct EventAutoRegister {
     EventAutoRegister() {
-        evk::setEventFunc(appEvent);
+        evk::setEventFunc(appEventEntry);
+        appRegisterEvent(evk::EventId::AppStart, 0, onAppStart);
+        appRegisterEvent(evk::EventId::SurfaceChanged, 0,
+                         [](evk::EventId, esx_view, const void*) { layoutRoot(); });
     }
 };
 EventAutoRegister g_autoRegister;

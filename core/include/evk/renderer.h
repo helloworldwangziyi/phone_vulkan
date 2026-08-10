@@ -93,6 +93,9 @@ private:
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     bool framebufferResized_ = false;
+    // createSwapchain 时记录的 surface 当前变换（折叠屏内屏等"自然方向为横"的屏，
+    // 竖持时上报 ROTATE_90）：呈现时系统按它旋转帧缓冲，投影与裁剪要做补偿。
+    VkSurfaceTransformFlagBitsKHR surfaceTransform_ = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
