@@ -48,6 +48,10 @@ target_include_directories(estarx_vulkan_core
 )
 
 if (ANDROID)
+    # renderer.cpp / platform_android.cpp 用到 VK_KHR_android_surface 扩展的类型与常量，
+    # 必须在包含 vulkan.h 前定义该宏才可见。
+    # （sample 工程的 CMakeLists 独立编译源码、不经由本文件，仍需各自定义。）
+    add_compile_definitions(VK_USE_PLATFORM_ANDROID_KHR)
     find_library(vulkan-lib vulkan)
     target_link_libraries(estarx_vulkan_core PUBLIC ${vulkan-lib})
 else()

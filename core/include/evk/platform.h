@@ -2,20 +2,12 @@
 
 #include <vulkan/vulkan.h>
 #include <cstdint>
-#include <cstdarg>
 
 namespace evk {
 
-enum class LogLevel {
-    Verbose,
-    Debug,
-    Info,
-    Warn,
-    Error
-};
-
-// Platform abstraction. The renderer uses this to create a VkSurfaceKHR,
-// query the drawing area size, and emit log messages.
+// Platform abstraction. The renderer uses this to create a VkSurfaceKHR
+// and query the drawing area size. Logging goes through evk/log.h (EVK_LOG*
+// macros) directly, not through this interface.
 class IPlatform {
 public:
     virtual ~IPlatform() = default;
@@ -25,12 +17,6 @@ public:
 
     // Return the current size of the surface in pixels.
     virtual void getSurfaceSize(uint32_t* width, uint32_t* height) = 0;
-
-    // Emit a log message.
-    virtual void log(LogLevel level, const char* tag, const char* fmt, va_list args) = 0;
 };
-
-// Helper to emit a formatted log through the platform.
-void logMessage(IPlatform* platform, LogLevel level, const char* tag, const char* fmt, ...);
 
 } // namespace evk

@@ -4,8 +4,6 @@
 #include <android/native_window_jni.h>
 #include <jni.h>
 
-#include <cstdio>
-
 #include "evk/log.h"
 
 namespace evk {
@@ -42,13 +40,13 @@ public:
 
     bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) override {
         if (!surface_) {
-            logMessage(this, LogLevel::Error, "evk", "Android surface is null");
+            EVK_LOGE("Android surface is null");
             return false;
         }
 
         window_ = ANativeWindow_fromSurface(env_, surface_);
         if (!window_) {
-            logMessage(this, LogLevel::Error, "evk", "ANativeWindow_fromSurface failed");
+            EVK_LOGE("ANativeWindow_fromSurface failed");
             return false;
         }
 
@@ -57,7 +55,7 @@ public:
         createInfo.window = window_;
 
         if (vkCreateAndroidSurfaceKHR(instance, &createInfo, nullptr, surface) != VK_SUCCESS) {
-            logMessage(this, LogLevel::Error, "evk", "vkCreateAndroidSurfaceKHR failed");
+            EVK_LOGE("vkCreateAndroidSurfaceKHR failed");
             return false;
         }
         return true;
@@ -70,20 +68,6 @@ public:
         } else {
             *width = 0;
             *height = 0;
-        }
-    }
-
-    void log(LogLevel level, const char* tag, const char* fmt, va_list args) override {
-        // renderer 传进来的是 printf 风格格式串，先格式化成文本再走 spdlog，
-        // 避免 % 占位符与 fmt 的花括号语法冲突。
-        char buffer[1024];
-        vsnprintf(buffer, sizeof(buffer), fmt, args);
-        switch (level) {
-            case LogLevel::Verbose: SPDLOG_TRACE("[{}] {}", tag, buffer);    break;
-            case LogLevel::Debug:   SPDLOG_DEBUG("[{}] {}", tag, buffer);    break;
-            case LogLevel::Info:    SPDLOG_INFO("[{}] {}", tag, buffer);     break;
-            case LogLevel::Warn:    SPDLOG_WARN("[{}] {}", tag, buffer);     break;
-            case LogLevel::Error:   SPDLOG_ERROR("[{}] {}", tag, buffer);    break;
         }
     }
 
@@ -100,14 +84,6 @@ IPlatform* createAndroidPlatform(JNIEnv* env, jobject surface) {
 
 void destroyAndroidPlatform(IPlatform* platform) {
     delete platform;
-}
-
-void logMessage(IPlatform* platform, LogLevel level, const char* tag, const char* fmt, ...) {
-    if (!platform) return;
-    va_list args;
-    va_start(args, fmt);
-    platform->log(level, tag, fmt, args);
-    va_end(args);
 }
 
 } // namespace evk

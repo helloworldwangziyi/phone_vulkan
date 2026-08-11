@@ -2,6 +2,8 @@
 #include "evk/renderer.h"
 // 预编译 SPIR-V 字节码（assets::ui_vert_spv / ui_frag_spv），编译期内嵌进二进制，免运行时读文件。
 #include "evk/assets/ui_shaders.h"
+// EVK_LOGD/I/W/E 日志宏：spdlog 封装，全局统一的日志入口。
+#include "evk/log.h"
 
 // std::max / std::min：交换链尺寸与裁剪矩形的边界 clamp 要用。
 #include <algorithm>
@@ -30,25 +32,20 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT /*type*/,
     const VkDebugUtilsMessengerCallbackDataEXT* data,
-    void* userData) {
+    void* /*userData*/) {
 
-    // userData 是创建 messenger 时传入的 IPlatform*，取回后用来打日志。
-    auto* platform = static_cast<IPlatform*>(userData);
-    // 将 Vulkan 校验消息严重级别映射到渲染器的日志级别。
-    // severity 是位掩码且按位递增，用 >= 比较即可分级，默认 Debug 兜底。
-    LogLevel level = LogLevel::Debug;
-    // ERROR 及以上 → Error 日志。
+    // 将 Vulkan 校验消息严重级别映射到日志级别。
+    // severity 是位掩码且按位递增，用 >= 比较即可分级，Debug 兜底。
+    // 消息前缀 evk-validation 便于在日志里过滤校验层输出。
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        level = LogLevel::Error;
-    // WARNING → Warn 日志。
+        EVK_LOGE("[evk-validation] {}", data->pMessage);
     } else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        level = LogLevel::Warn;
-    // INFO → Info 日志；更低的 VERBOSE 保持 Debug。
+        EVK_LOGW("[evk-validation] {}", data->pMessage);
     } else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        level = LogLevel::Info;
+        EVK_LOGI("[evk-validation] {}", data->pMessage);
+    } else {
+        EVK_LOGD("[evk-validation] {}", data->pMessage);
     }
-    // 校验消息原样转发到平台日志，tag 标成 evk-validation 便于过滤。
-    logMessage(platform, level, "evk-validation", "%s", data->pMessage);
     // 返回 VK_FALSE 表示"不中止触发这条消息的 Vulkan 调用"：校验层只报告、不改变程序行为；
     // 返回 VK_TRUE 才会让该调用以 VK_ERROR_VALIDATION_FAILED_EXT 失败（几乎只用于调试）。
     return VK_FALSE;
@@ -242,7 +239,7 @@ bool Renderer::createInstance() {
 
     // vkCreateInstance 是整个 Vulkan 栈第一个真正干活的调用；失败通常是缺扩展或驱动问题。
     if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateInstance failed");
+        EVK_LOGE("vkCreateInstance failed");
         return false;
     }
 
@@ -259,9 +256,9 @@ bool Renderer::createInstance() {
             VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        // pfnUserCallback 指向前面的 debugCallback；pUserData 透传 IPlatform 供回调打日志。
+        // pfnUserCallback 指向前面的 debugCallback；回调直接走 spdlog，不需要 pUserData。
         debugCreateInfo.pfnUserCallback = debugCallback;
-        debugCreateInfo.pUserData = platform_;
+        debugCreateInfo.pUserData = nullptr;
 
         // vkCreateDebugUtilsMessengerEXT 是扩展函数，不在 loader 的核心导出表里，
         // 必须用 vkGetInstanceProcAddr 按名字动态加载；加载不到就跳过（缺调试不影响渲染）。
@@ -289,7 +286,7 @@ bool Renderer::pickPhysicalDevice() {
     vkEnumeratePhysicalDevices(instance_, &count, nullptr);
     // count 为 0 说明设备上根本没有 Vulkan 驱动，直接失败。
     if (count == 0) {
-        logMessage(platform_, LogLevel::Error, "evk", "no Vulkan-capable GPU found");
+        EVK_LOGE("no Vulkan-capable GPU found");
         return false;
     }
 
@@ -339,7 +336,7 @@ bool Renderer::pickPhysicalDevice() {
     }
 
     // 遍历完所有 GPU 都不满足要求，只能报错放弃。
-    logMessage(platform_, LogLevel::Error, "evk", "no suitable GPU found");
+    EVK_LOGE("no suitable GPU found");
     return false;
 }
 
@@ -403,7 +400,7 @@ bool Renderer::createLogicalDevice() {
     // 逻辑设备 vs 物理设备：physical 是硬件本身，logical 是我们与硬件交互的"会话"，
     // 之后几乎所有 Vulkan 调用都以 device_ 为第一个参数。
     if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateDevice failed");
+        EVK_LOGE("vkCreateDevice failed");
         return false;
     }
 
@@ -512,8 +509,8 @@ bool Renderer::createSwapchain() {
     // 记录下来：recordCommandBuffer 的投影与裁剪要按它做旋转补偿，
     // 否则折叠屏内屏竖持（currentTransform=ROTATE_90）时画面是横的。
     surfaceTransform_ = caps.currentTransform;
-    logMessage(platform_, LogLevel::Info, "evk", "swapchain extent=%ux%u transform=%d",
-               extent.width, extent.height, static_cast<int>(caps.currentTransform));
+    EVK_LOGI("swapchain extent={}x{} transform={}",
+             extent.width, extent.height, static_cast<int>(caps.currentTransform));
     // compositeAlpha 不透明：不与系统里其它内容做 alpha 合成。
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     createInfo.presentMode = presentMode;
@@ -554,7 +551,7 @@ bool Renderer::createSwapchain() {
 
     // 创建交换链；失败多为所选参数组合不被驱动支持。
     if (vkCreateSwapchainKHR(device_, &createInfo, nullptr, &swapchain_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateSwapchainKHR failed");
+        EVK_LOGE("vkCreateSwapchainKHR failed");
         return false;
     }
 
@@ -594,7 +591,7 @@ bool Renderer::createImageViews() {
         createInfo.subresourceRange.layerCount = 1;
 
         if (vkCreateImageView(device_, &createInfo, nullptr, &swapchainImageViews_[i]) != VK_SUCCESS) {
-            logMessage(platform_, LogLevel::Error, "evk", "vkCreateImageView failed");
+            EVK_LOGE("vkCreateImageView failed");
             return false;
         }
     }
@@ -658,7 +655,7 @@ bool Renderer::createRenderPass() {
     createInfo.pDependencies = &dependency;
 
     if (vkCreateRenderPass(device_, &createInfo, nullptr, &renderPass_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateRenderPass failed");
+        EVK_LOGE("vkCreateRenderPass failed");
         return false;
     }
     return true;
@@ -675,7 +672,7 @@ VkShaderModule Renderer::createShaderModule(const uint32_t* code, size_t codeSiz
     // 这里开销很小：SPIR-V 到 GPU 指令的真正编译发生在管线创建时。
     VkShaderModule module = VK_NULL_HANDLE;
     if (vkCreateShaderModule(device_, &createInfo, nullptr, &module) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateShaderModule failed");
+        EVK_LOGE("vkCreateShaderModule failed");
         return VK_NULL_HANDLE;
     }
     return module;
@@ -854,7 +851,7 @@ bool Renderer::createGraphicsPipeline() {
 
     // 布局创建失败也要先销毁两个 shader module 再返回，避免泄漏。
     if (vkCreatePipelineLayout(device_, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreatePipelineLayout failed");
+        EVK_LOGE("vkCreatePipelineLayout failed");
         vkDestroyShaderModule(device_, vertModule, nullptr);
         vkDestroyShaderModule(device_, fragModule, nullptr);
         return false;
@@ -881,7 +878,7 @@ bool Renderer::createGraphicsPipeline() {
     // vkCreateGraphicsPipelines 是最贵的调用之一：这里触发 SPIR-V 到 GPU 指令的真正编译；
     // 第二参数是管线缓存（可加速重复创建），VK_NULL_HANDLE 表示不用。
     if (vkCreateGraphicsPipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateGraphicsPipelines failed");
+        EVK_LOGE("vkCreateGraphicsPipelines failed");
         vkDestroyShaderModule(device_, vertModule, nullptr);
         vkDestroyShaderModule(device_, fragModule, nullptr);
         return false;
@@ -914,7 +911,7 @@ bool Renderer::createFramebuffers() {
         createInfo.layers = 1;
 
         if (vkCreateFramebuffer(device_, &createInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
-            logMessage(platform_, LogLevel::Error, "evk", "vkCreateFramebuffer failed");
+            EVK_LOGE("vkCreateFramebuffer failed");
             return false;
         }
     }
@@ -947,7 +944,7 @@ bool Renderer::createCommandPool() {
     poolInfo.queueFamilyIndex = graphicsFamily;
 
     if (vkCreateCommandPool(device_, &poolInfo, nullptr, &commandPool_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateCommandPool failed");
+        EVK_LOGE("vkCreateCommandPool failed");
         return false;
     }
     return true;
@@ -969,7 +966,7 @@ bool Renderer::createVertexBuffer() {
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateBuffer(device_, &bufferInfo, nullptr, &vertexBuffer_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkCreateBuffer failed");
+        EVK_LOGE("vkCreateBuffer failed");
         return false;
     }
 
@@ -989,7 +986,7 @@ bool Renderer::createVertexBuffer() {
 
     // 按需求尺寸和选定类型分配设备内存。
     if (vkAllocateMemory(device_, &allocInfo, nullptr, &vertexBufferMemory_) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkAllocateMemory failed");
+        EVK_LOGE("vkAllocateMemory failed");
         return false;
     }
 
@@ -1001,8 +998,7 @@ bool Renderer::createVertexBuffer() {
 void Renderer::uploadVertices(const ui::UiVertex* data, uint32_t count) {
     // 超出预分配容量就截断并告警：宁可丢一部分 UI，也不能越界写显存。
     if (count > kVertexCapacity) {
-        logMessage(platform_, LogLevel::Warn, "evk",
-            "vertex count %u exceeds capacity %u, truncated", count, kVertexCapacity);
+        EVK_LOGW("vertex count {} exceeds capacity {}, truncated", count, kVertexCapacity);
         count = kVertexCapacity;
     }
     // 空帧直接返回，连 map 都省了。
@@ -1031,7 +1027,7 @@ bool Renderer::createCommandBuffers() {
     allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers_.size());
 
     if (vkAllocateCommandBuffers(device_, &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
-        logMessage(platform_, LogLevel::Error, "evk", "vkAllocateCommandBuffers failed");
+        EVK_LOGE("vkAllocateCommandBuffers failed");
         return false;
     }
     return true;
@@ -1060,7 +1056,7 @@ bool Renderer::createSyncObjects() {
         if (vkCreateSemaphore(device_, &semInfo, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
             vkCreateSemaphore(device_, &semInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS ||
             vkCreateFence(device_, &fenceInfo, nullptr, &inFlightFences_[i]) != VK_SUCCESS) {
-            logMessage(platform_, LogLevel::Error, "evk", "createSyncObjects failed");
+            EVK_LOGE("createSyncObjects failed");
             return false;
         }
     }
@@ -1151,7 +1147,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
             continue;
         // SUBOPTIMAL 也算拿到图像（只是与 surface 不再完全匹配），照常渲染，present 后再重建。
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            logMessage(platform_, LogLevel::Error, "evk", "vkAcquireNextImageKHR failed: %d", result);
+            EVK_LOGE("vkAcquireNextImageKHR failed: {}", static_cast<int>(result));
             return false;
         }
 
@@ -1193,7 +1189,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
         // 提交到图形队列；末尾的 fence 在这批命令全部执行完后由 GPU 置位，
         // 正是步骤①等待的那个信号。
         if (vkQueueSubmit(graphicsQueue_, 1, &submitInfo, inFlightFences_[currentFrame_]) != VK_SUCCESS) {
-            logMessage(platform_, LogLevel::Error, "evk", "vkQueueSubmit failed");
+            EVK_LOGE("vkQueueSubmit failed");
             return false;
         }
 
@@ -1216,7 +1212,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
             framebufferResized_ = true;
             continue;
         } else if (result != VK_SUCCESS) {
-            logMessage(platform_, LogLevel::Error, "evk", "vkQueuePresentKHR failed: %d", result);
+            EVK_LOGE("vkQueuePresentKHR failed: {}", static_cast<int>(result));
             return false;
         }
 
@@ -1227,9 +1223,8 @@ bool Renderer::render(const ui::Canvas& canvas) {
 
     // 重试耗尽（surface 持续变化中，如快速连续旋转）：放弃本帧不算失败，
     // 后续尺寸事件还会触发渲染，届时继续收敛。
-    logMessage(platform_, LogLevel::Warn, "evk",
-               "render: swapchain still out of date after %u attempts, frame skipped",
-               kMaxFrameAttempts);
+    EVK_LOGW("render: swapchain still out of date after {} attempts, frame skipped",
+             kMaxFrameAttempts);
     return true;
 }
 
