@@ -16,19 +16,25 @@ estarx_vulkan/
 │   ├── include/evk/
 │   │   ├── renderer.h           # evk::Renderer public API
 │   │   ├── platform.h           # IPlatform abstraction
-│   │   ├── event.h              # Cross-platform event dispatch API
+│   │   ├── event.h              # App lifecycle callback API
 │   │   ├── log.h                # spdlog-based logging
-│   │   ├── render_loop.h        # requestRender() / setFrameFunc()
+│   │   ├── render_loop.h        # Dirty frame + platform VSync API
 │   │   ├── esx_view.h           # Handle-based view ABI (esx_view)
 │   │   └── ui/
-│   │       ├── view.h           # View tree (rect/visible/children/hitTest)
+│   │       ├── view.h           # View tree (layout/callbacks/hitTest)
+│   │       ├── input.h          # Cross-platform pointer dispatch
+│   │       ├── animator.h       # VSync-driven per-frame animation
+│   │       ├── controls/        # SDK Button / ScrollView / Navigation controls
 │   │       └── canvas.h         # Per-frame vertex canvas + clip stack
 │   ├── src/
 │   │   ├── renderer.cpp         # Vulkan pipeline; renders a Canvas
 │   │   ├── event.cpp            # Event dispatch implementation
-│   │   ├── render_loop.cpp      # Frame-func registry
-│   │   ├── esx_view.cpp         # View ABI + frame build + touch dispatch
+│   │   ├── render_loop.cpp      # Dirty frame coalescing
+│   │   ├── esx_view.cpp         # View ABI + frame build
 │   │   ├── ui/view.cpp          # View tree implementation
+│   │   ├── ui/input.cpp         # Hit test + click/pan dispatch
+│   │   ├── ui/animator.cpp      # Animation tick driver
+│   │   ├── ui/controls/         # Standard control implementation
 │   │   ├── ui/canvas.cpp        # Canvas implementation
 │   │   └── platform_android.cpp # Android platform implementation
 │   └── shaders/
@@ -37,8 +43,8 @@ estarx_vulkan/
 ├── platform/android/            # Android JNI bridge + SurfaceView
 │   ├── cpp/bridge.cpp
 │   └── java/com/estarx/vulkan/
-├── samples/android/             # Runnable Android sample app
-│   └── app/src/main/cpp/app_main.cpp  # Sample: builds views, handles events
+├── samples/app/                 # Shared cross-platform App C++ sources
+├── samples/android/             # Android-only entry/build/resources
 ├── third_party/
 │   ├── spdlog/                  # Header-only logging library
 │   └── glm/                     # Header-only math library (matrix helpers)
@@ -68,7 +74,12 @@ The APK is produced at:
        path/to/core/src/render_loop.cpp
        path/to/core/src/esx_view.cpp
        path/to/core/src/ui/view.cpp
+       path/to/core/src/ui/input.cpp
+       path/to/core/src/ui/animator.cpp
        path/to/core/src/ui/canvas.cpp
+       path/to/core/src/ui/controls/button.cpp
+       path/to/core/src/ui/controls/scroll_view.cpp
+       path/to/core/src/ui/controls/navigation.cpp
    )
    target_include_directories(my_vulkan PUBLIC
        path/to/core/include

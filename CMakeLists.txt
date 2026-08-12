@@ -35,7 +35,12 @@ add_library(estarx_vulkan_core STATIC
     core/src/renderer.cpp
     core/src/esx_view.cpp
     core/src/ui/view.cpp
+    core/src/ui/input.cpp
+    core/src/ui/animator.cpp
     core/src/ui/canvas.cpp
+    core/src/ui/controls/button.cpp
+    core/src/ui/controls/scroll_view.cpp
+    core/src/ui/controls/navigation.cpp
 )
 
 target_include_directories(estarx_vulkan_core

@@ -31,11 +31,11 @@ execute_process(
 )
 
 add_library(estarx_vulkan SHARED
-    app_main.cpp
-    app_event.cpp
-    global.cpp
-    panel_view.cpp
-    button_view.cpp
+    ${EVK_ROOT}/samples/app/app_main.cpp
+    ${EVK_ROOT}/samples/app/app_metrics.cpp
+    ${EVK_ROOT}/samples/app/app_theme.cpp
+    ${EVK_ROOT}/samples/app/main_page.cpp
+    ${EVK_ROOT}/samples/app/detail_page.cpp
     ${EVK_ROOT}/platform/android/cpp/bridge.cpp
     ${EVK_ROOT}/core/src/event.cpp
     ${EVK_ROOT}/core/src/render_loop.cpp
@@ -43,12 +43,18 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/renderer.cpp
     ${EVK_ROOT}/core/src/esx_view.cpp
     ${EVK_ROOT}/core/src/ui/view.cpp
+    ${EVK_ROOT}/core/src/ui/input.cpp
+    ${EVK_ROOT}/core/src/ui/animator.cpp
     ${EVK_ROOT}/core/src/ui/canvas.cpp
+    ${EVK_ROOT}/core/src/ui/controls/button.cpp
+    ${EVK_ROOT}/core/src/ui/controls/scroll_view.cpp
+    ${EVK_ROOT}/core/src/ui/controls/navigation.cpp
 )
 
 target_include_directories(estarx_vulkan
     PUBLIC
         ${EVK_ROOT}/core/include
+        ${EVK_ROOT}/samples/app
         ${EVK_ROOT}/third_party/spdlog/include
         ${EVK_ROOT}/third_party/glm
     PRIVATE

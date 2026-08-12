@@ -14,7 +14,8 @@ public final class NativeBridge {
 
     public static native void nativeInit(Surface surface);
     public static native void nativeResize(int width, int height);
-    public static native void nativeRender();
+    public static native void nativeBeginFrame(long frameTimeNanos);
     public static native void nativeDestroy();
-    public static native void nativeOnTouch(int action, float x, float y);
+    public static native void nativeOnTouch(int action, int pointerId, float x, float y,
+                                            long eventTimeNanos);
 }

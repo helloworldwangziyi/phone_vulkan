@@ -4,6 +4,9 @@
 #include <memory>
 #include <vector>
 
+#include "evk/esx_view.h"
+#include "evk/ui/input.h"
+
 namespace evk::ui {
 
 // 像素矩形。x/y 为左上角。
@@ -28,6 +31,7 @@ struct Color {
 // 视图树节点。estarx 风格：单一 View 类，任何视图都可有子视图。
 class View {
 public:
+    esx_view handle = 0;
     Rect rect;                    // 相对父视图左上角，像素
     bool visible = true;
     bool hasBackground = false;
@@ -35,6 +39,21 @@ public:
     View* parent = nullptr;
     std::vector<std::unique_ptr<View>> children;
     float actualX = 0, actualY = 0; // 相对屏幕左上角，由 updateActuals 重算
+
+    esx_view_draw_func drawFunc = nullptr;
+    void* drawUserData = nullptr;
+    esx_view_click_func clickFunc = nullptr;
+    void* clickUserData = nullptr;
+    esx_view_pan_func panFunc = nullptr;
+    void* panUserData = nullptr;
+
+    // SDK 控件使用的原始 Pointer 钩子和随 View 生命周期释放的控件状态。
+    PointerHandler pointerHandler = nullptr;
+    void* pointerUserData = nullptr;
+    void (*boundsChangedHandler)(esx_view view, void* userData) = nullptr;
+    void* boundsChangedUserData = nullptr;
+    const void* controlType = nullptr;
+    std::shared_ptr<void> controlState;
 
     // 挂载子视图，返回子视图裸指针（所有权归父视图）。
     View* addChild(std::unique_ptr<View> child);
@@ -49,6 +68,9 @@ public:
 
     // 自身矩形（actual 坐标）。
     Rect actualRect() const { return {actualX, actualY, rect.w, rect.h}; }
+
+    // 点是否同时位于自身及所有可见父视图内。
+    bool containsVisiblePoint(float px, float py) const;
 };
 
 } // namespace evk::ui

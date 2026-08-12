@@ -1,20 +1,18 @@
 #include "evk/esx_view.h"
 
-#include <cmath>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
-#include "evk/event.h"
 #include "evk/log.h"
+#include "evk/render_loop.h"
 #include "evk/ui/canvas.h"
+#include "evk/ui/input.h"
 
 namespace {
 
-// 句柄注册表：uint32_t 句柄 ↔ View* 双向映射，句柄从 1 自增，0 无效。
+// 句柄注册表：句柄从 1 自增，0 无效。
 std::unordered_map<uint32_t, evk::ui::View*> g_handles;
-std::unordered_map<evk::ui::View*, uint32_t> g_views;
-std::unordered_map<uint32_t, esx_view_type> g_types;
 uint32_t g_nextHandle = 1;
 
 // parent=0 创建、尚未挂载进树的视图，所有权由这里持有。
@@ -25,6 +23,28 @@ evk::ui::View* g_root = nullptr;
 
 // 当前帧 canvas：esxBuildFrame 期间有效，其余时间为 nullptr。
 evk::ui::Canvas* g_canvas = nullptr;
+bool g_buildingFrame = false;
+
+class FrameBuildScope {
+public:
+    explicit FrameBuildScope(evk::ui::Canvas& canvas)
+        : previousCanvas_(g_canvas), previousBuildingFrame_(g_buildingFrame) {
+        g_canvas = &canvas;
+        g_buildingFrame = true;
+    }
+
+    ~FrameBuildScope() {
+        g_buildingFrame = previousBuildingFrame_;
+        g_canvas = previousCanvas_;
+    }
+
+    FrameBuildScope(const FrameBuildScope&) = delete;
+    FrameBuildScope& operator=(const FrameBuildScope&) = delete;
+
+private:
+    evk::ui::Canvas* previousCanvas_;
+    bool previousBuildingFrame_;
+};
 
 evk::ui::View* lookupView(esx_view view, const char* caller) {
     if (view == 0) {
@@ -53,61 +73,34 @@ void unregisterSubtree(evk::ui::View* view) {
     for (auto& child : view->children) {
         unregisterSubtree(child.get());
     }
-    auto it = g_views.find(view);
-    if (it != g_views.end()) {
-        g_handles.erase(it->second);
-        g_types.erase(it->second);
-        g_views.erase(it);
-    }
+    g_handles.erase(view->handle);
 }
 
-// 前序遍历：对每个可见且有背景的视图画背景。不可见视图整棵子树跳过。
-void drawBackgrounds(evk::ui::View* view, evk::ui::Canvas& canvas) {
+// 每个节点依次绘制背景、自定义内容、子节点，保证父内容不会盖住子节点。
+void drawViewTree(evk::ui::View* view, evk::ui::Canvas& canvas) {
     if (!view->visible) {
         return;
     }
     if (view->hasBackground) {
         canvas.drawRect(view->actualRect(), clipFor(view), view->background);
     }
-    for (auto& child : view->children) {
-        drawBackgrounds(child.get(), canvas);
-    }
-}
-
-// 前序遍历：对每个可见视图发 Draw 事件（含无背景的 GROUP）。
-void dispatchDraws(evk::ui::View* view) {
-    if (!view->visible) {
-        return;
-    }
-    auto it = g_views.find(view);
-    if (it != g_views.end()) {
-        evk::DrawData data{it->second};
-        evk::dispatchEvent(evk::EventId::Draw, &data);
+    if (view->drawFunc) {
+        view->drawFunc(view->handle, view->drawUserData);
     }
     for (auto& child : view->children) {
-        dispatchDraws(child.get());
+        drawViewTree(child.get(), canvas);
     }
-}
-
-// 触摸状态机。
-struct TouchState {
-    uint32_t target = 0;   // DOWN 时 hitTest 命中的句柄
-    bool cancelled = false;
-    float lastX = 0, lastY = 0;
-    float moved = 0.0f;    // 累计位移（曼哈顿距离）
-};
-TouchState g_touch;
-constexpr float kTouchSlop = 12.0f;
-
-void resetTouch() {
-    g_touch = TouchState{};
 }
 
 } // namespace
 
 extern "C" {
 
-esx_view esx_create_view(esx_view_type type, float x, float y, float w, float h, esx_view parent) {
+esx_view esx_create_view(float x, float y, float w, float h, esx_view parent) {
+    if (g_buildingFrame) {
+        EVK_LOGW("esx_create_view: cannot change the View tree during draw");
+        return 0;
+    }
     auto view = std::make_unique<evk::ui::View>();
     view->rect = {x, y, w, h};
     evk::ui::View* raw = view.get();
@@ -123,26 +116,27 @@ esx_view esx_create_view(esx_view_type type, float x, float y, float w, float h,
     }
 
     uint32_t handle = g_nextHandle++;
+    raw->handle = handle;
     g_handles[handle] = raw;
-    g_views[raw] = handle;
-    g_types[handle] = type;
+    evk::requestRender();
     return handle;
 }
 
 void esx_destroy_view(esx_view view) {
+    if (g_buildingFrame) {
+        EVK_LOGW("esx_destroy_view: cannot change the View tree during draw");
+        return;
+    }
     evk::ui::View* v = lookupView(view, "esx_destroy_view");
     if (!v) {
         return;
     }
 
+    evk::ui::discardPointerForView(view);
     unregisterSubtree(v);
     if (g_root == v) {
         g_root = nullptr;
     }
-    if (g_touch.target == view) {
-        resetTouch();
-    }
-
     // 销毁对象本身：从父视图或未挂载列表里摘除（unique_ptr 释放整棵子树）。
     if (v->parent) {
         auto& siblings = v->parent->children;
@@ -160,9 +154,14 @@ void esx_destroy_view(esx_view view) {
             }
         }
     }
+    evk::requestRender();
 }
 
 void esx_set_root_view(esx_view view) {
+    if (g_buildingFrame) {
+        EVK_LOGW("esx_set_root_view: cannot change the View tree during draw");
+        return;
+    }
     evk::ui::View* v = lookupView(view, "esx_set_root_view");
     if (!v) {
         return;
@@ -171,7 +170,15 @@ void esx_set_root_view(esx_view view) {
         EVK_LOGW("esx_set_root_view: view {} is already attached", view);
         return;
     }
-    g_root = v;
+    if (g_root != v) {
+        evk::ui::cancelAllPointerEvents();
+        v = esxViewFromHandle(view);
+        if (!v) {
+            return;
+        }
+        g_root = v;
+    }
+    evk::requestRender();
 }
 
 void esx_view_set_bounds(esx_view view, float x, float y, float w, float h) {
@@ -180,6 +187,10 @@ void esx_view_set_bounds(esx_view view, float x, float y, float w, float h) {
         return;
     }
     v->rect = {x, y, w, h};
+    if (v->boundsChangedHandler) {
+        v->boundsChangedHandler(view, v->boundsChangedUserData);
+    }
+    evk::requestRender();
 }
 
 void esx_view_set_visible(esx_view view, int32_t visible) {
@@ -187,7 +198,16 @@ void esx_view_set_visible(esx_view view, int32_t visible) {
     if (!v) {
         return;
     }
-    v->visible = (visible != 0);
+    const bool nextVisible = visible != 0;
+    if (!nextVisible && v->visible) {
+        evk::ui::cancelPointerForView(view);
+        v = esxViewFromHandle(view);
+        if (!v) {
+            return;
+        }
+    }
+    v->visible = nextVisible;
+    evk::requestRender();
 }
 
 void esx_view_set_background(esx_view view, uint32_t rgba) {
@@ -197,6 +217,7 @@ void esx_view_set_background(esx_view view, uint32_t rgba) {
     }
     v->background = evk::ui::Color::rgba(rgba);
     v->hasBackground = true;
+    evk::requestRender();
 }
 
 void esx_view_clear_background(esx_view view) {
@@ -205,6 +226,35 @@ void esx_view_clear_background(esx_view view) {
         return;
     }
     v->hasBackground = false;
+    evk::requestRender();
+}
+
+void esx_view_set_draw_callback(esx_view view, esx_view_draw_func func, void* user_data) {
+    evk::ui::View* v = lookupView(view, "esx_view_set_draw_callback");
+    if (!v) {
+        return;
+    }
+    v->drawFunc = func;
+    v->drawUserData = user_data;
+    evk::requestRender();
+}
+
+void esx_view_set_click_callback(esx_view view, esx_view_click_func func, void* user_data) {
+    evk::ui::View* v = lookupView(view, "esx_view_set_click_callback");
+    if (!v) {
+        return;
+    }
+    v->clickFunc = func;
+    v->clickUserData = user_data;
+}
+
+void esx_view_set_pan_callback(esx_view view, esx_view_pan_func func, void* user_data) {
+    evk::ui::View* v = lookupView(view, "esx_view_set_pan_callback");
+    if (!v) {
+        return;
+    }
+    v->panFunc = func;
+    v->panUserData = user_data;
 }
 
 void esx_draw_rect(esx_view view, float x, float y, float w, float h, uint32_t rgba) {
@@ -245,6 +295,47 @@ evk::ui::View* esxRootView() {
     return g_root;
 }
 
+evk::ui::View* esxViewFromHandle(esx_view view) {
+    auto it = g_handles.find(view);
+    return it == g_handles.end() ? nullptr : it->second;
+}
+
+// Navigation 等容器控件用它接管 App 以 parent=0 创建的视图：
+// 所有权从 g_unattached 列表移动为 parent 的子视图（unique_ptr 转移）。
+bool esxAdoptChild(esx_view parent, esx_view child) {
+    if (g_buildingFrame) {
+        EVK_LOGW("esxAdoptChild: cannot change the View tree during draw");
+        return false;
+    }
+    evk::ui::View* p = lookupView(parent, "esxAdoptChild");
+    evk::ui::View* c = lookupView(child, "esxAdoptChild");
+    if (!p || !c) {
+        return false;
+    }
+    if (c->parent != nullptr || c == g_root) {
+        EVK_LOGW("esxAdoptChild: view {} is already attached", child);
+        return false;
+    }
+    // 不能把祖先挂进自己的子树（会成环）。
+    for (evk::ui::View* current = p; current; current = current->parent) {
+        if (current == c) {
+            EVK_LOGW("esxAdoptChild: view {} is an ancestor of {}", child, parent);
+            return false;
+        }
+    }
+    for (auto it = g_unattached.begin(); it != g_unattached.end(); ++it) {
+        if (it->get() == c) {
+            std::unique_ptr<evk::ui::View> owned = std::move(*it);
+            g_unattached.erase(it);
+            p->addChild(std::move(owned));
+            evk::requestRender();
+            return true;
+        }
+    }
+    EVK_LOGW("esxAdoptChild: view {} is not unattached", child);
+    return false;
+}
+
 void esxBuildFrame(evk::ui::Canvas& canvas) {
     if (!g_root) {
         canvas.clear();
@@ -253,68 +344,6 @@ void esxBuildFrame(evk::ui::Canvas& canvas) {
     g_root->updateActuals();
     canvas.clear();
 
-    evk::ui::Canvas* prev = g_canvas;
-    g_canvas = &canvas;
-    drawBackgrounds(g_root, canvas);
-    dispatchDraws(g_root);
-    g_canvas = prev;
-}
-
-void esxDispatchTouch(int32_t action, float x, float y) {
-    switch (action) {
-        case 0: { // DOWN
-            resetTouch();
-            if (!g_root) {
-                return;
-            }
-            g_root->updateActuals();
-            evk::ui::View* hit = g_root->hitTest(x, y);
-            if (!hit) {
-                return;
-            }
-            auto it = g_views.find(hit);
-            if (it == g_views.end()) {
-                return;
-            }
-            g_touch.target = it->second;
-            g_touch.lastX = x;
-            g_touch.lastY = y;
-            break;
-        }
-        case 2: { // MOVE
-            if (g_touch.target == 0 || g_touch.cancelled) {
-                return;
-            }
-            g_touch.moved += std::fabs(x - g_touch.lastX) + std::fabs(y - g_touch.lastY);
-            g_touch.lastX = x;
-            g_touch.lastY = y;
-            if (g_touch.moved > kTouchSlop) {
-                g_touch.cancelled = true;
-            }
-            break;
-        }
-        case 1: { // UP
-            uint32_t target = g_touch.target;
-            bool cancelled = g_touch.cancelled;
-            resetTouch();
-            if (target == 0 || cancelled) {
-                return;
-            }
-            auto it = g_handles.find(target);
-            if (it == g_handles.end()) {
-                // 目标视图在按下期间已被销毁。
-                return;
-            }
-            evk::ui::View* v = it->second;
-            evk::UiClickData data{target, x - v->actualX, y - v->actualY};
-            evk::dispatchEvent(evk::EventId::UiClick, &data);
-            break;
-        }
-        case 3: { // CANCEL
-            resetTouch();
-            break;
-        }
-        default:
-            break;
-    }
+    const FrameBuildScope frameScope(canvas);
+    drawViewTree(g_root, canvas);
 }

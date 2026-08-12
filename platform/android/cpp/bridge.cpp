@@ -48,7 +48,9 @@
 #include "evk/log.h"
 #include "evk/render_loop.h"
 #include "evk/renderer.h"
+#include "evk/ui/animator.h"
 #include "evk/ui/canvas.h"
+#include "evk/ui/input.h"
 
 // platform_android.cpp 以 C 链接导出的工厂函数（规则 2 的同款应用）：
 // bridge 只需声明原型即可调用，无需知道 AndroidPlatform 类的布局。
@@ -58,10 +60,11 @@ extern "C" void evkDestroyAndroidPlatform(evk::IPlatform* platform);
 // 全局渲染器与平台适配器，生命周期与 surface 一致（nativeInit 建 / nativeDestroy 拆）。
 static evk::Renderer* g_renderer = nullptr;
 static evk::IPlatform* g_platform = nullptr;
+static bool g_appStarted = false;
 
-// 画一帧：构建视图树内容（内部逐视图发 Draw 事件）后交给渲染器。
+// 画一帧：构建视图树内容（内部执行 View draw callback）后交给渲染器。
 // 同时注册为 core 的 FrameFunc，App 调 evk::requestRender() 会走到这里。
-static void renderFrame() {
+static void renderFrame(int64_t /*frameTimeNanos*/) {
     static evk::ui::Canvas canvas;
     esxBuildFrame(canvas);
     if (g_renderer) {
@@ -107,8 +110,11 @@ Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass /*clazz*/, jo
     evk::SurfaceChangedData initSize{ static_cast<int32_t>(surfaceWidth),
                                       static_cast<int32_t>(surfaceHeight) };
     evk::dispatchEvent(evk::EventId::SurfaceChanged, &initSize);
-    // 业务层（EventFunc）从这里开始接管。
-    evk::dispatchEvent(evk::EventId::AppStart, nullptr);
+    if (!g_appStarted) {
+        g_appStarted = true;
+        evk::dispatchEvent(evk::EventId::AppStart, nullptr);
+    }
+    evk::requestRender();
 }
 
 // Java: NativeBridge.nativeResize(int, int)
@@ -119,29 +125,45 @@ Java_com_estarx_vulkan_NativeBridge_nativeResize(JNIEnv* /*env*/, jclass /*clazz
     if (g_renderer) {
         g_renderer->setSize(static_cast<uint32_t>(width), static_cast<uint32_t>(height));
     }
+    evk::requestRender();
 }
 
-// Java: NativeBridge.nativeRender()
+// Java Choreographer 的 VSync 回调。core 仅在 dirty 时真正构建和提交帧。
 extern "C" JNIEXPORT void JNICALL
-Java_com_estarx_vulkan_NativeBridge_nativeRender(JNIEnv* /*env*/, jclass /*clazz*/) {
-    renderFrame();
+Java_com_estarx_vulkan_NativeBridge_nativeBeginFrame(JNIEnv* /*env*/, jclass /*clazz*/,
+                                                     jlong frameTimeNanos) {
+    evk::beginFrame(static_cast<int64_t>(frameTimeNanos));
 }
 
-// Java: NativeBridge.nativeOnTouch(int, float, float)
-// action 原样透传 Android MotionEvent 常量（0=按下 1=抬起 2=移动）。
-// 这里只回传原始 Touch；是否合成 UiClick 交给 app 侧处理。
+// Java: NativeBridge.nativeOnTouch(int, int, float, float, long)
+// 本层只把 Android MotionEvent 动作翻译成跨平台 PointerAction；
+// eventTimeNanos 来自 MotionEvent.getEventTime()，供 core 计算滑动速度。
 extern "C" JNIEXPORT void JNICALL
 Java_com_estarx_vulkan_NativeBridge_nativeOnTouch(JNIEnv* /*env*/, jclass /*clazz*/,
-                                                  jint action, jfloat x, jfloat y) {
-    EVK_LOGI("touch event: action={} x={:.1f} y={:.1f}", action, x, y);
-    evk::TouchData data{ action, x, y };  // 栈上结构体，仅在 dispatch 期间有效
-    evk::dispatchEvent(evk::EventId::Touch, &data);
+                                                  jint action, jint pointerId,
+                                                  jfloat x, jfloat y,
+                                                  jlong eventTimeNanos) {
+    evk::ui::PointerAction pointerAction;
+    switch (action) {
+        case 0: pointerAction = evk::ui::PointerAction::Down; break;
+        case 1: pointerAction = evk::ui::PointerAction::Up; break;
+        case 2: pointerAction = evk::ui::PointerAction::Move; break;
+        case 3: pointerAction = evk::ui::PointerAction::Cancel; break;
+        default: return;
+    }
+    const evk::ui::PointerEvent event{pointerAction, pointerId, x, y,
+                                      static_cast<int64_t>(eventTimeNanos)};
+    evk::ui::dispatchPointerEvent(event);
 }
 
 // Java: NativeBridge.nativeDestroy()
 extern "C" JNIEXPORT void JNICALL
 Java_com_estarx_vulkan_NativeBridge_nativeDestroy(JNIEnv* /*env*/, jclass /*clazz*/) {
+    evk::ui::cancelAllPointerEvents();
+    evk::ui::stopAllAnimations();
     evk::dispatchEvent(evk::EventId::SurfaceDestroyed, nullptr);
+    evk::cancelPendingFrame();
+    evk::setFrameFunc(nullptr);
     if (g_renderer) {
         delete g_renderer;
         g_renderer = nullptr;

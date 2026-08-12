@@ -3,6 +3,7 @@ package com.estarx.vulkan;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.MotionEvent;
+import android.view.Choreographer;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
@@ -13,6 +14,21 @@ import android.view.SurfaceView;
  * 自身不含任何业务逻辑（"薄壳"的含义）。
  */
 public class VulkanSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
+
+    private static final int NO_POINTER = -1;
+
+    private boolean surfaceReady;
+    private int activePointerId = NO_POINTER;
+    private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
+        @Override
+        public void doFrame(long frameTimeNanos) {
+            if (!surfaceReady) {
+                return;
+            }
+            NativeBridge.nativeBeginFrame(frameTimeNanos);
+            Choreographer.getInstance().postFrameCallback(this);
+        }
+    };
 
     // 构造函数①：代码里 new VulkanSurfaceView(context) 时走这个。
     public VulkanSurfaceView(Context context) {
@@ -41,27 +57,52 @@ public class VulkanSurfaceView extends SurfaceView implements SurfaceHolder.Call
         // holder.getSurface() 就是 Java 层的画板句柄，
         // 传给 native，C++ 用它创建 Vulkan 渲染表面。
         NativeBridge.nativeInit(holder.getSurface());
+        surfaceReady = true;
+        Choreographer.getInstance().postFrameCallback(frameCallback);
     }
 
     // 画板尺寸确定或变化时回调（首次创建后紧跟一次；旋转屏幕等也会触发）。
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         NativeBridge.nativeResize(width, height); // 告诉 native 画板新尺寸
-        NativeBridge.nativeRender();              // 按新尺寸画一帧
     }
 
     // 画板被销毁时回调（退后台、Activity 销毁），通知 native 释放渲染资源。
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
+        surfaceReady = false;
+        activePointerId = NO_POINTER;
+        Choreographer.getInstance().removeFrameCallback(frameCallback);
         NativeBridge.nativeDestroy();
     }
 
     // 手指触摸到这块 View 时系统回调，按下/移动/抬起都会进来。
+    // getEventTime() 是事件发生时刻（毫秒），换算成纳秒传给 native 计算滑动速度。
     @Override
     public boolean onTouchEvent(MotionEvent event) {
-        // getActionMasked() = 动作类型（0=按下 1=抬起 2=移动），
-        // getX()/getY() = 触摸点相对本 View 左上角的像素坐标。
-        NativeBridge.nativeOnTouch(event.getActionMasked(), event.getX(), event.getY());
+        final int action = event.getActionMasked();
+        final long eventTimeNanos = event.getEventTime() * 1_000_000L;
+        if (action == MotionEvent.ACTION_DOWN) {
+            activePointerId = event.getPointerId(0);
+            NativeBridge.nativeOnTouch(action, activePointerId, event.getX(0),
+                    event.getY(0), eventTimeNanos);
+        } else if (action == MotionEvent.ACTION_MOVE && activePointerId != NO_POINTER) {
+            final int pointerIndex = event.findPointerIndex(activePointerId);
+            if (pointerIndex >= 0) {
+                NativeBridge.nativeOnTouch(action, activePointerId,
+                        event.getX(pointerIndex), event.getY(pointerIndex), eventTimeNanos);
+            }
+        } else if ((action == MotionEvent.ACTION_UP ||
+                    action == MotionEvent.ACTION_POINTER_UP) &&
+                   event.getPointerId(event.getActionIndex()) == activePointerId) {
+            final int pointerIndex = event.getActionIndex();
+            NativeBridge.nativeOnTouch(MotionEvent.ACTION_UP, activePointerId,
+                    event.getX(pointerIndex), event.getY(pointerIndex), eventTimeNanos);
+            activePointerId = NO_POINTER;
+        } else if (action == MotionEvent.ACTION_CANCEL && activePointerId != NO_POINTER) {
+            NativeBridge.nativeOnTouch(action, activePointerId, 0.0f, 0.0f, eventTimeNanos);
+            activePointerId = NO_POINTER;
+        }
         // return true  = "这个事件我处理了"，后续的 MOVE/UP 才会继续发给我；
         // return false = 不感兴趣，系统只给这一次 DOWN，之后不再送来。
         return true;

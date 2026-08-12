@@ -60,4 +60,13 @@ View* View::hitTest(float px, float py) {
     return this;
 }
 
+bool View::containsVisiblePoint(float px, float py) const {
+    for (const View* view = this; view; view = view->parent) {
+        if (!view->visible || !view->actualRect().contains(px, py)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 } // namespace evk::ui
