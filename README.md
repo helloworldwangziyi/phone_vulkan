@@ -35,13 +35,13 @@ estarx_vulkan/
 │   │   ├── ui/input.cpp         # Hit test + click/pan dispatch
 │   │   ├── ui/animator.cpp      # Animation tick driver
 │   │   ├── ui/controls/         # Standard control implementation
-│   │   ├── ui/canvas.cpp        # Canvas implementation
-│   │   └── platform_android.cpp # Android platform implementation
+│   │   └── ui/canvas.cpp        # Canvas implementation
 │   └── shaders/
 │       ├── ui.vert              # UI vertex shader (push-constant ortho MVP)
 │       └── ui.frag              # UI fragment shader (vertex color)
 ├── platform/android/            # Android JNI bridge + SurfaceView
 │   ├── cpp/bridge.cpp
+│   ├── cpp/platform_android.cpp # Android platform implementation
 │   └── java/com/estarx/vulkan/
 ├── samples/app/                 # Shared cross-platform App C++ sources
 ├── samples/android/             # Android-only entry/build/resources
@@ -68,7 +68,7 @@ The APK is produced at:
    ```cmake
    add_library(my_vulkan SHARED
        path/to/platform/android/cpp/bridge.cpp
-       path/to/core/src/platform_android.cpp
+       path/to/platform/android/cpp/platform_android.cpp
        path/to/core/src/renderer.cpp
        path/to/core/src/event.cpp
        path/to/core/src/render_loop.cpp

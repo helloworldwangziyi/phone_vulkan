@@ -37,9 +37,9 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/samples/app/main_page.cpp
     ${EVK_ROOT}/samples/app/detail_page.cpp
     ${EVK_ROOT}/platform/android/cpp/bridge.cpp
+    ${EVK_ROOT}/platform/android/cpp/platform_android.cpp
     ${EVK_ROOT}/core/src/event.cpp
     ${EVK_ROOT}/core/src/render_loop.cpp
-    ${EVK_ROOT}/core/src/platform_android.cpp
     ${EVK_ROOT}/core/src/renderer.cpp
     ${EVK_ROOT}/core/src/esx_view.cpp
     ${EVK_ROOT}/core/src/ui/view.cpp

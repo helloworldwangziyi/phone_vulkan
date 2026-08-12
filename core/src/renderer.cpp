@@ -194,13 +194,11 @@ bool Renderer::createInstance() {
     appInfo.apiVersion = VK_API_VERSION_1_0;
 
     // 先放入通用 surface 扩展，再按平台和调试能力补充。
-    // VK_KHR_surface 是平台无关的窗口表面抽象，任何上屏渲染都要它。
+    // VK_KHR_surface 是平台无关的窗口表面抽象，任何上屏渲染都要它；
+    // 配套的平台 surface 扩展（每个窗口系统一个）由 IPlatform 提供。
     std::vector<const char*> extensions = {
         VK_KHR_SURFACE_EXTENSION_NAME,
-#ifdef __ANDROID__
-        // Android 还需平台相关的 VK_KHR_android_surface（每个窗口系统都有自己的 surface 扩展）。
-        VK_KHR_ANDROID_SURFACE_EXTENSION_NAME,
-#endif
+        platform_->getSurfaceExtensionName(),
     };
 
     // 枚举实例级扩展：仍是"先取数量、再取数据"的两次调用惯用法。

@@ -1,3 +1,13 @@
+// ============================================================================
+// Button：带点击处理的 View。
+//
+// 继承 View 并重写输入钩子：
+//   acceptsPointerInput → true，声明自己想成为原始 Pointer 事件目标；
+//   handlePointer       → 按下/移出/抬起的状态机，Up 且仍在按钮内时回调 onClick。
+//
+// 状态（按下、禁用）变化直接改写自身 background 并请求重绘。
+// ============================================================================
+
 #include "evk/ui/controls/button.h"
 
 #include <memory>
@@ -8,71 +18,66 @@
 
 namespace {
 
-const char kButtonType = 0;
-
-struct ButtonState {
+class Button : public evk::ui::View {
+public:
     esx_button_style style{};
     esx_button_click_func onClick = nullptr;
     void* userData = nullptr;
     bool enabled = true;
     bool pressed = false;
+
+    bool acceptsPointerInput() const override { return true; }
+
+    // 按 enabled/pressed 选择当前背景色并请求重绘。
+    void updateColor() {
+        const uint32_t color = !enabled ? style.disabled_color
+                               : pressed ? style.pressed_color
+                                         : style.normal_color;
+        background = evk::ui::Color::rgba(color);
+        hasBackground = true;
+        evk::requestRender();
+    }
+
+    void handlePointer(const evk::ui::PointerEvent& event) override {
+        if (!visible || !enabled) {
+            return;
+        }
+
+        switch (event.action) {
+            case evk::ui::PointerAction::Down:
+                pressed = true;
+                updateColor();
+                break;
+            case evk::ui::PointerAction::Move: {
+                const bool inside = containsVisiblePoint(event.x, event.y);
+                if (inside != pressed) {
+                    pressed = inside;
+                    updateColor();
+                }
+                break;
+            }
+            case evk::ui::PointerAction::Up: {
+                const bool clicked = pressed && containsVisiblePoint(event.x, event.y);
+                pressed = false;
+                updateColor();
+                if (clicked && onClick) {
+                    onClick(handle, userData);
+                }
+                break;
+            }
+            case evk::ui::PointerAction::Cancel:
+                if (pressed) {
+                    pressed = false;
+                    updateColor();
+                }
+                break;
+        }
+    }
 };
 
-std::shared_ptr<ButtonState> buttonState(esx_view button) {
-    evk::ui::View* view = esxViewFromHandle(button);
-    if (!view || view->controlType != &kButtonType) {
-        return nullptr;
-    }
-    return std::static_pointer_cast<ButtonState>(view->controlState);
-}
-
-void updateButtonColor(evk::ui::View* view, const ButtonState& state) {
-    const uint32_t color = !state.enabled ? state.style.disabled_color
-                           : state.pressed ? state.style.pressed_color
-                                           : state.style.normal_color;
-    view->background = evk::ui::Color::rgba(color);
-    view->hasBackground = true;
-    evk::requestRender();
-}
-
-void handleButtonPointer(esx_view handle, const evk::ui::PointerEvent& event,
-                         void* userData) {
-    auto* state = static_cast<ButtonState*>(userData);
-    evk::ui::View* view = esxViewFromHandle(handle);
-    if (!state || !view || !view->visible || !state->enabled) {
-        return;
-    }
-
-    switch (event.action) {
-        case evk::ui::PointerAction::Down:
-            state->pressed = true;
-            updateButtonColor(view, *state);
-            break;
-        case evk::ui::PointerAction::Move: {
-            const bool inside = view->containsVisiblePoint(event.x, event.y);
-            if (inside != state->pressed) {
-                state->pressed = inside;
-                updateButtonColor(view, *state);
-            }
-            break;
-        }
-        case evk::ui::PointerAction::Up: {
-            const bool clicked = state->pressed &&
-                                 view->containsVisiblePoint(event.x, event.y);
-            state->pressed = false;
-            updateButtonColor(view, *state);
-            if (clicked && state->onClick) {
-                state->onClick(handle, state->userData);
-            }
-            break;
-        }
-        case evk::ui::PointerAction::Cancel:
-            if (state->pressed) {
-                state->pressed = false;
-                updateButtonColor(view, *state);
-            }
-            break;
-    }
+// 句柄 → Button；句柄无效或视图不是 Button 时返回 nullptr。
+Button* buttonFromHandle(esx_view button) {
+    return dynamic_cast<Button*>(esxViewFromHandle(button));
 }
 
 } // namespace
@@ -83,51 +88,48 @@ esx_view esx_button_create(float x, float y, float width, float height,
                            esx_view parent, const esx_button_style* style,
                            esx_button_click_func on_click, void* user_data) {
     const esx_button_style defaultStyle{0x3CB371FF, 0x2E8B57FF, 0x808080FF};
-    auto state = std::make_shared<ButtonState>();
-    state->style = style ? *style : defaultStyle;
-    state->onClick = on_click;
-    state->userData = user_data;
+    auto button = std::make_unique<Button>();
+    button->style = style ? *style : defaultStyle;
+    button->onClick = on_click;
+    button->userData = user_data;
 
-    const esx_view handle = esx_create_view(x, y, width, height, parent);
-    evk::ui::View* view = esxViewFromHandle(handle);
-    if (!view) {
+    Button* raw = button.get();
+    const esx_view handle = esxAdoptViewNode(std::move(button), x, y, width, height, parent);
+    if (handle == 0) {
         return 0;
     }
-    view->controlType = &kButtonType;
-    view->controlState = state;
-    view->pointerHandler = handleButtonPointer;
-    view->pointerUserData = state.get();
-    updateButtonColor(view, *state);
+    raw->updateColor();
     return handle;
 }
 
 void esx_button_set_enabled(esx_view button, int32_t enabled) {
-    auto state = buttonState(button);
-    evk::ui::View* view = esxViewFromHandle(button);
-    if (!state || !view) {
+    Button* self = buttonFromHandle(button);
+    if (!self) {
         return;
     }
     const bool nextEnabled = enabled != 0;
-    if (!nextEnabled && state->enabled) {
+    if (!nextEnabled && self->enabled) {
+        // 禁用先取消进行中的手势（Cancel 回调会让 pressed 复位），
+        // 回调可能间接销毁视图，之后重新解析句柄。
         evk::ui::cancelPointerForView(button);
-        view = esxViewFromHandle(button);
-        if (!view) {
+        self = buttonFromHandle(button);
+        if (!self) {
             return;
         }
     }
-    state->enabled = nextEnabled;
-    state->pressed = false;
-    updateButtonColor(view, *state);
+    self->enabled = nextEnabled;
+    self->pressed = false;
+    self->updateColor();
 }
 
 void esx_button_set_on_click(esx_view button, esx_button_click_func on_click,
                              void* user_data) {
-    auto state = buttonState(button);
-    if (!state) {
+    Button* self = buttonFromHandle(button);
+    if (!self) {
         return;
     }
-    state->onClick = on_click;
-    state->userData = user_data;
+    self->onClick = on_click;
+    self->userData = user_data;
 }
 
 } // extern "C"

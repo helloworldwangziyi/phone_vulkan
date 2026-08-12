@@ -12,6 +12,11 @@ class IPlatform {
 public:
     virtual ~IPlatform() = default;
 
+    // Return the name of the platform surface extension that must be enabled
+    // when creating the VkInstance (e.g. VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
+    // on Android; iOS/HarmonyOS provide their own).
+    virtual const char* getSurfaceExtensionName() const = 0;
+
     // Create a Vulkan surface bound to the native window.
     virtual bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) = 0;
 

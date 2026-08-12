@@ -67,7 +67,7 @@ endif()
 # Android platform layer.
 if (ANDROID)
     add_library(estarx_vulkan_android STATIC
-        core/src/platform_android.cpp
+        platform/android/cpp/platform_android.cpp
     )
 
     target_include_directories(estarx_vulkan_android PUBLIC

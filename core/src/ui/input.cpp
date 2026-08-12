@@ -91,7 +91,7 @@ void velocityOf(const PointerState& state, int64_t eventNanos,
 
 evk::ui::View* nearestInputTarget(evk::ui::View* hit) {
     for (evk::ui::View* view = hit; view; view = view->parent) {
-        if (view->pointerHandler || view->clickFunc) {
+        if (view->acceptsPointerInput() || view->clickFunc) {
             return view;
         }
     }
@@ -100,7 +100,7 @@ evk::ui::View* nearestInputTarget(evk::ui::View* hit) {
 
 evk::ui::View* nearestPanTarget(evk::ui::View* hit) {
     for (evk::ui::View* view = hit; view; view = view->parent) {
-        if (view->panFunc) {
+        if (view->acceptsPanInput() || view->panFunc) {
             return view;
         }
     }
@@ -108,9 +108,9 @@ evk::ui::View* nearestPanTarget(evk::ui::View* hit) {
 }
 
 void sendPointer(esx_view handle, const evk::ui::PointerEvent& event) {
-    evk::ui::View* view = esxViewFromHandle(handle);
-    if (view && view->pointerHandler) {
-        view->pointerHandler(handle, event, view->pointerUserData);
+    // 控件通过 handlePointer 虚函数接收；普通视图默认空实现，无需判断。
+    if (evk::ui::View* view = esxViewFromHandle(handle)) {
+        view->handlePointer(event);
     }
 }
 
@@ -118,7 +118,7 @@ void sendPan(esx_view handle, esx_view_pan_state state,
              const evk::ui::PointerEvent& event, float dx, float dy,
              float downX, float downY, float velocityX, float velocityY) {
     evk::ui::View* view = esxViewFromHandle(handle);
-    if (!view || !view->panFunc) {
+    if (!view || (!view->acceptsPanInput() && !view->panFunc)) {
         return;
     }
     const esx_view_pan_event pan{
@@ -132,7 +132,12 @@ void sendPan(esx_view handle, esx_view_pan_state state,
         velocityX,
         velocityY,
     };
-    view->panFunc(handle, &pan, view->panUserData);
+    // App 绑定的 pan 回调优先；SDK 控件走 handlePan 虚函数。
+    if (view->panFunc) {
+        view->panFunc(handle, &pan, view->panUserData);
+    } else {
+        view->handlePan(pan);
+    }
 }
 
 void resetPointer() {
@@ -266,7 +271,7 @@ void dispatchPointerEvent(const PointerEvent& event) {
             resetPointer();
             sendPointer(finished.target, event);
             View* target = esxViewFromHandle(finished.target);
-            if (target && !target->pointerHandler && target->clickFunc &&
+            if (target && !target->acceptsPointerInput() && target->clickFunc &&
                 target->containsVisiblePoint(event.x, event.y)) {
                 const esx_view_click_event click{event.x - target->actualX,
                                                  event.y - target->actualY};

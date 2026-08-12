@@ -28,9 +28,13 @@ struct Color {
     static Color rgba(uint32_t v);
 };
 
-// 视图树节点。estarx 风格：单一 View 类，任何视图都可有子视图。
+// 视图树节点。estarx 风格：任何视图都可有子视图。
+// 普通视图直接使用；SDK 控件（Button/ScrollView/Navigation）继承本类，
+// 重写下面的虚函数钩子获得输入/布局行为。
 class View {
 public:
+    virtual ~View() = default;
+
     esx_view handle = 0;
     Rect rect;                    // 相对父视图左上角，像素
     bool visible = true;
@@ -40,6 +44,7 @@ public:
     std::vector<std::unique_ptr<View>> children;
     float actualX = 0, actualY = 0; // 相对屏幕左上角，由 updateActuals 重算
 
+    // App 侧回调（C ABI 绑定）。SDK 控件不使用这些字段。
     esx_view_draw_func drawFunc = nullptr;
     void* drawUserData = nullptr;
     esx_view_click_func clickFunc = nullptr;
@@ -47,13 +52,15 @@ public:
     esx_view_pan_func panFunc = nullptr;
     void* panUserData = nullptr;
 
-    // SDK 控件使用的原始 Pointer 钩子和随 View 生命周期释放的控件状态。
-    PointerHandler pointerHandler = nullptr;
-    void* pointerUserData = nullptr;
-    void (*boundsChangedHandler)(esx_view view, void* userData) = nullptr;
-    void* boundsChangedUserData = nullptr;
-    const void* controlType = nullptr;
-    std::shared_ptr<void> controlState;
+    // ---- SDK 控件行为钩子（继承重写）----
+    // 是否想成为原始 Pointer（Down/Move/Up/Cancel）输入目标，如 Button/ScrollView。
+    virtual bool acceptsPointerInput() const { return false; }
+    // 是否想成为滑动（pan）目标，如 ScrollView/Navigation。
+    virtual bool acceptsPanInput() const { return false; }
+    virtual void handlePointer(const PointerEvent& /*event*/) {}
+    virtual void handlePan(const esx_view_pan_event& /*event*/) {}
+    // esx_view_set_bounds 之后调用（如 ScrollView 重 clamp、Navigation 重排）。
+    virtual void handleBoundsChanged() {}
 
     // 挂载子视图，返回子视图裸指针（所有权归父视图）。
     View* addChild(std::unique_ptr<View> child);

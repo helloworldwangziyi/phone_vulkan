@@ -97,29 +97,7 @@ void drawViewTree(evk::ui::View* view, evk::ui::Canvas& canvas) {
 extern "C" {
 
 esx_view esx_create_view(float x, float y, float w, float h, esx_view parent) {
-    if (g_buildingFrame) {
-        EVK_LOGW("esx_create_view: cannot change the View tree during draw");
-        return 0;
-    }
-    auto view = std::make_unique<evk::ui::View>();
-    view->rect = {x, y, w, h};
-    evk::ui::View* raw = view.get();
-
-    if (parent != 0) {
-        evk::ui::View* p = lookupView(parent, "esx_create_view");
-        if (!p) {
-            return 0;
-        }
-        p->addChild(std::move(view));
-    } else {
-        g_unattached.push_back(std::move(view));
-    }
-
-    uint32_t handle = g_nextHandle++;
-    raw->handle = handle;
-    g_handles[handle] = raw;
-    evk::requestRender();
-    return handle;
+    return esxAdoptViewNode(std::make_unique<evk::ui::View>(), x, y, w, h, parent);
 }
 
 void esx_destroy_view(esx_view view) {
@@ -187,9 +165,7 @@ void esx_view_set_bounds(esx_view view, float x, float y, float w, float h) {
         return;
     }
     v->rect = {x, y, w, h};
-    if (v->boundsChangedHandler) {
-        v->boundsChangedHandler(view, v->boundsChangedUserData);
-    }
+    v->handleBoundsChanged();
     evk::requestRender();
 }
 
@@ -298,6 +274,34 @@ evk::ui::View* esxRootView() {
 evk::ui::View* esxViewFromHandle(esx_view view) {
     auto it = g_handles.find(view);
     return it == g_handles.end() ? nullptr : it->second;
+}
+
+// 把控件实现好的 View 节点（可为 Button/ScrollView 等子类）挂进视图树：
+// 设置布局矩形、挂到 parent（或暂存未挂载列表）、注册句柄。
+esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view,
+                          float x, float y, float w, float h, esx_view parent) {
+    if (g_buildingFrame) {
+        EVK_LOGW("esxAdoptViewNode: cannot change the View tree during draw");
+        return 0;
+    }
+    view->rect = {x, y, w, h};
+    evk::ui::View* raw = view.get();
+
+    if (parent != 0) {
+        evk::ui::View* p = lookupView(parent, "esxAdoptViewNode");
+        if (!p) {
+            return 0;
+        }
+        p->addChild(std::move(view));
+    } else {
+        g_unattached.push_back(std::move(view));
+    }
+
+    const uint32_t handle = g_nextHandle++;
+    raw->handle = handle;
+    g_handles[handle] = raw;
+    evk::requestRender();
+    return handle;
 }
 
 // Navigation 等容器控件用它接管 App 以 parent=0 创建的视图：

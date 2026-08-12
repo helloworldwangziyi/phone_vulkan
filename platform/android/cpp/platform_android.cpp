@@ -38,6 +38,10 @@ public:
         }
     }
 
+    const char* getSurfaceExtensionName() const override {
+        return VK_KHR_ANDROID_SURFACE_EXTENSION_NAME;
+    }
+
     bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) override {
         if (!surface_) {
             EVK_LOGE("Android surface is null");

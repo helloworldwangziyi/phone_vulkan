@@ -77,12 +77,19 @@ void esx_draw_triangle(esx_view view,
 #ifdef __cplusplus
 } // extern "C"
 
+#include <memory>
+
 namespace evk::ui {
 class View;
 class Canvas;
 }
 
 // ---- core 内部函数（非 ABI，供 core/平台壳使用）----
+
+// 把控件实现好的 View 节点挂进视图树并注册句柄，返回新句柄（0 表示失败）。
+// 仅供 core/ui 控件以自定义 View 子类创建视图时使用。
+esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view,
+                          float x, float y, float w, float h, esx_view parent);
 
 // 当前根视图（未设置返回 nullptr）。
 evk::ui::View* esxRootView();

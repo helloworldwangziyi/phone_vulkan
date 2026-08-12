@@ -43,6 +43,8 @@
 
 #include <jni.h>
 
+#include <spdlog/sinks/android_sink.h>
+
 #include "evk/esx_view.h"
 #include "evk/event.h"
 #include "evk/log.h"
@@ -76,7 +78,12 @@ static void renderFrame(int64_t /*frameTimeNanos*/) {
 // surface 创建就绪时调用（可能多次：退后台重建）。幂等：已有渲染器直接返回。
 extern "C" JNIEXPORT void JNICALL
 Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass /*clazz*/, jobject surface) {
-    evk::log::init("estarx-vulkan");
+    // logcat sink 由平台壳注入；core 默认只提供 stdout（见 evk/log.h）。
+    auto logger = spdlog::get("estarx-vulkan");
+    if (!logger) {
+        logger = spdlog::android_logger_mt("estarx-vulkan", "estarx-vulkan");
+    }
+    evk::log::init(logger);
     if (g_renderer) {
         return;
     }

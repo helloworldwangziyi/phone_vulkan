@@ -24,8 +24,6 @@ struct PointerEvent {
     int64_t timestampNanos = 0;
 };
 
-using PointerHandler = void (*)(esx_view view, const PointerEvent& event, void* userData);
-
 // UI 线程入口：命中测试、点击合成和滑动归属全部由 SDK 处理。
 void dispatchPointerEvent(const PointerEvent& event);
 
