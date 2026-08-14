@@ -2,6 +2,7 @@
 
 #include <vulkan/vulkan.h>
 #include <cstdint>
+#include <vector>
 
 namespace evk {
 
@@ -22,6 +23,20 @@ public:
 
     // Return the current size of the surface in pixels.
     virtual void getSurfaceSize(uint32_t* width, uint32_t* height) = 0;
+
+    // ---- 可选钩子（默认空实现，非 MoltenVK 平台不用管） ----
+
+    // 额外的 VkInstanceCreateFlagBits（MoltenVK 需要 ENUMERATE_PORTABILITY_BIT）。
+    virtual uint32_t getInstanceCreateFlags() const { return 0; }
+
+    // 平台额外要求的实例扩展（MoltenVK：portability_enumeration +
+    // get_physical_device_properties2）。
+    virtual void getRequiredInstanceExtensions(
+        std::vector<const char*>& /*out*/) const {}
+
+    // 平台额外要求的设备扩展（MoltenVK：portability_subset）。
+    virtual void getRequiredDeviceExtensions(
+        std::vector<const char*>& /*out*/) const {}
 };
 
 } // namespace evk

@@ -16,6 +16,13 @@ xcuserdata/
 .DS_Store
 Thumbs.db
 
+# iOS 构建产物
+samples/ios/app/build/
+DerivedData/
+
+# MoltenVK 二进制（体积大，由 third_party/moltenvk/fetch.sh 拉取）
+third_party/moltenvk/MoltenVK.xcframework/
+
 # Local tooling
 .tools/
 

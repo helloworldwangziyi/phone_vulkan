@@ -200,6 +200,8 @@ bool Renderer::createInstance() {
         VK_KHR_SURFACE_EXTENSION_NAME,
         platform_->getSurfaceExtensionName(),
     };
+    // 平台额外要求的实例扩展（MoltenVK：portability 枚举相关）。
+    platform_->getRequiredInstanceExtensions(extensions);
 
     // 枚举实例级扩展：仍是"先取数量、再取数据"的两次调用惯用法。
     uint32_t extCount = 0;
@@ -228,6 +230,9 @@ bool Renderer::createInstance() {
     // VkInstanceCreateInfo 总装：应用信息 + 要启用的扩展与校验层。
     VkInstanceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    // 平台要求的实例创建标志（MoltenVK：VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR，
+    // 不加则枚举不到可移植性物理设备）。
+    createInfo.flags = platform_->getInstanceCreateFlags();
     createInfo.pApplicationInfo = &appInfo;
     // 扩展与层都以"数量 + 字符串指针数组"的形式传入。
     createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
@@ -384,7 +389,9 @@ bool Renderer::createLogicalDevice() {
     VkPhysicalDeviceFeatures features{};
 
     // 设备级必须启用 VK_KHR_swapchain，否则后面创建交换链会被校验层拦下。
-    const char* deviceExtensions[] = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    std::vector<const char*> deviceExtensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+    // 平台额外要求的设备扩展（MoltenVK：VK_KHR_portability_subset）。
+    platform_->getRequiredDeviceExtensions(deviceExtensions);
 
     // VkDeviceCreateInfo 总装：队列需求 + 特性 + 扩展。
     VkDeviceCreateInfo createInfo{};
@@ -392,8 +399,8 @@ bool Renderer::createLogicalDevice() {
     createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.pEnabledFeatures = &features;
-    createInfo.enabledExtensionCount = 1;
-    createInfo.ppEnabledExtensionNames = deviceExtensions;
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
     // 逻辑设备 vs 物理设备：physical 是硬件本身，logical 是我们与硬件交互的"会话"，
     // 之后几乎所有 Vulkan 调用都以 device_ 为第一个参数。
@@ -454,7 +461,10 @@ bool Renderer::createSwapchain() {
     VkExtent2D extent;
     // 如果 surface 固定了尺寸，Vulkan 会直接给出精确的 extent。
     // UINT32_MAX 是规范约定的"尺寸不固定"标记；这里先处理"已固定"的常见分支（多数手机如此）。
-    if (caps.currentExtent.width != UINT32_MAX) {
+    // 例外：MoltenVK 在 layer 尚未布局（bounds 为 0）时上报 0×0——零尺寸交换链无效，
+    // 与 UINT32_MAX 一样走平台尺寸分支。
+    if (caps.currentExtent.width != UINT32_MAX &&
+        caps.currentExtent.width > 0 && caps.currentExtent.height > 0) {
         extent = caps.currentExtent;
     } else {
         // UINT32_MAX 表示尺寸可由我们自由选（桌面窗口常见）：向平台要当前像素尺寸，
