@@ -10,6 +10,11 @@ using FrameFunc = void (*)(int64_t frameTimeNanos);
 // 注册帧绘制实现，由平台壳在初始化完成后调用。
 void setFrameFunc(FrameFunc func);
 
+// 引擎就绪状态：平台壳在渲染器初始化完成、可安全建视图时置 true，
+// Surface 销毁时置 false。App 应在 EngineReady 事件后创建视图。
+void setEngineReady(bool ready);
+bool engineReady();
+
 // 标记下一次 VSync 需要绘制；不会在调用栈内立即提交 GPU。
 void requestRender();
 

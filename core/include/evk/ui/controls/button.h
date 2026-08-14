@@ -23,6 +23,8 @@ esx_view esx_button_create(float x, float y, float width, float height,
 void esx_button_set_enabled(esx_view button, int32_t enabled);
 void esx_button_set_on_click(esx_view button, esx_button_click_func on_click,
                              void *user_data);
+// 就地换样式（声明式层重建时保留按下等内部状态）。
+void esx_button_set_style(esx_view button, const esx_button_style *style);
 
 #ifdef __cplusplus
 } // extern "C"

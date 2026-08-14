@@ -132,4 +132,13 @@ void esx_button_set_on_click(esx_view button, esx_button_click_func on_click,
     self->userData = user_data;
 }
 
+void esx_button_set_style(esx_view button, const esx_button_style* style) {
+    Button* self = buttonFromHandle(button);
+    if (!self || !style) {
+        return;
+    }
+    self->style = *style;
+    self->updateColor();
+}
+
 } // extern "C"

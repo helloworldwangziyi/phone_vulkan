@@ -117,10 +117,14 @@ void esx_destroy_view(esx_view view) {
     }
     // 销毁对象本身：从父视图或未挂载列表里摘除（unique_ptr 释放整棵子树）。
     if (v->parent) {
-        auto& siblings = v->parent->children;
+        evk::ui::View* parent = v->parent;
+        auto& siblings = parent->children;
         for (auto it = siblings.begin(); it != siblings.end(); ++it) {
             if (it->get() == v) {
+                const size_t removedIndex = static_cast<size_t>(it - siblings.begin());
                 siblings.erase(it);
+                // 钩子在摘除之后触发：父视图看到的是移除后的 children。
+                parent->handleChildRemoved(removedIndex);
                 break;
             }
         }
@@ -233,6 +237,15 @@ void esx_view_set_pan_callback(esx_view view, esx_view_pan_func func, void* user
     v->panUserData = user_data;
 }
 
+void esx_view_set_nav_callback(esx_view view, esx_view_nav_func func, void* user_data) {
+    evk::ui::View* v = lookupView(view, "esx_view_set_nav_callback");
+    if (!v) {
+        return;
+    }
+    v->navFunc = func;
+    v->navUserData = user_data;
+}
+
 void esx_draw_rect(esx_view view, float x, float y, float w, float h, uint32_t rgba) {
     if (!g_canvas) {
         EVK_LOGW("esx_draw_rect: called outside Draw callback, ignored");
@@ -283,6 +296,10 @@ esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view,
     if (g_buildingFrame) {
         EVK_LOGW("esxAdoptViewNode: cannot change the View tree during draw");
         return 0;
+    }
+    if (!evk::engineReady()) {
+        // 告警不拦截：应在 EngineReady 事件后创建视图（见 event.h）。
+        EVK_LOGW("esxAdoptViewNode: creating view before engine is ready");
     }
     view->rect = {x, y, w, h};
     evk::ui::View* raw = view.get();

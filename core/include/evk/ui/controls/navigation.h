@@ -22,6 +22,8 @@ typedef void (*esx_navigation_pop_func)(esx_view nav, esx_view page, void *user_
 
 // 页面栈导航容器：push/pop 带 iOS 风格滑动转场，栈深 >1 时导航栏显示
 // 返回按钮，左缘 48px 内右滑可交互返回。
+// 页面生命周期：页面用 esx_view_set_nav_callback 注册导航钩子（WILL/DID ×
+// ENTER/LEAVE），进入前刷新数据、离开前保存状态；WILL_* 返回非 0 可取消导航。
 // Navigation 在 SDK 内部占用自身的 pan callback 和导航栏 Button 的
 // pointer callback，App 只使用本头文件的接口。
 // 引擎暂无文字渲染，导航栏只提供返回箭头，不显示标题。
@@ -39,6 +41,8 @@ void esx_navigation_pop(esx_view nav, int32_t animated);
 
 int32_t esx_navigation_depth(esx_view nav);
 esx_view esx_navigation_top_page(esx_view nav);
+// 就地更换导航栏样式（主题切换时用；页面内容由事件总线广播换肤）。
+void esx_navigation_set_style(esx_view nav, const esx_navigation_style *style);
 void esx_navigation_set_on_pop(esx_view nav, esx_navigation_pop_func on_pop,
                                void *user_data);
 

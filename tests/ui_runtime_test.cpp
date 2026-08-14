@@ -1,5 +1,10 @@
 #include <cassert>
 #include <cstdint>
+#include <vector>
+
+#include "evk/ui/event_bus.h"
+#include "evk/ui/controls/flex.h"
+#include "evk/ui/widget.h"
 
 #include "evk/esx_view.h"
 #include "evk/render_loop.h"
@@ -701,9 +706,438 @@ void testNavigationEdgeSwipe() {
     evk::ui::stopAllAnimations();
 }
 
+// ---- Navigation 页面生命周期钩子 ----
+
+struct NavEventRecord {
+    esx_view page = 0;
+    int32_t event = -1;
+    int32_t forward = -1;
+};
+
+struct NavEventLog {
+    std::vector<NavEventRecord> records;
+    esx_view cancelOnWillEnter = 0; // 该页面 WILL_ENTER 时返回 1（取消导航）
+};
+
+int32_t recordNavEvent(esx_view /*nav*/, esx_view page, esx_view_nav_event event,
+                       int32_t forward, void* userData) {
+    auto* log = static_cast<NavEventLog*>(userData);
+    log->records.push_back({page, event, forward});
+    return page == log->cancelOnWillEnter && event == ESX_VIEW_NAV_WILL_ENTER ? 1 : 0;
+}
+
+void testNavigationPageLifecycle() {
+    evk::setFrameFunc(renderFrame);
+    evk::ui::stopAllAnimations();
+    const esx_view nav = esx_navigation_create(0, 0, 400, 800, 0, 60, nullptr);
+    esx_set_root_view(nav);
+    NavEventLog log;
+
+    // 首页 push（无动画）：只收 WILL_ENTER/DID_ENTER（forward=1）。
+    const esx_view page1 = esx_create_view(0, 0, 0, 0, 0);
+    esx_view_set_nav_callback(page1, recordNavEvent, &log);
+    esx_navigation_push(nav, page1, 0);
+    assert(log.records.size() == 2);
+    assert(log.records[0].page == page1 &&
+           log.records[0].event == ESX_VIEW_NAV_WILL_ENTER &&
+           log.records[0].forward == 1);
+    assert(log.records[1].page == page1 &&
+           log.records[1].event == ESX_VIEW_NAV_DID_ENTER &&
+           log.records[1].forward == 1);
+
+    // 动画 push page2：WILL 立即发（旧页 LEAVE 先于新页 ENTER），转场后 DID 同序。
+    log.records.clear();
+    const esx_view page2 = esx_create_view(0, 0, 0, 0, 0);
+    esx_view_set_nav_callback(page2, recordNavEvent, &log);
+    esx_navigation_push(nav, page2, 1);
+    assert(log.records.size() == 2);
+    assert(log.records[0].page == page1 &&
+           log.records[0].event == ESX_VIEW_NAV_WILL_LEAVE &&
+           log.records[0].forward == 1);
+    assert(log.records[1].page == page2 &&
+           log.records[1].event == ESX_VIEW_NAV_WILL_ENTER &&
+           log.records[1].forward == 1);
+    int64_t t = ms(1000);
+    for (int i = 0; i < 30; ++i) {
+        t += ms(16);
+        evk::beginFrame(t);
+    }
+    assert(log.records.size() == 4);
+    assert(log.records[2].page == page1 &&
+           log.records[2].event == ESX_VIEW_NAV_DID_LEAVE &&
+           log.records[2].forward == 1);
+    assert(log.records[3].page == page2 &&
+           log.records[3].event == ESX_VIEW_NAV_DID_ENTER &&
+           log.records[3].forward == 1);
+
+    // 动画 pop：WILL 立即发，DID 在页面销毁前发出。
+    log.records.clear();
+    esx_navigation_pop(nav, 1);
+    assert(log.records.size() == 2);
+    assert(log.records[0].page == page2 &&
+           log.records[0].event == ESX_VIEW_NAV_WILL_LEAVE &&
+           log.records[0].forward == 0);
+    assert(log.records[1].page == page1 &&
+           log.records[1].event == ESX_VIEW_NAV_WILL_ENTER &&
+           log.records[1].forward == 0);
+    for (int i = 0; i < 30; ++i) {
+        t += ms(16);
+        evk::beginFrame(t);
+    }
+    assert(log.records.size() == 4);
+    assert(log.records[2].page == page2 &&
+           log.records[2].event == ESX_VIEW_NAV_DID_LEAVE &&
+           log.records[2].forward == 0);
+    assert(log.records[3].page == page1 &&
+           log.records[3].event == ESX_VIEW_NAV_DID_ENTER &&
+           log.records[3].forward == 0);
+    assert(esxViewFromHandle(page2) == nullptr);
+
+    // WILL_ENTER 返回 1 取消 push：page3 未被接管，旧页收到配对 DID_ENTER。
+    log.records.clear();
+    const esx_view page3 = esx_create_view(0, 0, 0, 0, 0);
+    esx_view_set_nav_callback(page3, recordNavEvent, &log);
+    log.cancelOnWillEnter = page3;
+    esx_navigation_push(nav, page3, 0);
+    log.cancelOnWillEnter = 0;
+    assert(esx_navigation_depth(nav) == 1);
+    assert(esx_navigation_top_page(nav) == page1);
+    assert(log.records.size() == 3);
+    assert(log.records[0].page == page1 &&
+           log.records[0].event == ESX_VIEW_NAV_WILL_LEAVE);
+    assert(log.records[1].page == page3 &&
+           log.records[1].event == ESX_VIEW_NAV_WILL_ENTER);
+    assert(log.records[2].page == page1 &&
+           log.records[2].event == ESX_VIEW_NAV_DID_ENTER);
+    esx_destroy_view(page3); // 未被 Navigation 接管，App 自行销毁
+
+    // 左滑返回被回弹取消：WILL 对在手势 BEGIN 发出，回弹完成后反向配对收尾。
+    const esx_view page4 = esx_create_view(0, 0, 0, 0, 0);
+    esx_view_set_nav_callback(page4, recordNavEvent, &log);
+    esx_navigation_push(nav, page4, 0);
+    log.records.clear();
+    using evk::ui::PointerAction;
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 10, 300, ms(2000)});
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 0, 110, 300, ms(2040)});
+    assert(log.records.size() == 2);
+    assert(log.records[0].page == page4 &&
+           log.records[0].event == ESX_VIEW_NAV_WILL_LEAVE &&
+           log.records[0].forward == 0);
+    assert(log.records[1].page == page1 &&
+           log.records[1].event == ESX_VIEW_NAV_WILL_ENTER &&
+           log.records[1].forward == 0);
+    // 进度 0.25、停住超过 100ms（速度 0）→ 回弹取消。
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 110, 300, ms(2200)});
+    for (int i = 0; i < 30; ++i) {
+        t += ms(16);
+        evk::beginFrame(t);
+    }
+    assert(log.records.size() == 4);
+    assert(log.records[2].page == page1 &&
+           log.records[2].event == ESX_VIEW_NAV_DID_LEAVE &&
+           log.records[2].forward == 0);
+    assert(log.records[3].page == page4 &&
+           log.records[3].event == ESX_VIEW_NAV_DID_ENTER &&
+           log.records[3].forward == 0);
+    assert(esx_navigation_depth(nav) == 2);
+
+    esx_destroy_view(nav);
+    evk::ui::stopAllAnimations();
+}
+
+// ---- 引擎就绪守卫 ----
+
+void testEngineReadyGuard() {
+    evk::setEngineReady(false);
+    const esx_view view = esx_create_view(0, 0, 10, 10, 0); // 告警但仍可用
+    assert(view != 0);
+    esx_destroy_view(view);
+    evk::setEngineReady(true);
+}
+
+// ---- 事件总线 ----
+
+struct EventSlot {
+    std::vector<int>* log;
+    int tag;
+    bool consume;
+};
+
+int32_t captureEvent(int32_t /*eventId*/, const void* /*data*/, void* userData) {
+    auto* slot = static_cast<EventSlot*>(userData);
+    slot->log->push_back(slot->tag);
+    return slot->consume ? 1 : 0;
+}
+
+void testEventBus() {
+    evk::setFrameFunc(renderFrame);
+    evk::cancelPendingFrame();
+
+    const int32_t kEvt = 42;
+    std::vector<int> calls;
+    EventSlot low{&calls, 3, false};
+    EventSlot high{&calls, 1, false};
+    EventSlot normal{&calls, 2, false};
+    // 乱序注册：派发按 HIGH→NORMAL→LOW。
+    esx_event_on(kEvt, ESX_PRI_NORMAL, 0, captureEvent, &normal);
+    esx_event_on(kEvt, ESX_PRI_LOW, 0, captureEvent, &low);
+    esx_event_on(kEvt, ESX_PRI_HIGH, 0, captureEvent, &high);
+    esx_event_emit(kEvt, nullptr);
+    assert((calls == std::vector<int>{1, 2, 3}));
+
+    // 高优先级消费：后续不再派发。
+    calls.clear();
+    high.consume = true;
+    esx_event_emit(kEvt, nullptr);
+    assert((calls == std::vector<int>{1}));
+    high.consume = false;
+
+    // scope：隐藏视图收不到；可见恢复。同级按注册序。
+    const esx_view root = esx_create_view(0, 0, 200, 200, 0);
+    esx_set_root_view(root);
+    const esx_view scoped = esx_create_view(0, 0, 10, 10, root);
+    EventSlot scopedSlot{&calls, 9, false};
+    esx_event_on(kEvt, ESX_PRI_NORMAL, scoped, captureEvent, &scopedSlot);
+    calls.clear();
+    esx_event_emit(kEvt, nullptr);
+    assert((calls == std::vector<int>{1, 2, 9, 3}));
+    esx_view_set_visible(scoped, 0);
+    esx_event_emit(kEvt, nullptr);
+    assert((calls == std::vector<int>{1, 2, 9, 3, 1, 2, 3}));
+    esx_view_set_visible(scoped, 1); // 恢复可见
+
+    // off 注销后不再收到。
+    esx_event_off(kEvt, captureEvent, &normal);
+    calls.clear();
+    esx_event_emit(kEvt, nullptr);
+    assert((calls == std::vector<int>{1, 9, 3}));
+    esx_event_off(kEvt, captureEvent, &low);
+    esx_event_off(kEvt, captureEvent, &high);
+    esx_event_off(kEvt, captureEvent, &scopedSlot);
+
+    // esx_post_ui：任务在下一帧 beginFrame 开头执行。
+    bool ran = false;
+    esx_post_ui([](void* p) { *static_cast<bool*>(p) = true; }, &ran);
+    assert(!ran);
+    evk::beginFrame(ms(1));
+    assert(ran);
+    // postUi（std::function 版）同样生效。
+    int posted = 0;
+    evk::ui::postUi([&posted] { ++posted; });
+    evk::beginFrame(ms(2));
+    assert(posted == 1);
+
+    esx_destroy_view(root);
+}
+
+// ---- Flex 布局 ----
+
+void testFlexLayout() {
+    const esx_view flex = esx_flex_create(0, 0, 400, 800, 0, 1);
+    esx_set_root_view(flex);
+    const esx_view a = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view b = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view c = esx_create_view(0, 0, 0, 0, 0);
+    const esx_flex_child specA{200, 0, -1, ESX_FLEX_ALIGN_STRETCH, 10, 20, 0};
+    const esx_flex_child specB{-1, 1, -1, ESX_FLEX_ALIGN_STRETCH, 0, 0, 0};
+    const esx_flex_child specC{-1, 2, 100, ESX_FLEX_ALIGN_CENTER, 0, 0, 0};
+    esx_flex_set_child(flex, a, &specA);
+    esx_flex_set_child(flex, b, &specB);
+    esx_flex_set_child(flex, c, &specC);
+
+    // 主轴 800：a 固定 200+margin30 → 剩余 570 按 1:2 → b=190，c=380。
+    evk::ui::View* va = esxViewFromHandle(a);
+    evk::ui::View* vb = esxViewFromHandle(b);
+    evk::ui::View* vc = esxViewFromHandle(c);
+    assert(va->rect.y == 10.0f && va->rect.h == 200.0f);
+    assert(vb->rect.y == 230.0f && vb->rect.h == 190.0f);
+    assert(vc->rect.y == 420.0f && vc->rect.h == 380.0f);
+    // c 交叉轴固定 100 居中：x=(400-100)/2。
+    assert(vc->rect.x == 150.0f && vc->rect.w == 100.0f);
+    // a/b 交叉轴 stretch 占满。
+    assert(va->rect.w == 400.0f && vb->rect.w == 400.0f);
+
+    // 尺寸变化自动重排：主轴 400，固定 230 → 剩余 170 按 1:2。
+    esx_view_set_bounds(flex, 0, 0, 200, 400);
+    assert(vb->rect.h > 56.0f && vb->rect.h < 57.0f);
+    assert(vc->rect.h > 113.0f && vc->rect.h < 114.0f);
+    assert(vc->rect.x == 50.0f); // 200 宽居中
+
+    // 子视图销毁：spec 同步移除并重排（c 独占剩余 170）。
+    esx_destroy_view(b);
+    assert(vc->rect.y == 230.0f && vc->rect.h == 170.0f);
+
+    // 横向 Row：主轴互换到水平。
+    const esx_view row = esx_flex_create(0, 0, 300, 100, 0, 0);
+    const esx_view r1 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_flex_child specR{-1, 1, -1, ESX_FLEX_ALIGN_STRETCH, 0, 0, 0};
+    esx_flex_set_child(row, r1, &specR);
+    evk::ui::View* vr1 = esxViewFromHandle(r1);
+    assert(vr1->rect.x == 0.0f && vr1->rect.w == 300.0f && vr1->rect.h == 100.0f);
+    esx_destroy_view(row);
+
+    esx_destroy_view(flex);
+}
+
+// ---- 声明式 Widget / reconcile ----
+
+void testWidgetReconcile() {
+    using namespace evk::ui;
+    std::unique_ptr<Element> root;
+    reconcile(root, makeWidget(Box(0xFF0000FF)), 0);
+    const esx_view first = root->view;
+    esx_set_root_view(first);
+    evk::ui::View* v1 = esxViewFromHandle(first);
+    assert(v1 && v1->hasBackground && v1->background.r == 1.0f);
+
+    // 同类型更新：句柄不变（内部状态保留），颜色变。
+    reconcile(root, makeWidget(Box(0x00FF00FF)), 0);
+    assert(root->view == first);
+    assert(v1->background.g == 1.0f);
+
+    // 点击回调重绑定：更新后走新 lambda。
+    int clicks1 = 0;
+    int clicks2 = 0;
+    Box box1;
+    box1.onTap = [&clicks1] { ++clicks1; };
+    reconcile(root, makeWidget(std::move(box1)), 0);
+    esx_view_set_bounds(root->view, 0, 0, 100, 100);
+    using evk::ui::PointerAction;
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 20, 20});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 20, 20});
+    assert(clicks1 == 1 && clicks2 == 0);
+
+    Box box2;
+    box2.onTap = [&clicks2] { ++clicks2; };
+    const esx_view sameView = root->view;
+    reconcile(root, makeWidget(std::move(box2)), 0);
+    assert(root->view == sameView); // 同类型就地更新
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 20, 20});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 20, 20});
+    assert(clicks1 == 1 && clicks2 == 1);
+
+    // 换类型重建：句柄变化，旧视图销毁。
+    reconcile(root, makeWidget(ButtonW()), 0);
+    assert(root->view != sameView);
+    assert(esxViewFromHandle(sameView) == nullptr);
+
+    // 子节点按位置 diff：增删。
+    reconcile(root, makeWidget(column(Box(), Box())), 0);
+    const esx_view col = root->view;
+    assert(esxViewFromHandle(col)->children.size() == 2);
+    const esx_view keptChild = esxViewFromHandle(col)->children[0]->handle;
+    reconcile(root, makeWidget(column(Box())), 0);
+    assert(esxViewFromHandle(col)->children.size() == 1);
+    assert(esxViewFromHandle(col)->children[0]->handle == keptChild);
+    reconcile(root, makeWidget(column(Box(), Box(), Box())), 0);
+    assert(esxViewFromHandle(col)->children.size() == 3);
+
+    teardown(root);
+    assert(root == nullptr);
+    assert(esxViewFromHandle(col) == nullptr);
+    assert(esxRootView() == nullptr);
+}
+
+// ---- Component / pushPage ----
+
+class TestPage : public evk::ui::Component {
+public:
+    static int alive; // 构造/析构计数，验证框架回收
+
+    int buildCount = 0;
+    int enters = 0;
+    int leaves = 0;
+    int items = 2;
+    bool allowEnter = true;
+    std::vector<int>* eventLog = nullptr;
+
+    TestPage() { ++alive; }
+    ~TestPage() override { --alive; }
+
+    std::unique_ptr<evk::ui::Widget> build() override {
+        using namespace evk::ui;
+        ++buildCount;
+        std::vector<std::unique_ptr<Widget>> kids;
+        for (int i = 0; i < items; ++i) {
+            kids.push_back(makeWidget(Box()));
+        }
+        return makeWidget(column(std::move(kids)));
+    }
+
+    bool onWillEnter(bool) override { return allowEnter; }
+    void onDidEnter(bool) override { ++enters; }
+    void onDidLeave(bool) override { ++leaves; }
+};
+
+int TestPage::alive = 0;
+
+void testComponentLifecycle() {
+    using namespace evk::ui;
+    evk::setFrameFunc(renderFrame);
+    evk::ui::stopAllAnimations();
+    const esx_view nav = esx_navigation_create(0, 0, 400, 800, 0, 60, nullptr);
+    esx_set_root_view(nav);
+    assert(TestPage::alive == 0);
+
+    // push 首页：build 一次，DID_ENTER 触发。
+    auto page = std::make_unique<TestPage>();
+    TestPage* p1 = page.get();
+    pushPage(nav, std::move(page), false);
+    assert(TestPage::alive == 1);
+    assert(p1->buildCount == 1);
+    assert(p1->enters == 1);
+    assert(p1->view() != 0);
+    assert(esxViewFromHandle(p1->view())->children.size() == 2);
+
+    // setState：重建并 diff（子 2→3），视图句柄不变。
+    const esx_view rootView = p1->view();
+    p1->setState([&p1] { p1->items = 3; });
+    assert(p1->buildCount == 2);
+    assert(p1->view() == rootView);
+    assert(esxViewFromHandle(rootView)->children.size() == 3);
+
+    // push 第二页：首页 DID_LEAVE；pop 后首页 DID_ENTER（forward 区分方向）。
+    auto page2 = std::make_unique<TestPage>();
+    pushPage(nav, std::move(page2), false);
+    assert(TestPage::alive == 2);
+    assert(p1->leaves == 1);
+    esx_navigation_pop(nav, 0);
+    assert(TestPage::alive == 1); // pop 后框架销毁 p2
+    assert(p1->enters == 2);
+
+    // onWillEnter 返回 false：push 被取消，Component 由框架回收。
+    auto page3 = std::make_unique<TestPage>();
+    page3->allowEnter = false;
+    pushPage(nav, std::move(page3), false);
+    assert(esx_navigation_depth(nav) == 1);
+    assert(TestPage::alive == 1);
+
+    // listen scope：页面被覆盖时收不到事件。
+    std::vector<int> log1;
+    p1->listen(7, ESX_PRI_NORMAL, [&log1](const void*) { log1.push_back(1); });
+    auto page4 = std::make_unique<TestPage>();
+    TestPage* p4 = page4.get();
+    std::vector<int> log4;
+    p4->listen(7, ESX_PRI_NORMAL, [&log4](const void*) { log4.push_back(1); });
+    pushPage(nav, std::move(page4), false);
+    esx_event_emit(7, nullptr); // p1 被覆盖（不可见），只有 p4 收到
+    assert(log1.empty());
+    assert(log4.size() == 1);
+    esx_navigation_pop(nav, 0);
+    esx_event_emit(7, nullptr); // p1 回到台前
+    assert(log1.size() == 1);
+    assert(log4.size() == 1);   // p4 已销毁，监听已自动注销
+
+    // 整树销毁流程：先 teardownAllComponents 再销毁 nav。
+    teardownAllComponents();
+    assert(TestPage::alive == 0);
+    esx_destroy_view(nav);
+}
+
 } // namespace
 
 int main() {
+    evk::setEngineReady(true);
     testDirtyFramesAreCoalesced();
     testViewClickAndDragCancellation();
     testScrollViewTakesDragFromChildButton();
@@ -720,5 +1154,11 @@ int main() {
     testScrollViewFlingInterruptedByDown();
     testNavigationPushPop();
     testNavigationEdgeSwipe();
+    testNavigationPageLifecycle();
+    testEngineReadyGuard();
+    testEventBus();
+    testFlexLayout();
+    testWidgetReconcile();
+    testComponentLifecycle();
     return 0;
 }

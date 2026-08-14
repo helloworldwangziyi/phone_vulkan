@@ -46,9 +46,12 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/input.cpp
     ${EVK_ROOT}/core/src/ui/animator.cpp
     ${EVK_ROOT}/core/src/ui/canvas.cpp
+    ${EVK_ROOT}/core/src/ui/event_bus.cpp
     ${EVK_ROOT}/core/src/ui/controls/button.cpp
+    ${EVK_ROOT}/core/src/ui/controls/flex.cpp
     ${EVK_ROOT}/core/src/ui/controls/scroll_view.cpp
     ${EVK_ROOT}/core/src/ui/controls/navigation.cpp
+    ${EVK_ROOT}/core/src/ui/widget.cpp
 )
 
 target_include_directories(estarx_vulkan

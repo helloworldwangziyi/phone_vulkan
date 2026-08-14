@@ -25,6 +25,12 @@
 // （销毁前先回调 on_pop，让 App 清理挂在页面上的自有数据）。
 // 转场进行中忽略新的 push/pop/返回手势；尺寸变化时取消转场并吸附到最终状态。
 //
+// 页面生命周期钩子（对应 estarx App view_init_func 的 8 态，方向用 forward 区分）：
+//   push：        旧页 WILL_LEAVE → 新页 WILL_ENTER →（转场）→ 旧页 DID_LEAVE → 新页 DID_ENTER
+//   pop/左滑返回：顶页 WILL_LEAVE → 下页 WILL_ENTER →（转场）→ 顶页 DID_LEAVE → 下页 DID_ENTER
+// WILL_* 返回非 0 取消本次导航；左滑回弹/尺寸吸附取消转场时按最终归属收尾
+// （台前页 DID_ENTER、另一页 DID_LEAVE），每个 WILL 严格配对一次 DID。
+//
 // 生命周期：转场上下文（NavTransition）只存 nav 句柄，tick 时用
 // dynamic_cast 重新解析，不留可能悬空的 View 指针；返回按钮回调里的
 // Navigation* 原始指针安全——backButton 是 nav 的后代，同树同生死，
@@ -39,6 +45,7 @@
 #include <vector>
 
 #include "evk/log.h"
+#include "evk/render_loop.h"
 #include "evk/ui/animator.h"
 #include "evk/ui/controls/button.h"
 #include "evk/ui/view.h"
@@ -64,6 +71,62 @@ public:
     bool swiping = false;
     esx_navigation_pop_func onPop = nullptr;
     void* onPopUserData = nullptr;
+    // 待配对的 WILL 钩子上下文：fireWillHooks 记录，fireDidHooks 消费后清除。
+    esx_view hookLeave = 0;  // 收到 WILL_LEAVE 的页面
+    esx_view hookEnter = 0;  // 收到 WILL_ENTER 的页面
+    int32_t hookForward = 0;
+
+    // 触发页面导航生命周期钩子；页面无回调返回 0。
+    // WILL_* 返回非 0 表示页面取消本次导航。
+    int32_t firePageHook(esx_view page, esx_view_nav_event event, int32_t forward) const {
+        evk::ui::View* view = esxViewFromHandle(page);
+        if (!view || !view->navFunc) {
+            return 0;
+        }
+        return view->navFunc(handle, page, event, forward, view->navUserData);
+    }
+
+    // 转场开始前发 WILL 对（leave 先于 enter）。任一页面取消时给已收到
+    // WILL_LEAVE 的页面补发 DID_ENTER（你留在台前）配对收尾，返回 false。
+    // 成功时记录上下文，由 fireDidHooks 配对。钩子里改跳其他页面时须取消
+    // 原导航，否则嵌套导航的上下文会被覆盖（配对打破，告警）。
+    bool fireWillHooks(esx_view leavePage, esx_view enterPage, int32_t forward) {
+        if (hookLeave != 0 || hookEnter != 0) {
+            EVK_LOGW("navigation: nested navigation from page hook without canceling");
+        }
+        if (leavePage != 0 &&
+            firePageHook(leavePage, ESX_VIEW_NAV_WILL_LEAVE, forward) != 0) {
+            return false;
+        }
+        if (enterPage != 0 &&
+            firePageHook(enterPage, ESX_VIEW_NAV_WILL_ENTER, forward) != 0) {
+            if (leavePage != 0) {
+                firePageHook(leavePage, ESX_VIEW_NAV_DID_ENTER, forward);
+            }
+            return false;
+        }
+        hookLeave = leavePage;
+        hookEnter = enterPage;
+        hookForward = forward;
+        return true;
+    }
+
+    // 转场落定（含回弹/吸附取消）：loser 收 DID_LEAVE 先于 winner 收 DID_ENTER，
+    // 与 fireWillHooks 记录的 WILL 对配对后清除上下文。上下文为空时无操作。
+    void fireDidHooks(esx_view winner, esx_view loser) {
+        if (hookLeave == 0 && hookEnter == 0) {
+            return;
+        }
+        const int32_t forward = hookForward;
+        hookLeave = 0;
+        hookEnter = 0;
+        if (loser != 0) {
+            firePageHook(loser, ESX_VIEW_NAV_DID_LEAVE, forward);
+        }
+        if (winner != 0) {
+            firePageHook(winner, ESX_VIEW_NAV_DID_ENTER, forward);
+        }
+    }
 
     bool acceptsPanInput() const override { return true; }
 
@@ -82,9 +145,15 @@ public:
             const float downX = event.x - event.translation_x;
             swiping = pages.size() > 1 && downX <= kEdgeWidth;
             if (swiping) {
+                const esx_view top = pages.back();
                 const esx_view under = pages[pages.size() - 2];
+                // 页面可在 WILL 钩子里取消本次返回（如表单未保存）。
+                if (!fireWillHooks(top, under, 0)) {
+                    swiping = false;
+                    return;
+                }
                 esx_view_set_visible(under, 1);
-                applyTransitionPositions(pages.back(), under, 0.0f);
+                applyTransitionPositions(top, under, 0.0f);
             }
             return;
         }
@@ -120,6 +189,11 @@ public:
             const bool isTop = i + 1 == pages.size();
             layoutPage(pages[i], 0.0f);
             esx_view_set_visible(pages[i], isTop ? 1 : 0);
+        }
+        // 吸附后栈顶留在台前：按"栈顶 winner"给待配对的 WILL 对收尾。
+        if (!pages.empty()) {
+            const esx_view winner = pages.back();
+            fireDidHooks(winner, winner == hookLeave ? hookEnter : hookLeave);
         }
     }
 
@@ -196,6 +270,8 @@ void finishTransition(Navigation& nav, const NavTransition* transition) {
             esx_view_set_visible(transition->under, 1);
             nav.layoutPage(transition->under, 0.0f);
         }
+        // 页面销毁前发配对 DID：顶页 DID_LEAVE（页面仍有效）→ 下页 DID_ENTER。
+        nav.fireDidHooks(transition->under, transition->top);
         if (nav.onPop) {
             nav.onPop(nav.handle, transition->top, nav.onPopUserData);
         }
@@ -207,6 +283,8 @@ void finishTransition(Navigation& nav, const NavTransition* transition) {
             esx_view_set_visible(transition->under, 0);
             nav.applyTransitionPositions(transition->top, transition->under, 0.0f);
         }
+        // push 落定与左滑回弹都是 top 留在台前：under DID_LEAVE → top DID_ENTER。
+        nav.fireDidHooks(transition->top, transition->under);
     }
     nav.updateBackButton();
 }
@@ -348,11 +426,22 @@ void esx_navigation_push(esx_view nav, esx_view page, int32_t animated) {
         return;
     }
     evk::ui::View* container = esxViewFromHandle(self->container);
-    if (!container || !esxAdoptChild(self->container, page)) {
+    if (!container) {
+        return;
+    }
+    // 接管前发 WILL 对：旧页 WILL_LEAVE → 新页 WILL_ENTER；页面可取消 push
+    // （取消时 page 未被接管，App 自行销毁或复用）。
+    const esx_view under = self->pages.empty() ? 0 : self->pages.back();
+    if (!self->fireWillHooks(under, page, 1)) {
+        EVK_LOGI("esx_navigation_push: canceled by page hook");
+        return;
+    }
+    if (!esxAdoptChild(self->container, page)) {
+        // 接管失败：按"旧页留在台前"给已发的 WILL 对配对收尾。
+        self->fireDidHooks(under, page);
         return;
     }
 
-    const esx_view under = self->pages.empty() ? 0 : self->pages.back();
     self->pages.push_back(page);
     if (animated != 0 && under != 0 && container->rect.w > 0.0f) {
         // 动画 push：新页停在屏右（p=1），旧页保持可见，动画把 p 推到 0。
@@ -365,6 +454,7 @@ void esx_navigation_push(esx_view nav, esx_view page, int32_t animated) {
         if (under != 0) {
             esx_view_set_visible(under, 0);
         }
+        self->fireDidHooks(page, under);
     }
     self->updateBackButton();
 }
@@ -384,15 +474,21 @@ void esx_navigation_pop(esx_view nav, int32_t animated) {
     }
     const esx_view top = self->pages.back();
     const esx_view under = self->pages[self->pages.size() - 2];
+    // 转场前发 WILL 对：顶页 WILL_LEAVE → 下页 WILL_ENTER；页面可取消返回。
+    if (!self->fireWillHooks(top, under, 0)) {
+        EVK_LOGI("esx_navigation_pop: canceled by page hook");
+        return;
+    }
     esx_view_set_visible(under, 1);
     if (animated != 0) {
         // 动画 pop：top 从 p=0 滑到 p=1，完成后在 finishTransition 里销毁。
         self->applyTransitionPositions(top, under, 0.0f);
         self->startTransition(top, under, 0.0f, 1.0f, true);
     } else {
-        // 无动画：立即出栈、回调 on_pop 并销毁。
+        // 无动画：立即出栈、发配对 DID、回调 on_pop 并销毁。
         self->pages.pop_back();
         self->layoutPage(under, 0.0f);
+        self->fireDidHooks(under, top);
         if (self->onPop) {
             self->onPop(nav, top, self->onPopUserData);
         }
@@ -409,6 +505,27 @@ int32_t esx_navigation_depth(esx_view nav) {
 esx_view esx_navigation_top_page(esx_view nav) {
     Navigation* self = navigationFromHandle(nav);
     return self && !self->pages.empty() ? self->pages.back() : 0;
+}
+
+void esx_navigation_set_style(esx_view nav, const esx_navigation_style* style) {
+    Navigation* self = navigationFromHandle(nav);
+    if (!self || !style) {
+        return;
+    }
+    self->style = *style;
+    if (self->bar != 0) {
+        esx_view_set_background(self->bar, style->bar_color);
+    }
+    if (self->barLine != 0) {
+        esx_view_set_background(self->barLine, style->bar_line_color);
+    }
+    if (self->backButton != 0) {
+        const esx_button_style buttonStyle{style->back_button_color,
+                                           style->back_button_pressed_color,
+                                           style->back_button_color};
+        esx_button_set_style(self->backButton, &buttonStyle);
+    }
+    evk::requestRender();
 }
 
 void esx_navigation_set_on_pop(esx_view nav, esx_navigation_pop_func on_pop,

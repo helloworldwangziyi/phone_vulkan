@@ -21,7 +21,10 @@ fi
     "$repo_root/core/src/ui/input.cpp" \
     "$repo_root/core/src/ui/animator.cpp" \
     "$repo_root/core/src/ui/canvas.cpp" \
+    "$repo_root/core/src/ui/event_bus.cpp" \
     "$repo_root/core/src/ui/controls/button.cpp" \
+    "$repo_root/core/src/ui/controls/flex.cpp" \
+    "$repo_root/core/src/ui/widget.cpp" \
     "$repo_root/core/src/ui/controls/scroll_view.cpp" \
     "$repo_root/core/src/ui/controls/navigation.cpp" \
     -o "$test_binary"

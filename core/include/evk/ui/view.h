@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -51,6 +52,9 @@ public:
     void* clickUserData = nullptr;
     esx_view_pan_func panFunc = nullptr;
     void* panUserData = nullptr;
+    // 页面导航生命周期回调，由 Navigation 等导航容器触发。
+    esx_view_nav_func navFunc = nullptr;
+    void* navUserData = nullptr;
 
     // ---- SDK 控件行为钩子（继承重写）----
     // 是否想成为原始 Pointer（Down/Move/Up/Cancel）输入目标，如 Button/ScrollView。
@@ -61,6 +65,9 @@ public:
     virtual void handlePan(const esx_view_pan_event& /*event*/) {}
     // esx_view_set_bounds 之后调用（如 ScrollView 重 clamp、Navigation 重排）。
     virtual void handleBoundsChanged() {}
+    // 子视图经 esx_destroy_view 移除前调用（index 为移除前在 children 中的
+    // 下标），供 Flex 等容器同步与子视图平行的数据。
+    virtual void handleChildRemoved(size_t /*index*/) {}
 
     // 挂载子视图，返回子视图裸指针（所有权归父视图）。
     View* addChild(std::unique_ptr<View> child);

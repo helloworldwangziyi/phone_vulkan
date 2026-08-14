@@ -108,7 +108,9 @@ Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass /*clazz*/, jo
     EVK_LOGI("Vulkan renderer initialized");
     // 平台壳的"画一帧"实现注册给 core，App 的 requestRender() 由此触发。
     evk::setFrameFunc(&renderFrame);
-    // AppStart 之前先报一次 SurfaceChanged：initialize() 成功后 ANativeWindow 已建立，
+    // 渲染器初始化完成：core 进入就绪状态，之后 App 才能安全创建视图。
+    evk::setEngineReady(true);
+    // EngineReady 之前先报一次 SurfaceChanged：initialize() 成功后 ANativeWindow 已建立，
     // 取到的是 surface 的真实像素尺寸，App 建视图树时即可按真实像素布局。
     // 之后的尺寸变化仍由 nativeResize 通道上报。
     uint32_t surfaceWidth = 0;
@@ -119,7 +121,7 @@ Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass /*clazz*/, jo
     evk::dispatchEvent(evk::EventId::SurfaceChanged, &initSize);
     if (!g_appStarted) {
         g_appStarted = true;
-        evk::dispatchEvent(evk::EventId::AppStart, nullptr);
+        evk::dispatchEvent(evk::EventId::EngineReady, nullptr);
     }
     evk::requestRender();
 }
@@ -171,6 +173,8 @@ Java_com_estarx_vulkan_NativeBridge_nativeDestroy(JNIEnv* /*env*/, jclass /*claz
     evk::dispatchEvent(evk::EventId::SurfaceDestroyed, nullptr);
     evk::cancelPendingFrame();
     evk::setFrameFunc(nullptr);
+    evk::setEngineReady(false);
+    g_appStarted = false; // 下次 surfaceCreated 走完整 EngineReady 重建流程
     if (g_renderer) {
         delete g_renderer;
         g_renderer = nullptr;

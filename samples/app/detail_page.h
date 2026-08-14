@@ -1,16 +1,18 @@
 #pragma once
 
-#include "evk/esx_view.h"
+// 详情页（声明式）：渐变主视觉 + 2×2 色卡 + 继续 push 按钮。
+// 层序号 variant 由构造传入（连续 push 时每层颜色不同，跳转有感知）。
 
-// 详情页：演示导航返回（导航栏返回按钮 / 左缘滑动返回）。
-// 可同时存在多个实例（详情页可再 push 详情页）。
-esx_view detailPageCreate(esx_view nav);
+#include <memory>
 
-// SurfaceChanged 时重排所有存活实例。
-void detailPagesLayout();
+#include "evk/ui/widget.h"
 
-// Navigation 的 on_pop 回调：页面销毁前清理对应实例记录。
-void detailPageOnPopped(esx_view page);
+class DetailPage : public evk::ui::Component {
+public:
+    explicit DetailPage(int variant) : variant_(variant) {}
 
-// 整树重建（如切换主题）时清空全部实例记录。
-void detailPagesClear();
+    std::unique_ptr<evk::ui::Widget> build() override;
+
+private:
+    int variant_ = 0;
+};

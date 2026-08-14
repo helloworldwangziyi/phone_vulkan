@@ -1,13 +1,31 @@
 #pragma once
 
-#include "evk/esx_view.h"
+// 首页（声明式）：渐变面板 + 详情页/主题按钮 + 模拟行情列表。
+// 页面结构全部写在 build() 里：创建了什么、挂在哪，一眼可见。
+// 数据流：进入页面（onDidEnter）发起模拟行情请求，数据返回 setState 渲染；
+// 离开（onWillLeave）取消请求，迟到数据丢弃。
 
-// 首页（导航栈根页面）：渐变面板 + 详情页/主题按钮 + ScrollView 演示。
-// 返回 parent=0 创建的页面视图，由 Navigation 接管布局与生命周期。
-esx_view homePageCreate(esx_view nav);
+#include <atomic>
+#include <cstdint>
+#include <memory>
+#include <vector>
 
-// SurfaceChanged 后按真实像素重排页面内容。
-void homePageLayout();
+#include "evk/ui/widget.h"
 
-// 页面视图由外部（Navigation/App）统一销毁，这里只清 App 侧记录。
-void homePageDestroy();
+class HomePage : public evk::ui::Component {
+public:
+    HomePage();
+    ~HomePage() override;
+
+    std::unique_ptr<evk::ui::Widget> build() override;
+    void onDidEnter(bool forward) override;
+    bool onWillLeave(bool forward) override;
+
+private:
+    bool panelAccent_ = false;
+    int detailCount_ = 0;              // push 过的详情页数量（层序号）
+    bool quoteLoaded_ = false;
+    bool quotePending_ = false;
+    std::vector<uint32_t> quotes_;     // 模拟行情数据（颜色行）
+    std::shared_ptr<std::atomic_bool> quoteCancel_;
+};

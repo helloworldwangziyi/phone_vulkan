@@ -1,145 +1,146 @@
-// 首页（导航栈根页面）：渐变面板 + "打开详情页"/"切换主题"按钮 + ScrollView 演示。
-// 页面是 parent=0 创建的视图，布局与生命周期由 Navigation 接管；
-// 本模块只负责页面内容：创建（homePageCreate）、旋转重排（homePageLayout）、
-// 整树重建（切换主题）时清理 App 侧句柄记录（homePageDestroy）。
+// 首页实现：build() 即页面结构（嵌套即父子），回调内联。
+// 对照 estarx App 页面 create 函数的可读性，但消灭 layout/destroy 样板：
+// 布局由 Column/Flex 容器自动完成，resize 由容器级联重排。
 
 #include "main_page.h"
 
+#include <chrono>
+#include <thread>
+
 #include "app_metrics.h"
 #include "app_theme.h"
-#include "app_ui.h"
 #include "detail_page.h"
-#include "evk/esx_view.h"
 #include "evk/log.h"
-#include "evk/render_loop.h"
-#include "evk/ui/controls/button.h"
 #include "evk/ui/controls/navigation.h"
-#include "evk/ui/controls/scroll_view.h"
 
 namespace {
 
-esx_view g_nav = 0;
-esx_view g_page = 0;
-esx_view g_panel = 0;
-esx_view g_detailButton = 0;
-esx_view g_themeButton = 0;
-esx_view g_scrollView = 0;
-esx_view g_scrollItems[8]{};
-bool g_panelAccent = false;
-
-void drawPanel(esx_view view, void* /*userData*/) {
+// 面板渐变三角（局部坐标，同旧 drawPanel）。
+void drawPanelGradient(esx_view view, bool accent) {
     const AppTheme& theme = appTheme();
-    const uint32_t left = g_panelAccent ? theme.panelAccent : theme.panelGradient[0];
-    esx_draw_triangle(view,
-                      appCalcWidth(440.0f), appCalcHeight(50.0f),
+    const uint32_t left = accent ? theme.panelAccent : theme.panelGradient[0];
+    esx_draw_triangle(view, appCalcWidth(440.0f), appCalcHeight(50.0f),
                       appCalcWidth(790.0f), appCalcHeight(460.0f),
                       appCalcWidth(90.0f), appCalcHeight(460.0f),
                       left, theme.panelGradient[1], theme.panelGradient[2]);
 }
 
-void onPanelClick(esx_view /*view*/, const esx_view_click_event* /*event*/,
-                  void* /*userData*/) {
-    g_panelAccent = !g_panelAccent;
-    EVK_LOGI("panel clicked, accent={}", g_panelAccent);
-    evk::requestRender();
-}
-
-void onDetailButtonClick(esx_view /*button*/, void* /*userData*/) {
-    EVK_LOGI("push detail page");
-    esx_navigation_push(g_nav, detailPageCreate(g_nav), 1);
-}
-
-void onThemeButtonClick(esx_view /*button*/, void* /*userData*/) {
-    EVK_LOGI("toggle theme, dark={}", !appThemeIsDark());
-    appThemeToggle();
-    appRebuildUi();
-}
-
-void onScroll(esx_view scrollView, float offsetX, float offsetY, void* /*userData*/) {
-    EVK_LOGI("scroll view {} offset=({:.1f}, {:.1f})", scrollView, offsetX, offsetY);
-}
-
 } // namespace
 
-esx_view homePageCreate(esx_view nav) {
-    if (g_page != 0) {
-        return g_page;
+HomePage::HomePage() {
+    // 主题切换广播 → 重建换肤（build 重读 token，diff 就地更新）。
+    listen(kEventThemeChanged, ESX_PRI_NORMAL, [this](const void*) { setState(); });
+}
+
+HomePage::~HomePage() {
+    if (quoteCancel_) {
+        quoteCancel_->store(true);
     }
-    g_nav = nav;
+}
+
+std::unique_ptr<evk::ui::Widget> HomePage::build() {
+    using namespace evk::ui;
     const AppTheme& theme = appTheme();
 
-    g_page = esx_create_view(0, 0, 0, 0, 0);
-    esx_view_set_background(g_page, theme.windowBackground);
+    // 顶部渐变面板：点击切换强调色。
+    auto panel = Box(theme.surface);
+    panel.onTap = [this] {
+        setState([this] { panelAccent_ = !panelAccent_; });
+    };
+    panel.onDraw = [this](esx_view view) { drawPanelGradient(view, panelAccent_); };
+    panel.layout.main = appCalcHeight(540.0f);
+    panel.layout.marginMainBefore = appCalcHeight(60.0f);
+    panel.layout.marginCross = appCalcWidth(100.0f);
 
-    g_panel = esx_create_view(0, 0, 0, 0, g_page);
-    esx_view_set_background(g_panel, theme.surface);
-    esx_view_set_draw_callback(g_panel, drawPanel, nullptr);
-    esx_view_set_click_callback(g_panel, onPanelClick, nullptr);
-
+    // 主按钮：push 详情页（层序号递增，详情页颜色随层变化）。
     const esx_button_style primaryStyle{theme.primary, theme.primaryPressed,
                                         theme.primaryDisabled};
-    g_detailButton = esx_button_create(0, 0, 0, 0, g_page, &primaryStyle,
-                                       onDetailButtonClick, nullptr);
+    auto detailButton = ButtonW(primaryStyle);
+    detailButton.onTap = [this] {
+        pushPage(nav(), std::make_unique<DetailPage>(detailCount_++), true);
+    };
+    detailButton.layout.main = appCalcHeight(140.0f);
+    detailButton.layout.cross = appCalcWidth(400.0f);
+    detailButton.layout.align = ESX_FLEX_ALIGN_CENTER;
+    detailButton.layout.marginMainBefore = appCalcHeight(60.0f);
 
+    // 次按钮：切换主题并广播（导航栏样式同步更换）。
     const esx_button_style secondaryStyle{theme.secondary, theme.secondaryPressed,
                                           theme.primaryDisabled};
-    g_themeButton = esx_button_create(0, 0, 0, 0, g_page, &secondaryStyle,
-                                      onThemeButtonClick, nullptr);
+    auto themeButton = ButtonW(secondaryStyle);
+    themeButton.onTap = [this] {
+        appThemeToggle();
+        const AppTheme& next = appTheme();
+        const esx_navigation_style navStyle{next.navBar, next.navBarLine,
+                                            next.surfaceRaised, next.surface,
+                                            next.backArrow};
+        esx_navigation_set_style(nav(), &navStyle);
+        esx_event_emit(kEventThemeChanged, nullptr);
+    };
+    themeButton.layout = detailButton.layout;
 
-    const float scrollWidth = appCalcWidth(880.0f);
-    g_scrollView = esx_scroll_view_create(0, 0, scrollWidth, appCalcHeight(560.0f),
-                                          scrollWidth, appCalcHeight(1250.0f), g_page);
-    esx_scroll_view_set_on_scroll(g_scrollView, onScroll, nullptr);
-    const esx_view content = esx_scroll_view_get_content(g_scrollView);
-    for (int i = 0; i < 8; ++i) {
-        g_scrollItems[i] = esx_create_view(0, 0, 0, 0, content);
-        esx_view_set_background(g_scrollItems[i], theme.scrollItems[i]);
+    // 模拟行情列表：数据到达前占位行，到达后按数据重建（diff 自动增删行）。
+    std::vector<std::unique_ptr<Widget>> rows;
+    float contentHeight = 0.0f;
+    if (!quoteLoaded_) {
+        rows.push_back(makeWidget(Box(theme.surfaceRaised)
+                                      .mainSize(appCalcHeight(400.0f))));
+        contentHeight = appCalcHeight(400.0f);
+    } else {
+        rows = mapWidgets(quotes_, [](uint32_t color) {
+            return Box(color)
+                .mainSize(appCalcHeight(122.0f))
+                .marginMain(0.0f, appCalcHeight(30.0f));
+        });
+        contentHeight = appCalcHeight(24.0f + 152.0f * quotes_.size());
     }
+    auto list = ScrollW(makeWidget(column(std::move(rows))), contentHeight);
+    list.onScroll = [](float x, float y) {
+        EVK_LOGI("quote list offset=({:.1f}, {:.1f})", x, y);
+    };
+    list.layout.weight = 1;
+    list.layout.marginMainBefore = appCalcHeight(40.0f);
+    list.layout.marginMainAfter = appCalcHeight(24.0f);
+    list.layout.marginCross = appCalcWidth(100.0f);
 
-    homePageLayout();
-    EVK_LOGI("home page created: page={} panel={} scroll={}",
-             g_page, g_panel, g_scrollView);
-    return g_page;
+    auto page = column(std::move(panel), std::move(detailButton),
+                       std::move(themeButton), std::move(list));
+    page.color = theme.windowBackground;
+    return makeWidget(std::move(page));
 }
 
-void homePageLayout() {
-    if (g_page == 0) {
+void HomePage::onDidEnter(bool /*forward*/) {
+    if (quoteLoaded_ || quotePending_) {
         return;
     }
-
-    const float panelWidth = appCalcWidth(880.0f);
-    esx_view_set_bounds(g_panel, (g_screenWidth - panelWidth) * 0.5f,
-                        appCalcHeight(60.0f), panelWidth, appCalcHeight(540.0f));
-
-    const float buttonWidth = appCalcWidth(400.0f);
-    const float buttonX = (g_screenWidth - buttonWidth) * 0.5f;
-    esx_view_set_bounds(g_detailButton, buttonX, appCalcHeight(660.0f),
-                        buttonWidth, appCalcHeight(140.0f));
-    esx_view_set_bounds(g_themeButton, buttonX, appCalcHeight(840.0f),
-                        buttonWidth, appCalcHeight(140.0f));
-
-    const float scrollWidth = appCalcWidth(880.0f);
-    esx_view_set_bounds(g_scrollView, (g_screenWidth - scrollWidth) * 0.5f,
-                        appCalcHeight(1040.0f), scrollWidth, appCalcHeight(560.0f));
-    esx_scroll_view_set_content_size(g_scrollView, scrollWidth, appCalcHeight(1250.0f));
-    for (int i = 0; i < 8; ++i) {
-        esx_view_set_bounds(g_scrollItems[i],
-                            appCalcWidth(24.0f),
-                            appCalcHeight(24.0f + i * 152.0f),
-                            appCalcWidth(832.0f),
-                            appCalcHeight(122.0f));
-    }
+    // 模拟网络请求：后台线程 600ms 后经 esx_post_ui 回 UI 线程"数据返回"。
+    quotePending_ = true;
+    quoteCancel_ = std::make_shared<std::atomic_bool>(false);
+    const auto cancel = quoteCancel_;
+    std::thread([this, cancel] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(600));
+        evk::ui::postUi([this, cancel] {
+            if (cancel->load()) {
+                return; // 已离开/销毁：丢弃迟到数据
+            }
+            const AppTheme& theme = appTheme();
+            quotes_.clear();
+            for (int i = 0; i < 20; ++i) {
+                quotes_.push_back(theme.scrollItems[i % 8]);
+            }
+            quoteLoaded_ = true;
+            quotePending_ = false;
+            EVK_LOGI("quotes arrived, render {} rows", quotes_.size());
+            setState(); // 数据返回 → 重建列表
+        });
+    }).detach();
 }
 
-void homePageDestroy() {
-    g_nav = 0;
-    g_page = 0;
-    g_panel = 0;
-    g_detailButton = 0;
-    g_themeButton = 0;
-    g_scrollView = 0;
-    for (auto& item : g_scrollItems) {
-        item = 0;
+bool HomePage::onWillLeave(bool /*forward*/) {
+    // 离开（被覆盖或将 pop）：取消进行中的请求，迟到数据由取消标志拦截。
+    if (quoteCancel_) {
+        quoteCancel_->store(true);
     }
-    g_panelAccent = false;
+    quotePending_ = false;
+    return true;
 }

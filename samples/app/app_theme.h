@@ -27,5 +27,9 @@ const AppTheme& appTheme();
 
 bool appThemeIsDark();
 
-// 深/浅互切。只换 token 值，已创建的视图需由 App 重建或重刷。
+// 主题切换事件（事件总线 id）：appThemeToggle 后广播，
+// 页面 listen 该事件并 setState 即完成换肤。
+constexpr int32_t kEventThemeChanged = 1;
+
+// 深/浅互切。只换 token 值；页面在 build() 里读 token，setState 重建即生效。
 void appThemeToggle();

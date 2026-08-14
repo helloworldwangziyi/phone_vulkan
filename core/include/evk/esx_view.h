@@ -44,6 +44,27 @@ typedef void (*esx_view_click_func)(esx_view view, const esx_view_click_event *e
 typedef void (*esx_view_pan_func)(esx_view view, const esx_view_pan_event *event,
                                   void *user_data);
 
+// 页面在导航容器中的生命周期事件（目前由 Navigation 触发）。
+// 调用顺序（对照 estarx App view_init_func 的 8 态，前进/返回由 forward 区分）：
+//   push：       旧页 WILL_LEAVE → 新页 WILL_ENTER →（转场）→ 旧页 DID_LEAVE → 新页 DID_ENTER
+//   pop/左滑返回：顶页 WILL_LEAVE → 下页 WILL_ENTER →（转场）→ 顶页 DID_LEAVE → 下页 DID_ENTER
+// 转场被取消（左滑回弹、尺寸变化吸附）时按最终归属收尾：留在台前的页面收
+// DID_ENTER，另一页收 DID_LEAVE——每个 WILL 始终配对且仅配对一次 DID。
+typedef enum esx_view_nav_event {
+    ESX_VIEW_NAV_WILL_ENTER = 0,  // 将进入台前（转场开始前）
+    ESX_VIEW_NAV_DID_ENTER  = 1,  // 已进入台前（转场结束后）
+    ESX_VIEW_NAV_WILL_LEAVE = 2,  // 将离开台前（被新页覆盖，或将 pop 销毁）
+    ESX_VIEW_NAV_DID_LEAVE  = 3,  // 已离开台前；pop 方向时页面随后销毁
+} esx_view_nav_event;
+
+// forward: 1 = push 前进，0 = pop 返回。
+// WILL_* 返回非 0 取消本次导航：push 被取消时 page 未被 Navigation 接管，App
+// 自行销毁或复用；钩子里改跳其他页面（如未登录拦截）时同样返回非 0 取消原导航。
+// DID_* 返回值忽略。钩子里不允许销毁收到事件的页面自身。
+typedef int32_t (*esx_view_nav_func)(esx_view nav, esx_view page,
+                                     esx_view_nav_event event, int32_t forward,
+                                     void *user_data);
+
 // 创建视图。parent=0 表示暂不挂载（之后可作为根视图）；
 // 否则作为 parent 的子视图（挂载在最上层）。
 esx_view esx_create_view(float x, float y, float w, float h, esx_view parent);
@@ -64,6 +85,9 @@ void esx_view_clear_background(esx_view view);
 void esx_view_set_draw_callback(esx_view view, esx_view_draw_func func, void *user_data);
 void esx_view_set_click_callback(esx_view view, esx_view_click_func func, void *user_data);
 void esx_view_set_pan_callback(esx_view view, esx_view_pan_func func, void *user_data);
+// 注册页面导航生命周期回调（func=NULL 清除）。只有 push 进 Navigation
+// 页面栈的视图才会收到事件；普通视图/控件注册无效。
+void esx_view_set_nav_callback(esx_view view, esx_view_nav_func func, void *user_data);
 
 // 以下两个绘制函数只在 View draw callback 内有效（操作"当前帧 canvas"），
 // 回调外调用会被忽略并告警。

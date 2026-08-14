@@ -1,8 +1,5 @@
-// 详情页：演示导航返回（导航栏返回按钮 / 左缘滑动返回）与多级 push。
-// 可同时存在多个实例：每个实例的句柄记录存入 g_pages，
-// pop 销毁前由 Navigation 的 on_pop 回调通知清理（detailPageOnPopped），
-// 整树重建（切换主题）时由 detailPagesClear 一次性清空。
-// 层序号 variant 让每层主视觉/色卡颜色不同，连续 push 时跳转有感知。
+// 详情页实现：布局全部声明在 build() 里（Column/Row 嵌套即视图树）。
+// 实例状态只有 variant_；页面销毁由 Navigation/框架负责，无需 records 清理。
 
 #include "detail_page.h"
 
@@ -10,27 +7,13 @@
 
 #include "app_metrics.h"
 #include "app_theme.h"
-#include "evk/esx_view.h"
 #include "evk/log.h"
-#include "evk/ui/controls/button.h"
-#include "evk/ui/controls/navigation.h"
 
 namespace {
 
-struct DetailPage {
-    esx_view page = 0;
-    esx_view nav = 0;
-    esx_view hero = 0;
-    esx_view cards[4] = {};
-    esx_view pushButton = 0;
-};
-
-std::vector<DetailPage> g_pages;
-
-void drawHero(esx_view view, void* userData) {
+// 主视觉渐变三角：每层详情页按 variant 轮换配色（同旧 drawHero）。
+void drawHeroGradient(esx_view view, int variant) {
     const AppTheme& theme = appTheme();
-    // userData 是创建时传入的层序号（值，不是指针），让每层详情页主视觉不同。
-    const int variant = static_cast<int>(reinterpret_cast<intptr_t>(userData));
     uint32_t colors[3];
     switch (variant % 3) {
         case 0:
@@ -56,84 +39,49 @@ void drawHero(esx_view view, void* userData) {
                       colors[0], colors[1], colors[2]);
 }
 
-void onPushAgainClick(esx_view button, void* /*userData*/) {
-    for (const DetailPage& record : g_pages) {
-        if (record.pushButton == button) {
-            EVK_LOGI("detail page pushes another detail page");
-            esx_navigation_push(record.nav, detailPageCreate(record.nav), 1);
-            return;
-        }
-    }
-}
-
-void layoutDetailPage(DetailPage& record) {
-    const float contentWidth = appCalcWidth(880.0f);
-    const float contentX = (g_screenWidth - contentWidth) * 0.5f;
-    esx_view_set_bounds(record.hero, contentX, appCalcHeight(60.0f),
-                        contentWidth, appCalcHeight(400.0f));
-
-    const float cardWidth = appCalcWidth(420.0f);
-    const float cardHeight = appCalcHeight(170.0f);
-    for (int i = 0; i < 4; ++i) {
-        const float x = contentX + static_cast<float>(i % 2) * appCalcWidth(460.0f);
-        const float y = appCalcHeight(520.0f + static_cast<float>(i / 2) * 210.0f);
-        esx_view_set_bounds(record.cards[i], x, y, cardWidth, cardHeight);
-    }
-
-    const float buttonWidth = appCalcWidth(400.0f);
-    esx_view_set_bounds(record.pushButton, (g_screenWidth - buttonWidth) * 0.5f,
-                        appCalcHeight(1010.0f), buttonWidth, appCalcHeight(140.0f));
-}
-
 } // namespace
 
-esx_view detailPageCreate(esx_view nav) {
+std::unique_ptr<evk::ui::Widget> DetailPage::build() {
+    using namespace evk::ui;
     const AppTheme& theme = appTheme();
-    // 层序号：当前栈里的详情页数量，用来让每层颜色不同，push 跳转有感知。
-    const int variant = static_cast<int>(g_pages.size());
 
-    DetailPage record;
-    record.nav = nav;
-    record.page = esx_create_view(0, 0, 0, 0, 0);
-    esx_view_set_background(record.page, theme.windowBackground);
+    // 顶部主视觉：渐变三角。
+    auto hero = Box(theme.surface);
+    hero.onDraw = [variant = variant_](esx_view view) {
+        drawHeroGradient(view, variant);
+    };
+    hero.layout.main = appCalcHeight(400.0f);
+    hero.layout.marginMainBefore = appCalcHeight(60.0f);
+    hero.layout.marginCross = appCalcWidth(100.0f);
 
-    record.hero = esx_create_view(0, 0, 0, 0, record.page);
-    esx_view_set_background(record.hero, theme.surface);
-    esx_view_set_draw_callback(record.hero, drawHero,
-                               reinterpret_cast<void*>(static_cast<intptr_t>(variant)));
+    // 2×2 色卡：两行 Row，每行两个等宽 Box，卡间 40px 间距。
+    auto card = [&](int i) {
+        return Box(theme.scrollItems[(variant_ * 3 + i) % 8]).flex(1.0f);
+    };
+    auto cards01 = row(card(0).marginMain(0.0f, appCalcWidth(40.0f)), card(1))
+                       .mainSize(appCalcHeight(170.0f))
+                       .marginCross(appCalcWidth(100.0f))
+                       .marginMain(appCalcHeight(40.0f), 0.0f);
+    auto cards23 = row(card(2).marginMain(0.0f, appCalcWidth(40.0f)), card(3))
+                       .mainSize(appCalcHeight(170.0f))
+                       .marginCross(appCalcWidth(100.0f))
+                       .marginMain(appCalcHeight(40.0f), 0.0f);
 
-    for (int i = 0; i < 4; ++i) {
-        record.cards[i] = esx_create_view(0, 0, 0, 0, record.page);
-        esx_view_set_background(record.cards[i], theme.scrollItems[(variant * 3 + i) % 8]);
-    }
-
+    // 继续 push：层序号 +1。
     const esx_button_style buttonStyle{theme.primary, theme.primaryPressed,
                                        theme.primaryDisabled};
-    record.pushButton = esx_button_create(0, 0, 0, 0, record.page, &buttonStyle,
-                                          onPushAgainClick, nullptr);
+    auto pushButton = ButtonW(buttonStyle);
+    pushButton.onTap = [this] {
+        EVK_LOGI("detail page pushes another detail page");
+        pushPage(nav(), std::make_unique<DetailPage>(variant_ + 1), true);
+    };
+    pushButton.layout.main = appCalcHeight(140.0f);
+    pushButton.layout.cross = appCalcWidth(400.0f);
+    pushButton.layout.align = ESX_FLEX_ALIGN_CENTER;
+    pushButton.layout.marginMainBefore = appCalcHeight(40.0f);
 
-    g_pages.push_back(record);
-    layoutDetailPage(g_pages.back());
-    EVK_LOGI("detail page created: page={} variant={} count={}",
-             record.page, variant, g_pages.size());
-    return record.page;
-}
-
-void detailPagesLayout() {
-    for (DetailPage& record : g_pages) {
-        layoutDetailPage(record);
-    }
-}
-
-void detailPageOnPopped(esx_view page) {
-    for (auto it = g_pages.begin(); it != g_pages.end(); ++it) {
-        if (it->page == page) {
-            g_pages.erase(it);
-            return;
-        }
-    }
-}
-
-void detailPagesClear() {
-    g_pages.clear();
+    auto page = column(std::move(hero), std::move(cards01), std::move(cards23),
+                       std::move(pushButton));
+    page.color = theme.windowBackground;
+    return makeWidget(std::move(page));
 }
