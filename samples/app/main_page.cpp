@@ -25,20 +25,30 @@
 #include "detail_page.h"
 #include "evk/log.h"
 #include "evk/ui/controls/navigation.h"
+#include "evk/ui/view.h"
 
 namespace {
 
 // 面板渐变三角（局部坐标，同旧 drawPanel）。
+// 顶点按面板实际尺寸现算，不走 appCalc 设计稿缩放——面板的宽来自屏幕实宽
+// （margin 约束），与设计稿比例无关；若顶点也用全局缩放比，屏幕宽高比异于
+// 设计稿时三角形会偏离面板中心。
 // 注意：这是 draw callback，只在「帧构建」期间被调用（见 esx_view.h），
 // 里面 esx_draw_* 写的是当前帧的 Canvas 顶点流，不能在这里改视图树。
 void drawPanelGradient(esx_view view, bool accent) {
     const AppTheme& theme = appTheme();
     // accent=false 用三段主题渐变；accent=true 把左顶点换成粉色强调色。
     const uint32_t left = accent ? theme.panelAccent : theme.panelGradient[0];
+    const evk::ui::View* v = esxViewFromHandle(view);
+    const float w = v ? v->rect.w : 0.0f;
+    const float h = v ? v->rect.h : 0.0f;
+    // 居中：底边半宽 = 面板宽 40%，垂直方向上下各留 12%。
+    const float cx = w * 0.5f;
+    const float halfBase = w * 0.4f;
+    const float top = h * 0.12f;
+    const float bottom = h * 0.88f;
     // 三个顶点的颜色不同，GPU 在三角形内部插值出渐变。
-    esx_draw_triangle(view, appCalcWidth(440.0f), appCalcHeight(50.0f),
-                      appCalcWidth(790.0f), appCalcHeight(460.0f),
-                      appCalcWidth(90.0f), appCalcHeight(460.0f),
+    esx_draw_triangle(view, cx, top, cx + halfBase, bottom, cx - halfBase, bottom,
                       left, theme.panelGradient[1], theme.panelGradient[2]);
 }
 

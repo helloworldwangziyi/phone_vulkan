@@ -4,9 +4,7 @@ A minimal, self-contained 2D rendering framework extracted from `estarx`.
 It separates platform-agnostic code from platform-specific shells,
 with Android (Vulkan) supported.
 
-> 📘 **中文文档**：详见 `文档/README.md`（索引）、`文档/构建指南.md`、`文档/架构设计.md`、`文档/示例应用导读.md`、`文档/源码导读.md`。
-
-![Screenshot](estarx_vulkan_screenshot.png)
+> 📘 **中文文档**：详见 `文档/README.md`（索引）、`文档/构建指南.md`、`文档/架构设计.md`、`文档/声明式 UI 入门.md`、`文档/示例应用导读.md`、`文档/源码导读.md`。
 
 ## Structure
 
