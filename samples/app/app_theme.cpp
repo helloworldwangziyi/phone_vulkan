@@ -1,14 +1,15 @@
+/// @file app_theme.cpp
 #include "app_theme.h"
 
-// ============================================================================
-// 双主题 token 表。换肤只做两件事：切 g_dark → 页面重跑 build() 重读 token。
-// 任何控件/页面想支持换肤，只需「颜色取 token + 订阅主题切换事件」，
-// 不需要额外的样式管理代码。
-// ============================================================================
+/// ============================================================================
+/// 双主题 token 表。换肤只做两件事：切 g_dark → 页面重跑 build() 重读 token。
+/// 任何控件/页面想支持换肤，只需「颜色取 token + 订阅主题切换事件」，
+/// 不需要额外的样式管理代码。
+/// ============================================================================
 
 namespace {
 
-// 深色：Slate 灰蓝底 + Indigo/Cyan 主色。
+/// 深色：Slate 灰蓝底 + Indigo/Cyan 主色。
 const AppTheme kDarkTheme{
     /*windowBackground*/ 0x0F172AFF,
     /*surface*/ 0x1E293BFF,
@@ -28,7 +29,7 @@ const AppTheme kDarkTheme{
                      0x6366F1FF, 0x818CF8FF, 0xA5B4FCFF, 0xC7D2FEFF},
 };
 
-// 浅色：米白灰底 + 同系 Indigo 主色（加深以保证对比度）。
+/// 浅色：米白灰底 + 同系 Indigo 主色（加深以保证对比度）。
 const AppTheme kLightTheme{
     /*windowBackground*/ 0xF1F5F9FF,
     /*surface*/ 0xFFFFFFFF,
@@ -50,7 +51,7 @@ const AppTheme kLightTheme{
 
 bool g_dark = true;
 
-} // namespace
+} ///< namespace
 
 const AppTheme& appTheme() {
     return g_dark ? kDarkTheme : kLightTheme;

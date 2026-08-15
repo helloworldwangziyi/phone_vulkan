@@ -1,5 +1,9 @@
 #pragma once
 
+/**
+ * @file renderer.h
+ * @brief 极简自包含 Vulkan 渲染器：渲染 ui::Canvas 收集的 2D UI 几何。
+ */
 #include "evk/platform.h"
 #include "evk/ui/canvas.h"
 #include <vulkan/vulkan.h>
@@ -8,28 +12,46 @@
 
 namespace evk {
 
-// A minimal, self-contained Vulkan renderer.
-// It creates a swapchain, render pass, graphics pipeline and renders the
-// 2D UI geometry collected in an ui::Canvas. The actual native surface is
-// provided by IPlatform.
+/**
+ * @brief A minimal, self-contained Vulkan renderer.
+ *
+ * It creates a swapchain, render pass, graphics pipeline and renders the
+ * 2D UI geometry collected in an ui::Canvas. The actual native surface is
+ * provided by IPlatform.
+ */
 class Renderer {
 public:
     explicit Renderer(IPlatform* platform);
     ~Renderer();
 
-    // Initialize the entire Vulkan pipeline.
+    /**
+     * @brief Initialize the entire Vulkan pipeline.
+     * @return true on success; any step failure aborts startup.
+     */
     bool initialize();
 
-    // Release all Vulkan resources.
+    /**
+     * @brief Release all Vulkan resources.
+     */
     void shutdown();
 
-    // Draw one frame from the canvas content. Returns true on success.
+    /**
+     * @brief Draw one frame from the canvas content. Returns true on success.
+     * @param canvas The UI geometry collected for this frame.
+     * @return true on success.
+     */
     bool render(const ui::Canvas& canvas);
 
-    // Notify the renderer that the surface size has changed.
+    /**
+     * @brief Notify the renderer that the surface size has changed.
+     * @param width New surface width in pixels.
+     * @param height New surface height in pixels.
+     */
     void setSize(uint32_t width, uint32_t height);
 
-    // Force the swapchain to be recreated on the next render call.
+    /**
+     * @brief Force the swapchain to be recreated on the next render call.
+     */
     void requestSwapchainRebuild();
 
 private:
@@ -51,7 +73,11 @@ private:
     void recreateSwapchain();
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, const ui::Canvas& canvas);
 
-    // 把 UI 顶点上传到动态顶点缓冲；超出容量时截断并告警。
+    /**
+     * @brief 把 UI 顶点上传到动态顶点缓冲；超出容量时截断并告警。
+     * @param data 顶点数组首地址
+     * @param count 顶点个数；超出 kVertexCapacity 时截断
+     */
     void uploadVertices(const ui::UiVertex* data, uint32_t count);
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
@@ -93,14 +119,15 @@ private:
     uint32_t width_ = 0;
     uint32_t height_ = 0;
     bool framebufferResized_ = false;
-    // createSwapchain 时记录的 surface 当前变换（折叠屏内屏等"自然方向为横"的屏，
-    // 竖持时上报 ROTATE_90）：呈现时系统按它旋转帧缓冲，投影与裁剪要做补偿。
+    /**
+     * @brief createSwapchain 时记录的 surface 当前变换（折叠屏内屏等"自然方向为横"的屏，
+     * 竖持时上报 ROTATE_90）：呈现时系统按它旋转帧缓冲，投影与裁剪要做补偿。
+     */
     VkSurfaceTransformFlagBitsKHR surfaceTransform_ = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
-    // 动态顶点缓冲容量（UiVertex 个数）。
-    static constexpr uint32_t kVertexCapacity = 8192;
+    static constexpr uint32_t kVertexCapacity = 8192; ///< 动态顶点缓冲容量（UiVertex 个数）
 };
 
 } // namespace evk

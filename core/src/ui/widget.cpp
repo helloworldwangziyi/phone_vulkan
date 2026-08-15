@@ -1,21 +1,22 @@
-// ============================================================================
-// 声明式 UI 层实现（仿 Flutter 的 Widget/Element 极简模型）。
-//
-// reconcile 规则（对齐 Flutter 无 key 子节点语义）：
-//   - 同位置同类型（typeid）→ updateView 就地更新（滚动 offset 等内部状态保留），
-//     子节点按下标配对递归；
-//   - 同位置不同类型 → teardown 销毁重建；
-//   - 多出的新子节点创建、多出的旧子节点销毁。
-//
-// 回调槽：控件 C ABI 是函数指针+user_data；每种回调一个静态 trampoline，
-// user_data 指向 Element 持有的堆槽。createView 注册一次，updateView 只覆写
-// 槽内容（user_data 指针不变，控件无需重注册）；teardown 先清空槽再销毁视图。
-//
-// Component 生命周期：pushPage 时 build+挂载+注册 nav 钩子转发虚函数；
-// pop 时 Navigation 先回调 componentPopHook（delete Component，只清槽与事件，
-// 视图树由 Navigation 随后销毁）；整树销毁（如 App 退出/重建）前 App 调
-// teardownAllComponents。
-// ============================================================================
+/**
+ * @file widget.cpp
+ * @brief 声明式 UI 层实现（仿 Flutter 的 Widget/Element 极简模型）。
+ *
+ * reconcile 规则（对齐 Flutter 无 key 子节点语义）：
+ * - 同位置同类型（typeid）→ updateView 就地更新（滚动 offset 等内部状态保留），
+ *   子节点按下标配对递归；
+ * - 同位置不同类型 → teardown 销毁重建；
+ * - 多出的新子节点创建、多出的旧子节点销毁。
+ *
+ * 回调槽：控件 C ABI 是函数指针+user_data；每种回调一个静态 trampoline，
+ * user_data 指向 Element 持有的堆槽。createView 注册一次，updateView 只覆写
+ * 槽内容（user_data 指针不变，控件无需重注册）；teardown 先清空槽再销毁视图。
+ *
+ * Component 生命周期：pushPage 时 build+挂载+注册 nav 钩子转发虚函数；
+ * pop 时 Navigation 先回调 componentPopHook（delete Component，只清槽与事件，
+ * 视图树由 Navigation 随后销毁）；整树销毁（如 App 退出/重建）前 App 调
+ * teardownAllComponents。
+ */
 
 #include "evk/ui/widget.h"
 
@@ -30,6 +31,7 @@ namespace {
 
 // ---- 回调 trampoline：user_data 均为 Element 持有的堆槽 ----
 
+/// click 回调 trampoline。
 void clickSlotTrampoline(esx_view view, const esx_view_click_event* /*event*/,
                          void* userData) {
     const auto& fn = static_cast<Slot*>(userData)->fn;
@@ -38,7 +40,7 @@ void clickSlotTrampoline(esx_view view, const esx_view_click_event* /*event*/,
     }
 }
 
-// draw callback 与 button click 同形：(view, user_data)。
+/// (view, user_data) 形回调 trampoline：draw callback 与 button click 同形。
 void slotViewTrampoline(esx_view view, void* userData) {
     const auto& fn = static_cast<Slot*>(userData)->fn;
     if (fn) {
@@ -46,6 +48,7 @@ void slotViewTrampoline(esx_view view, void* userData) {
     }
 }
 
+/// 滚动回调 trampoline。
 void scrollSlotTrampoline(esx_view /*view*/, float offsetX, float offsetY,
                           void* userData) {
     const auto& fn = static_cast<ScrollSlot*>(userData)->fn;
@@ -54,6 +57,7 @@ void scrollSlotTrampoline(esx_view /*view*/, float offsetX, float offsetY,
     }
 }
 
+/// 应用背景色；color=0 时清除背景。
 void applyBoxColor(esx_view view, uint32_t color) {
     if (color != 0) {
         esx_view_set_background(view, color);
@@ -62,8 +66,12 @@ void applyBoxColor(esx_view view, uint32_t color) {
     }
 }
 
-// ScrollFollow：ScrollW 的宿主视图，bounds 变化时同步 viewport/content/
-// 内容子视图（Column 铺满内容区，宽随 viewport，高 = contentHeight）。
+/**
+ * @brief ScrollW 的宿主视图。
+ *
+ * bounds 变化时同步 viewport/content/内容子视图
+ * （Column 铺满内容区，宽随 viewport，高 = contentHeight）。
+ */
 class ScrollFollow : public View {
 public:
     esx_view scroll = 0;
@@ -87,6 +95,7 @@ public:
 
 std::unordered_map<esx_view, Component*> g_components;
 
+/// nav 生命周期钩子：转发到 Component 虚函数；返回 1 拦截导航。
 int32_t componentNavHook(esx_view /*nav*/, esx_view /*page*/,
                          esx_view_nav_event event, int32_t forward,
                          void* userData) {
@@ -107,6 +116,7 @@ int32_t componentNavHook(esx_view /*nav*/, esx_view /*page*/,
     return 0;
 }
 
+/// pop 钩子：delete Component（视图树由 Navigation 在 on_pop 返回后销毁）。
 void componentPopHook(esx_view /*nav*/, esx_view page, void* /*userData*/) {
     auto it = g_components.find(page);
     if (it == g_components.end()) {
@@ -117,6 +127,7 @@ void componentPopHook(esx_view /*nav*/, esx_view page, void* /*userData*/) {
     delete component; // 视图树由 Navigation 在 on_pop 返回后销毁
 }
 
+/// 事件总线 trampoline：user_data 为 Listener 持有的 shared_ptr 内的 function。
 int32_t componentEventTrampoline(int32_t /*eventId*/, const void* data,
                                  void* userData) {
     const auto& fn =
@@ -287,6 +298,7 @@ void teardown(std::unique_ptr<Element>& slot) {
     slot.reset();
 }
 
+/// 子节点 reconcile：按下标配对，多退少补。
 static void reconcileChildren(Element& el, Widget& spec) {
     auto& newKids = spec.childSpecs();
     auto& oldKids = el.children;

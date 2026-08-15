@@ -1,41 +1,42 @@
-// ============================================================================
-// Navigation：页面栈导航容器（iOS 风格）。
-//
-// 继承 View：自身即导航容器，重写钩子获得导航行为——
-//   acceptsPanInput/handlePan → 左缘滑动手势驱动交互式返回；
-//   handleBoundsChanged       → 尺寸变化时取消转场并重排到最终状态。
-//
-// 视图结构：
-//   nav view（通常作为根视图）
-//   ├─ container  页面容器（导航栏以下区域），页面都是它的直接子视图；
-//   │             页面滑出容器会被自动裁剪（父链 intersect 的 clip 机制）
-//   └─ bar        导航栏（后添加 → 永远在页面上层）
-//       ├─ barLine     底部分隔线
-//       └─ backButton  返回按钮（Button 控件 + drawFunc 画箭头），栈深 >1 可见
-//
-// 转场统一用"顶层页面滑出进度 p"表示（p=0 盖严，p=1 完全滑出屏右）：
-//   push      = p: 1 → 0（新页从右滑入，旧页按 kParallax 比例视差后退）；
-//   pop       = p: 0 → 1（顶层滑出，下层归位，完成后销毁顶层）；
-//   左滑返回  = 手指直接驱动 p，松手按速度（>400px/s）或进度（>0.5）
-//               决定补全（同 pop）还是回弹（回到 p=0）。
-// 三条路径最终都汇入同一个 NavTransition 时间动画，时长按剩余进度折算。
-//
-// 页面所有权：App 以 parent=0 创建页面，push 时经 esxAdoptChild 把
-// unique_ptr 移交给容器；pop 动画完成后由 Navigation 销毁页面
-// （销毁前先回调 on_pop，让 App 清理挂在页面上的自有数据）。
-// 转场进行中忽略新的 push/pop/返回手势；尺寸变化时取消转场并吸附到最终状态。
-//
-// 页面生命周期钩子（对应 estarx App view_init_func 的 8 态，方向用 forward 区分）：
-//   push：        旧页 WILL_LEAVE → 新页 WILL_ENTER →（转场）→ 旧页 DID_LEAVE → 新页 DID_ENTER
-//   pop/左滑返回：顶页 WILL_LEAVE → 下页 WILL_ENTER →（转场）→ 顶页 DID_LEAVE → 下页 DID_ENTER
-// WILL_* 返回非 0 取消本次导航；左滑回弹/尺寸吸附取消转场时按最终归属收尾
-// （台前页 DID_ENTER、另一页 DID_LEAVE），每个 WILL 严格配对一次 DID。
-//
-// 生命周期：转场上下文（NavTransition）只存 nav 句柄，tick 时用
-// dynamic_cast 重新解析，不留可能悬空的 View 指针；返回按钮回调里的
-// Navigation* 原始指针安全——backButton 是 nav 的后代，同树同生死，
-// 单线程模型下析构期间不会有事件分发。
-// ============================================================================
+/**
+ * @file navigation.cpp
+ * @brief Navigation：页面栈导航容器（iOS 风格）。
+ *
+ * 继承 View：自身即导航容器，重写钩子获得导航行为——
+ * - acceptsPanInput/handlePan → 左缘滑动手势驱动交互式返回；
+ * - handleBoundsChanged       → 尺寸变化时取消转场并重排到最终状态。
+ *
+ * 视图结构：
+ *   nav view（通常作为根视图）
+ *   ├─ container  页面容器（导航栏以下区域），页面都是它的直接子视图；
+ *   │             页面滑出容器会被自动裁剪（父链 intersect 的 clip 机制）
+ *   └─ bar        导航栏（后添加 → 永远在页面上层）
+ *       ├─ barLine     底部分隔线
+ *       └─ backButton  返回按钮（Button 控件 + drawFunc 画箭头），栈深 >1 可见
+ *
+ * 转场统一用"顶层页面滑出进度 p"表示（p=0 盖严，p=1 完全滑出屏右）：
+ *   push      = p: 1 → 0（新页从右滑入，旧页按 kParallax 比例视差后退）；
+ *   pop       = p: 0 → 1（顶层滑出，下层归位，完成后销毁顶层）；
+ *   左滑返回  = 手指直接驱动 p，松手按速度（>400px/s）或进度（>0.5）
+ *               决定补全（同 pop）还是回弹（回到 p=0）。
+ * 三条路径最终都汇入同一个 NavTransition 时间动画，时长按剩余进度折算。
+ *
+ * 页面所有权：App 以 parent=0 创建页面，push 时经 esxAdoptChild 把
+ * unique_ptr 移交给容器；pop 动画完成后由 Navigation 销毁页面
+ * （销毁前先回调 on_pop，让 App 清理挂在页面上的自有数据）。
+ * 转场进行中忽略新的 push/pop/返回手势；尺寸变化时取消转场并吸附到最终状态。
+ *
+ * 页面生命周期钩子（对应 estarx App view_init_func 的 8 态，方向用 forward 区分）：
+ *   push：        旧页 WILL_LEAVE → 新页 WILL_ENTER →（转场）→ 旧页 DID_LEAVE → 新页 DID_ENTER
+ *   pop/左滑返回：顶页 WILL_LEAVE → 下页 WILL_ENTER →（转场）→ 顶页 DID_LEAVE → 下页 DID_ENTER
+ * WILL_* 返回非 0 取消本次导航；左滑回弹/尺寸吸附取消转场时按最终归属收尾
+ * （台前页 DID_ENTER、另一页 DID_LEAVE），每个 WILL 严格配对一次 DID。
+ *
+ * 生命周期：转场上下文（NavTransition）只存 nav 句柄，tick 时用
+ * dynamic_cast 重新解析，不留可能悬空的 View 指针；返回按钮回调里的
+ * Navigation* 原始指针安全——backButton 是 nav 的后代，同树同生死，
+ * 单线程模型下析构期间不会有事件分发。
+ */
 
 #include "evk/ui/controls/navigation.h"
 
@@ -52,32 +53,40 @@
 
 namespace {
 
-constexpr int64_t kTransitionNanos = 280'000'000;
-constexpr int64_t kMinSettleNanos = 80'000'000;
-constexpr float kParallax = 0.28f;          // 下层页面视差后退比例
-constexpr float kEdgeWidth = 48.0f;         // 左滑返回的左缘热区 px
-constexpr float kCompleteVelocity = 400.0f; // 直接判定完成返回的右滑速度 px/s
+constexpr int64_t kTransitionNanos = 280'000'000; ///< 转场动画基准时长 ns（时长按剩余进度折算）
+constexpr int64_t kMinSettleNanos = 80'000'000; ///< 转场最短时长 ns（折算下限）
+constexpr float kParallax = 0.28f; ///< 下层页面视差后退比例
+constexpr float kEdgeWidth = 48.0f; ///< 左滑返回的左缘热区 px
+constexpr float kCompleteVelocity = 400.0f; ///< 直接判定完成返回的右滑速度 px/s
 
+/**
+ * @brief Navigation 实现：自身即导航容器，重写钩子获得导航行为。
+ */
 class Navigation : public evk::ui::View {
 public:
-    esx_view container = 0; // 页面容器（导航栏以下区域），页面都是它的子视图
-    esx_view bar = 0;
-    esx_view barLine = 0;
-    esx_view backButton = 0;
-    float barHeight = 0.0f;
-    esx_navigation_style style{};
-    std::vector<esx_view> pages; // 栈底 → 栈顶
-    bool transitioning = false;
-    bool swiping = false;
-    esx_navigation_pop_func onPop = nullptr;
-    void* onPopUserData = nullptr;
-    // 待配对的 WILL 钩子上下文：fireWillHooks 记录，fireDidHooks 消费后清除。
-    esx_view hookLeave = 0;  // 收到 WILL_LEAVE 的页面
-    esx_view hookEnter = 0;  // 收到 WILL_ENTER 的页面
-    int32_t hookForward = 0;
+    esx_view container = 0; ///< 页面容器（导航栏以下区域），页面都是它的子视图；
+                            /// 页面滑出 container 会被父链 clip 自动裁剪
+    esx_view bar = 0; ///< 导航栏（后创建 → 永远画在页面上层）
+    esx_view barLine = 0; ///< 栏底分隔线
+    esx_view backButton = 0; ///< 返回按钮（Button 控件 + draw 回调画箭头），栈深>1 可见
+    float barHeight = 0.0f; ///< 导航栏高度 px
+    esx_navigation_style style{}; ///< 导航栏配色（换肤经 esx_navigation_set_style 就地更新）
+    std::vector<esx_view> pages; ///< 页面栈（栈底 → 栈顶），只存句柄不拥有对象
+    bool transitioning = false; ///< 转场动画进行中：忽略新的 push/pop/返回手势
+    bool swiping = false; ///< 左滑返回手势已认领且进行中
+    esx_navigation_pop_func onPop = nullptr; ///< 页面销毁前回调（App 清理自有数据）
+    void* onPopUserData = nullptr; ///< on_pop 的 user_data
+    /// 待配对的 WILL 钩子上下文：fireWillHooks 记录，fireDidHooks 消费后清除；
+    /// 保证每个 WILL 严格配对一次 DID（含转场取消时的归属收尾）。
+    esx_view hookLeave = 0; ///< 收到 WILL_LEAVE 的页面
+    esx_view hookEnter = 0; ///< 收到 WILL_ENTER 的页面
+    int32_t hookForward = 0; ///< 本次导航方向（1=push，0=pop）
 
-    // 触发页面导航生命周期钩子；页面无回调返回 0。
-    // WILL_* 返回非 0 表示页面取消本次导航。
+    /**
+     * @brief 触发页面导航生命周期钩子；页面无回调返回 0。
+     *
+     * WILL_* 返回非 0 表示页面取消本次导航。
+     */
     int32_t firePageHook(esx_view page, esx_view_nav_event event, int32_t forward) const {
         evk::ui::View* view = esxViewFromHandle(page);
         if (!view || !view->navFunc) {
@@ -86,10 +95,14 @@ public:
         return view->navFunc(handle, page, event, forward, view->navUserData);
     }
 
-    // 转场开始前发 WILL 对（leave 先于 enter）。任一页面取消时给已收到
-    // WILL_LEAVE 的页面补发 DID_ENTER（你留在台前）配对收尾，返回 false。
-    // 成功时记录上下文，由 fireDidHooks 配对。钩子里改跳其他页面时须取消
-    // 原导航，否则嵌套导航的上下文会被覆盖（配对打破，告警）。
+    /**
+     * @brief 转场开始前发 WILL 对（leave 先于 enter）。
+     *
+     * 任一页面取消时给已收到 WILL_LEAVE 的页面补发 DID_ENTER（你留在台前）
+     * 配对收尾，返回 false。成功时记录上下文，由 fireDidHooks 配对。
+     * @note 钩子里改跳其他页面时须取消原导航，否则嵌套导航的上下文会被覆盖
+     *       （配对打破，告警）。
+     */
     bool fireWillHooks(esx_view leavePage, esx_view enterPage, int32_t forward) {
         if (hookLeave != 0 || hookEnter != 0) {
             EVK_LOGW("navigation: nested navigation from page hook without canceling");
@@ -111,8 +124,11 @@ public:
         return true;
     }
 
-    // 转场落定（含回弹/吸附取消）：loser 收 DID_LEAVE 先于 winner 收 DID_ENTER，
-    // 与 fireWillHooks 记录的 WILL 对配对后清除上下文。上下文为空时无操作。
+    /**
+     * @brief 转场落定（含回弹/吸附取消）：loser 收 DID_LEAVE 先于 winner 收 DID_ENTER。
+     *
+     * 与 fireWillHooks 记录的 WILL 对配对后清除上下文。上下文为空时无操作。
+     */
     void fireDidHooks(esx_view winner, esx_view loser) {
         if (hookLeave == 0 && hookEnter == 0) {
             return;
@@ -130,18 +146,29 @@ public:
 
     bool acceptsPanInput() const override { return true; }
 
+    /**
+     * @brief 左缘滑动返回手势（iOS 风格交互式 pop）。
+     *
+     * 关键：Navigation 与 ScrollView 都是 pan 候选，区分靠"认领条件"——
+     * BEGIN 时反推手指按下位置（x - translation_x），只有落在左缘 kEdgeWidth
+     * 热区内且栈深>1 才认领（swiping=true）；否则整个手势让给 ScrollView。
+     * 认领后手指直接驱动转场进度 p = translation_x / 容器宽
+     * （0 = 盖严，1 = 完全滑出屏右）；松手按"快甩(>400px/s) 或 拖过半(>0.5)"
+     * 决定补全返回，否则回弹。
+     */
     void handlePan(const esx_view_pan_event& event) override {
         if (transitioning) {
-            return;
+            return; // 转场进行中：忽略新手势
         }
         evk::ui::View* containerView = esxViewFromHandle(container);
         if (!containerView || containerView->rect.w <= 0.0f) {
             return;
         }
-        const float w = containerView->rect.w;
+        const float w = containerView->rect.w; // 转场距离单位 = 容器宽度
 
         if (event.state == ESX_VIEW_PAN_BEGIN) {
-            // 只有从左缘热区出发的手势才认领为返回手势。
+            // 反推 DOWN 位置：event.x 是当前手指位置（相对本视图），
+            // translation_x 是 DOWN 以来总位移，二者相减即按下点。
             const float downX = event.x - event.translation_x;
             swiping = pages.size() > 1 && downX <= kEdgeWidth;
             if (swiping) {
@@ -152,20 +179,22 @@ public:
                     swiping = false;
                     return;
                 }
-                esx_view_set_visible(under, 1);
-                applyTransitionPositions(top, under, 0.0f);
+                esx_view_set_visible(under, 1); // 露出下层页面
+                applyTransitionPositions(top, under, 0.0f); // 初始：顶层盖严
             }
             return;
         }
         if (!swiping || pages.size() < 2) {
-            return;
+            return; // 未认领（不是返回手势）或栈不足：忽略
         }
 
         const esx_view top = pages.back();
         const esx_view under = pages[pages.size() - 2];
+        // 转场进度统一用 p 表示：顶层页面滑出屏右的程度（0 盖严，1 完全滑出）。
         const float progress = std::clamp(event.translation_x / w, 0.0f, 1.0f);
 
         if (event.state == ESX_VIEW_PAN_UPDATE) {
+            // 手指直接驱动两页位置（顶层右移，下层从视差位归位）。
             applyTransitionPositions(top, under, progress);
             return;
         }
@@ -174,7 +203,7 @@ public:
             // 快甩（速度超阈值）或拖过一半 → 补全返回；否则回弹取消。
             const bool complete = event.velocity_x > kCompleteVelocity || progress > 0.5f;
             startTransition(top, under, progress, complete ? 1.0f : 0.0f, complete);
-        } else { // ESX_VIEW_PAN_CANCEL：回弹取消
+        } else { // ESX_VIEW_PAN_CANCEL：回弹取消（回到 p=0，顶页留在台前）
             startTransition(top, under, progress, 0.0f, false);
         }
     }
@@ -197,7 +226,14 @@ public:
         }
     }
 
-    // 页面在容器坐标内定位：{x, 0, 容器宽, 容器高}。
+    /**
+     * @brief 页面在容器坐标内定位：{x, 0, 容器宽, 容器高}——页面永远铺满容器，
+     * 转场只改 x。
+     *
+     * 页面本身是 Column 等 Flex 容器，set_bounds 会经 handleBoundsChanged
+     * 级联重排页面内容，所以页面内部布局随页面移动自动保持，不需要额外的
+     * layout 调用。
+     */
     void layoutPage(esx_view page, float x) {
         evk::ui::View* view = esxViewFromHandle(page);
         if (!view || !view->parent) {
@@ -206,8 +242,13 @@ public:
         esx_view_set_bounds(page, x, 0.0f, view->parent->rect.w, view->parent->rect.h);
     }
 
-    // 按进度 p 摆放两页：top 从盖严（0）滑到屏右（w）；
-    // under 从视差后位（-w×kParallax）归位（0），两页镜像联动。
+    /**
+     * @brief 按进度 p 摆放两页：top 从盖严（x=0）滑到屏右（x=w）；
+     * under 从视差后位（-w×kParallax）归位（x=0），两页镜像联动。
+     *
+     * 所有转场（push/pop/左滑）都收敛到这一组位置公式，
+     * 动画 tick 与手势拖拽共用，保证手指驱动与动画驱动手感一致。
+     */
     void applyTransitionPositions(esx_view top, esx_view under, float progress) {
         evk::ui::View* containerView = esxViewFromHandle(container);
         if (!containerView) {
@@ -220,6 +261,15 @@ public:
         }
     }
 
+    /**
+     * @brief 导航结构布局：nav 自身 rect 下分两块——
+     *   container：导航栏以下区域（页面容器），页面都是它的直接子视图，
+     *              页面滑出它会被父链 clip 自动裁剪；
+     *   bar：顶部导航栏（后创建 = 永远画在页面上层），内含底部分隔线与返回按钮。
+     *
+     * 由创建时与 handleBoundsChanged 调用（尺寸变化重排并取消转场）；
+     * 返回按钮大小按栏高比例折算（barHeight×0.6）。
+     */
     void layoutBar() {
         const float w = rect.w;
         if (container != 0) {
@@ -237,6 +287,7 @@ public:
         }
     }
 
+    /// 按栈深刷新返回按钮可见性（栈深 >1 时显示）。
     void updateBackButton() {
         if (backButton != 0) {
             esx_view_set_visible(backButton, pages.size() > 1 ? 1 : 0);
@@ -247,19 +298,30 @@ public:
                          float fromProgress, float toProgress, bool completesPop);
 };
 
-// 一次转场：统一用 progress 表示"top 页滑出程度"，
-// p=0 时 top 盖住 under，p=1 时 top 完全滑出屏右。
+/**
+ * @brief 一次转场的上下文：统一用 progress 表示"top 页滑出程度"，
+ * p=0 时 top 盖住 under，p=1 时 top 完全滑出屏右。
+ *
+ * 与 ScrollAnimation 同样的句柄-only 安全约定：tick 时重解析 nav，
+ * 不留悬空指针。push/pop/左滑三条路径统一复用。
+ */
 struct NavTransition {
-    esx_view nav = 0;
-    esx_view top = 0;
-    esx_view under = 0;
-    bool completesPop = false; // 结束于 p=1 时是否完成 pop（销毁 top）
-    float fromProgress = 0.0f;
-    float toProgress = 0.0f;
-    int64_t startTime = 0;
-    int64_t durationNanos = kTransitionNanos;
+    esx_view nav = 0; ///< 目标 Navigation 句柄（每次 tick 重解析）
+    esx_view top = 0; ///< 顶层页面（进度 p 作用于它）
+    esx_view under = 0; ///< 下层页面（视差联动）
+    bool completesPop = false; ///< 结束于 p=1 时是否完成 pop（销毁 top 页面）
+    float fromProgress = 0.0f; ///< 起始进度（左滑转场从手势松手时的 p 续接）
+    float toProgress = 0.0f; ///< 目标进度（0=盖严/归位，1=完全滑出）
+    int64_t startTime = 0; ///< 0=未开始（首帧记录，避开注册间隙）
+    int64_t durationNanos = kTransitionNanos; ///< 按剩余进度折算（startTransition）
 };
 
+/**
+ * @brief 转场落定收尾。
+ *
+ * completesPop 时销毁 top 页（先配对发 DID、回调 on_pop）；否则 top 归位、
+ * under 藏回隐藏位。最后刷新返回按钮可见性。
+ */
 void finishTransition(Navigation& nav, const NavTransition* transition) {
     nav.transitioning = false;
     if (transition->completesPop) {
@@ -289,6 +351,7 @@ void finishTransition(Navigation& nav, const NavTransition* transition) {
     nav.updateBackButton();
 }
 
+/// 转场动画 tick：easeOutCubic 推进进度，t≥1 时 finishTransition 落定。
 bool navTransitionTick(int64_t frameTimeNanos, void* userData) {
     auto* transition = static_cast<NavTransition*>(userData);
     auto* nav = dynamic_cast<Navigation*>(esxViewFromHandle(transition->nav));
@@ -312,10 +375,12 @@ bool navTransitionTick(int64_t frameTimeNanos, void* userData) {
     return false;
 }
 
+/// 转场结束清理：释放 NavTransition 上下文。
 void navTransitionCleanup(void* userData) {
     delete static_cast<NavTransition*>(userData);
 }
 
+/// 启动转场时间动画：时长按剩余进度折算（下限 kMinSettleNanos）。
 void Navigation::startTransition(esx_view top, esx_view under,
                                  float fromProgress, float toProgress,
                                  bool completesPop) {
@@ -334,8 +399,12 @@ void Navigation::startTransition(esx_view top, esx_view under,
     evk::ui::startAnimation(navTransitionTick, transition, navTransitionCleanup);
 }
 
-// userData 是 Navigation*：backButton 是 nav 的后代，同树同生死，
-// 且事件分发与析构都在 UI 线程，不会悬空。
+/**
+ * @brief 画返回箭头（draw 回调）。
+ *
+ * userData 是 Navigation*：backButton 是 nav 的后代，同树同生死，
+ * 且事件分发与析构都在 UI 线程，不会悬空。
+ */
 void drawBackArrow(esx_view button, void* userData) {
     auto* nav = static_cast<Navigation*>(userData);
     evk::ui::View* view = esxViewFromHandle(button);
@@ -345,8 +414,8 @@ void drawBackArrow(esx_view button, void* userData) {
     const float w = view->rect.w;
     const float h = view->rect.h;
     const float cy = h * 0.5f;
-    const float apex = w * 0.22f;  // 箭头尖端
-    const float wing = w * 0.62f;  // 两翼
+    const float apex = w * 0.22f; // 箭头尖端
+    const float wing = w * 0.62f; // 两翼
     const float halfH = h * 0.30f;
     const uint32_t color = nav->style.back_arrow_color;
     esx_draw_triangle(button, apex, cy, wing, cy - halfH, wing, cy + halfH,
@@ -355,6 +424,7 @@ void drawBackArrow(esx_view button, void* userData) {
     esx_draw_rect(button, wing - shaftH, cy - shaftH * 0.5f, w * 0.18f, shaftH, color);
 }
 
+/// 返回按钮点击：动画 pop 栈顶页面。
 void handleBackClick(esx_view /*button*/, void* userData) {
     auto* nav = static_cast<Navigation*>(userData);
     if (nav) {
@@ -362,7 +432,7 @@ void handleBackClick(esx_view /*button*/, void* userData) {
     }
 }
 
-// 句柄 → Navigation；句柄无效或视图不是 Navigation 时返回 nullptr。
+/// 句柄 → Navigation；句柄无效或视图不是 Navigation 时返回 nullptr。
 Navigation* navigationFromHandle(esx_view nav) {
     return dynamic_cast<Navigation*>(esxViewFromHandle(nav));
 }

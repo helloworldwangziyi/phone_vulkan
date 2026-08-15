@@ -1,3 +1,7 @@
+/**
+ * @file renderer.cpp
+ * @brief 极简自包含 Vulkan 渲染器实现：渲染 ui::Canvas 收集的 2D UI 几何。
+ */
 // Renderer 主头文件：声明本文件要实现的所有方法与 Vulkan 句柄成员。
 #include "evk/renderer.h"
 // 预编译 SPIR-V 字节码（assets::ui_vert_spv / ui_frag_spv），编译期内嵌进二进制，免运行时读文件。
@@ -22,12 +26,12 @@
 
 namespace evk {
 
-// ============================================================================
-// 辅助函数
-// ============================================================================
+// ---- 辅助函数 ----
 
-// validation layer 的调试回调；VKAPI_ATTR / VKAPI_CALL 是 Vulkan 调用约定宏，
-// 保证回调的调用方式与驱动期望一致（跨平台写回调必须带上）。
+/**
+ * @brief validation layer 的调试回调；VKAPI_ATTR / VKAPI_CALL 是 Vulkan 调用约定宏，
+ * 保证回调的调用方式与驱动期望一致（跨平台写回调必须带上）。
+ */
 static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT severity,
     VkDebugUtilsMessageTypeFlagsEXT /*type*/,
@@ -51,6 +55,11 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
     return VK_FALSE;
 }
 
+/**
+ * @brief 逐个核对想启用的校验层是否都在系统可用列表里。
+ * @param layers 想启用的校验层名列表
+ * @return 全部找到返回 true；任何一层找不到返回 false
+ */
 static bool checkValidationLayerSupport(const std::vector<const char*>& layers) {
     // Vulkan 两次调用枚举惯用法：第一次传 nullptr 只取回数量。
     uint32_t count = 0;
@@ -76,7 +85,7 @@ static bool checkValidationLayerSupport(const std::vector<const char*>& layers) 
     return true;
 }
 
-// 小工具：在 vkEnumerate*ExtensionProperties 返回的列表里按名字找扩展。
+/// 小工具：在 vkEnumerate*ExtensionProperties 返回的列表里按名字找扩展。
 static bool hasExtension(const std::vector<VkExtensionProperties>& props, const char* name) {
     // extensionName 同样是定长字符数组，命中即返回。
     for (const auto& p : props) {
@@ -85,14 +94,12 @@ static bool hasExtension(const std::vector<VkExtensionProperties>& props, const 
     return false;
 }
 
-// ============================================================================
-// 渲染器实现
-// ============================================================================
+// ---- 渲染器实现 ----
 
-// 单次 render() 内"重建交换链 → 重画"的最大重试次数（见 render() 注释）。
+/// 单次 render() 内"重建交换链 → 重画"的最大重试次数（见 render() 注释）。
 constexpr uint32_t kMaxFrameAttempts = 3;
 
-// 构造只保存平台抽象层指针；所有 Vulkan 对象推迟到 initialize() 里创建。
+/// 构造只保存平台抽象层指针；所有 Vulkan 对象推迟到 initialize() 里创建。
 Renderer::Renderer(IPlatform* platform) : platform_(platform) {}
 
 Renderer::~Renderer() {

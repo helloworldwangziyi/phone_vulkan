@@ -1,3 +1,7 @@
+/**
+ * @file render_loop.cpp
+ * @brief 按需渲染循环实现：dirty 标志 + VSync 驱动的帧调度。
+ */
 #include "evk/render_loop.h"
 
 #include <atomic>
@@ -7,8 +11,11 @@
 
 namespace {
 
+/// 平台壳注册的帧绘制实现。
 evk::FrameFunc g_frameFunc = nullptr;
+/// 下一次 VSync 待绘制标志（dirty）。
 std::atomic_bool g_framePending{false};
+/// 引擎就绪标志（跨线程读写，release/acquire 语义）。
 std::atomic_bool g_engineReady{false};
 
 } // namespace
