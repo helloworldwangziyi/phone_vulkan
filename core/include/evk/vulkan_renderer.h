@@ -66,7 +66,9 @@ private:
     bool createCommandPool();
     bool createCommandBuffers();
     bool createSyncObjects();
-    bool createVertexBuffer();
+    bool createVertexBuffers();
+    bool createVertexBuffer(uint32_t frameSlot, uint32_t capacity);
+    void destroyVertexBuffers();
     /**
      * @brief 一张采样纹理：图像 + 显存 + 视图 + descriptor set 的组合体。
      *
@@ -78,12 +80,13 @@ private:
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
         VkDescriptorSet set = VK_NULL_HANDLE;
+        bool uploaded = false;     ///< true = 当前布局为 SHADER_READ_ONLY_OPTIMAL
         bool pendingUpload = true; ///< 新建/脏页：待首个命令缓冲里上传像素
     };
 
     bool createTextureResources();
-    bool createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height,
-                              const uint8_t* initialPixel);
+    bool createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height);
+    bool ensureTextureUploadCapacity(uint32_t frameSlot, VkDeviceSize required);
     void destroyTextureResources();
     void ensureStoreTextures();
     void uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot);
@@ -94,11 +97,13 @@ private:
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, const ui::Canvas& canvas);
 
     /**
-     * @brief 把 UI 顶点上传到动态顶点缓冲；超出容量时截断并告警。
+     * @brief 把 UI 顶点上传到当前帧独立的动态顶点缓冲。
      * @param data 顶点数组首地址
-     * @param count 顶点个数；超出 kVertexCapacity 时截断
+     * @param count 顶点个数；缓冲不足时按需扩容
+     * @param frameSlot 当前 in-flight 帧槽
      */
-    void uploadVertices(const ui::UiVertex* data, uint32_t count);
+    bool uploadVertices(const ui::UiVertex* data, uint32_t count,
+                        uint32_t frameSlot);
 
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
     VkShaderModule createShaderModule(const uint32_t* code, size_t codeSize);
@@ -145,9 +150,10 @@ private:
      */
     VkSurfaceTransformFlagBitsKHR surfaceTransform_ = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
 
-    VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
-    VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
-    static constexpr uint32_t kVertexCapacity = 8192; ///< 动态顶点缓冲容量（UiVertex 个数）
+    std::vector<VkBuffer> vertexBuffers_; ///< 每个 in-flight 帧独占，避免 CPU 覆盖在途顶点
+    std::vector<VkDeviceMemory> vertexBufferMemorys_;
+    std::vector<uint32_t> vertexBufferCapacities_;
+    static constexpr uint32_t kInitialVertexCapacity = 8192;
 
     // ---- 纹理设施：字形 atlas 采样 + 1x1 白纹理占位 ----
 
@@ -157,9 +163,9 @@ private:
     TextureObj whiteTexture_;                        ///< textureId 0：纯色批次的白纹理
     /// TextureStore 第 n 号纹理的 GPU 对象；下标即 n，[0] 占位（白纹理）。
     std::vector<TextureObj> storeTextures_;
-    std::vector<VkBuffer> atlasStagingBuffers_;      ///< 每 in-flight 帧一块纹理上传中转
-    std::vector<VkDeviceMemory> atlasStagingMemorys_;
-    uint32_t whitePixel_ = 0xFFFFFFFFu;              ///< 白纹理的唯一像素（首次上传用）
+    std::vector<VkBuffer> textureUploadBuffers_; ///< 每 in-flight 帧一块纹理上传中转
+    std::vector<VkDeviceMemory> textureUploadMemorys_;
+    std::vector<VkDeviceSize> textureUploadCapacities_;
 };
 
 } // namespace evk

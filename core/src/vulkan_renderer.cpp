@@ -8,8 +8,6 @@
 #include "evk/assets/ui_shaders.h"
 // EVK_LOGD/I/W/E 日志宏：spdlog 封装，全局统一的日志入口。
 #include "evk/log.h"
-// FontEngine：字形 atlas 的页数/像素/脏页标记由它提供，渲染器只管上传与采样。
-#include "evk/ui/font_engine.h"
 // TextureStore：字形 atlas 页与业务位图的统一登记处，渲染器按 id 建纹理并上传。
 #include "evk/ui/texture_store.h"
 
@@ -17,6 +15,7 @@
 #include <algorithm>
 // std::strcmp / std::memcpy：比较扩展/校验层名字、把顶点数据拷进映射内存。
 #include <cstring>
+#include <limits>
 // std::vector：承接 Vulkan 枚举惯用法返回的列表。
 #include <vector>
 
@@ -130,7 +129,7 @@ bool Renderer::initialize() {
     if (!createFramebuffers()) return false;
     // ④ 执行设施：命令池、顶点缓冲、命令缓冲、同步原语，与 swapchain 尺寸无关。
     if (!createCommandPool()) return false;
-    if (!createVertexBuffer()) return false;
+    if (!createVertexBuffers()) return false;
     if (!createCommandBuffers()) return false;
     if (!createSyncObjects()) return false;
     return true;
@@ -148,9 +147,8 @@ void Renderer::shutdown() {
         for (auto sem : renderFinishedSemaphores_) vkDestroySemaphore(device_, sem, nullptr);
         for (auto sem : imageAvailableSemaphores_) vkDestroySemaphore(device_, sem, nullptr);
 
-        // VkBuffer 与它的内存是两个独立对象：先销毁 buffer 句柄，再释放设备内存。
-        vkDestroyBuffer(device_, vertexBuffer_, nullptr);
-        vkFreeMemory(device_, vertexBufferMemory_, nullptr);
+        // 每个 in-flight 帧有自己的动态顶点缓冲。
+        destroyVertexBuffers();
 
         // 销毁命令池会连带释放从中分配的所有命令缓冲。
         vkDestroyCommandPool(device_, commandPool_, nullptr);
@@ -983,11 +981,28 @@ bool Renderer::createCommandPool() {
     return true;
 }
 
-bool Renderer::createVertexBuffer() {
-    // 动态顶点缓冲：容量 kVertexCapacity 个 UiVertex，每帧按需上传。
-    // HOST_VISIBLE|HOST_COHERENT 内存，省去 staging buffer。
-    // 一次性按上限分配，避免每帧重新分配显存。
-    VkDeviceSize bufferSize = sizeof(ui::UiVertex) * kVertexCapacity;
+bool Renderer::createVertexBuffers() {
+    vertexBuffers_.assign(kMaxFramesInFlight, VK_NULL_HANDLE);
+    vertexBufferMemorys_.assign(kMaxFramesInFlight, VK_NULL_HANDLE);
+    vertexBufferCapacities_.assign(kMaxFramesInFlight, 0);
+    for (uint32_t frameSlot = 0; frameSlot < kMaxFramesInFlight; ++frameSlot) {
+        if (!createVertexBuffer(frameSlot, kInitialVertexCapacity)) {
+            destroyVertexBuffers();
+            return false;
+        }
+    }
+    return true;
+}
+
+bool Renderer::createVertexBuffer(uint32_t frameSlot, uint32_t capacity) {
+    if (frameSlot >= vertexBuffers_.size() || capacity == 0) {
+        return false;
+    }
+    // 每个帧槽独占一块 HOST_VISIBLE|HOST_COHERENT 缓冲，容量按需扩展。
+    const VkDeviceSize bufferSize = sizeof(ui::UiVertex) *
+                                    static_cast<VkDeviceSize>(capacity);
+    VkBuffer newBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory newMemory = VK_NULL_HANDLE;
 
     // VkBuffer 只是"一块多大、干什么用"的描述对象，本身不带内存。
     VkBufferCreateInfo bufferInfo{};
@@ -998,14 +1013,14 @@ bool Renderer::createVertexBuffer() {
     // 只有图形队列用它，EXCLUSIVE 独占即可。
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    if (vkCreateBuffer(device_, &bufferInfo, nullptr, &vertexBuffer_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateBuffer failed");
+    if (vkCreateBuffer(device_, &bufferInfo, nullptr, &newBuffer) != VK_SUCCESS) {
+        EVK_LOGE("vertex buffer vkCreateBuffer failed");
         return false;
     }
 
     // 创建后问驱动：这块 buffer 需要多大、什么对齐、允许哪些内存类型。
     VkMemoryRequirements memReq;
-    vkGetBufferMemoryRequirements(device_, vertexBuffer_, &memReq);
+    vkGetBufferMemoryRequirements(device_, newBuffer, &memReq);
 
     // Vulkan 不自动配内存：要显式 vkAllocateMemory 再 bind；
     // 内存类型必须同时满足 buffer 的要求（memoryTypeBits）与我们的属性要求。
@@ -1018,32 +1033,80 @@ bool Renderer::createVertexBuffer() {
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
     // 按需求尺寸和选定类型分配设备内存。
-    if (vkAllocateMemory(device_, &allocInfo, nullptr, &vertexBufferMemory_) != VK_SUCCESS) {
-        EVK_LOGE("vkAllocateMemory failed");
+    if (vkAllocateMemory(device_, &allocInfo, nullptr, &newMemory) != VK_SUCCESS) {
+        EVK_LOGE("vertex buffer vkAllocateMemory failed");
+        vkDestroyBuffer(device_, newBuffer, nullptr);
         return false;
     }
 
-    // 把内存绑到 buffer 上（偏移 0），此后 buffer 才真正可用。
-    vkBindBufferMemory(device_, vertexBuffer_, vertexBufferMemory_, 0);
+    if (vkBindBufferMemory(device_, newBuffer, newMemory, 0) != VK_SUCCESS) {
+        EVK_LOGE("vertex buffer vkBindBufferMemory failed");
+        vkFreeMemory(device_, newMemory, nullptr);
+        vkDestroyBuffer(device_, newBuffer, nullptr);
+        return false;
+    }
+    if (vertexBuffers_[frameSlot] != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, vertexBuffers_[frameSlot], nullptr);
+    }
+    if (vertexBufferMemorys_[frameSlot] != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, vertexBufferMemorys_[frameSlot], nullptr);
+    }
+    vertexBuffers_[frameSlot] = newBuffer;
+    vertexBufferMemorys_[frameSlot] = newMemory;
+    vertexBufferCapacities_[frameSlot] = capacity;
     return true;
 }
 
-void Renderer::uploadVertices(const ui::UiVertex* data, uint32_t count) {
-    // 超出预分配容量就截断并告警：宁可丢一部分 UI，也不能越界写显存。
-    if (count > kVertexCapacity) {
-        EVK_LOGW("vertex count {} exceeds capacity {}, truncated", count, kVertexCapacity);
-        count = kVertexCapacity;
+void Renderer::destroyVertexBuffers() {
+    for (VkBuffer buffer : vertexBuffers_) {
+        if (buffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, buffer, nullptr);
+        }
     }
-    // 空帧直接返回，连 map 都省了。
+    for (VkDeviceMemory memory : vertexBufferMemorys_) {
+        if (memory != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, memory, nullptr);
+        }
+    }
+    vertexBuffers_.clear();
+    vertexBufferMemorys_.clear();
+    vertexBufferCapacities_.clear();
+}
+
+bool Renderer::uploadVertices(const ui::UiVertex* data, uint32_t count,
+                              uint32_t frameSlot) {
     if (count == 0) {
-        return;
+        return true;
     }
-    // map → memcpy → unmap 三步：HOST_VISIBLE 内存可映射到 CPU 地址空间直接写；
-    // HOST_COHERENT 保证拷完 GPU 就能读到，无需手动 flush。
+    if (!data || frameSlot >= vertexBuffers_.size()) {
+        return false;
+    }
+    if (count > vertexBufferCapacities_[frameSlot]) {
+        uint32_t capacity = std::max(kInitialVertexCapacity,
+                                     vertexBufferCapacities_[frameSlot]);
+        while (capacity < count) {
+            if (capacity > std::numeric_limits<uint32_t>::max() / 2) {
+                capacity = count;
+                break;
+            }
+            capacity *= 2;
+        }
+        if (!createVertexBuffer(frameSlot, capacity)) {
+            return false;
+        }
+    }
+
+    const VkDeviceSize byteSize = sizeof(ui::UiVertex) *
+                                  static_cast<VkDeviceSize>(count);
     void* mapped = nullptr;
-    vkMapMemory(device_, vertexBufferMemory_, 0, sizeof(ui::UiVertex) * count, 0, &mapped);
-    std::memcpy(mapped, data, sizeof(ui::UiVertex) * count);
-    vkUnmapMemory(device_, vertexBufferMemory_);
+    if (vkMapMemory(device_, vertexBufferMemorys_[frameSlot], 0, byteSize, 0,
+                    &mapped) != VK_SUCCESS) {
+        EVK_LOGE("vertex buffer vkMapMemory failed");
+        return false;
+    }
+    std::memcpy(mapped, data, static_cast<size_t>(byteSize));
+    vkUnmapMemory(device_, vertexBufferMemorys_[frameSlot]);
+    return true;
 }
 
 bool Renderer::createCommandBuffers() {
@@ -1098,13 +1161,8 @@ bool Renderer::createSyncObjects() {
 
 // ---- 纹理设施：白纹理 + 字形 atlas 页 + descriptor ----
 
-/// atlas 页边长与 FontEngine 保持一致；RGBA 单页 4MB。
-constexpr int kAtlasPageSize = 1024;
-constexpr VkDeviceSize kAtlasPageBytes =
-    static_cast<VkDeviceSize>(kAtlasPageSize) * kAtlasPageSize * 4;
-/// 中转缓冲容量（2 个 RGBA 页）：首帧文字量大时可能连开多页，
-/// 单帧超出的部分推迟到下一帧（见 uploadPendingTextures 的溢出处理）。
-constexpr VkDeviceSize kStagingCapacity = kAtlasPageBytes * 2;
+/// 纹理中转缓冲的最小容量，遇到更大的批次时按 2 倍动态扩容。
+constexpr VkDeviceSize kInitialTextureUploadCapacity = 64 * 1024;
 /// descriptor 池上限：白纹理 + atlas 页 + 业务位图的总预算。
 constexpr int kMaxDescriptorSets = 64;
 
@@ -1159,39 +1217,77 @@ bool Renderer::createTextureResources() {
         return false;
     }
 
-    // 白纹理：1x1 R8，值 255（shader 采样 r = 1，公式退化为直出顶点色）。
-    const uint8_t white = 255;
-    if (!createSampledTexture(whiteTexture_, 1, 1, &white)) {
+    // 白纹理也是 RGBA8；其四个通道在上传阶段显式写为 255。
+    if (!createSampledTexture(whiteTexture_, 1, 1)) {
         return false;
     }
 
-    // atlas 上传中转：每 in-flight 帧一块整页大小。按帧槽位分开，
-    // 避免 CPU 写第 N 帧数据时 GPU 还在读第 N-1 帧（帧槽位 fence 语义）。
-    atlasStagingBuffers_.resize(kMaxFramesInFlight);
-    atlasStagingMemorys_.resize(kMaxFramesInFlight);
-    const VkDeviceSize stagingSize = kStagingCapacity;
-    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
-        VkBufferCreateInfo bufferInfo{};
-        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        bufferInfo.size = stagingSize;
-        bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        if (vkCreateBuffer(device_, &bufferInfo, nullptr, &atlasStagingBuffers_[i]) != VK_SUCCESS) {
-            EVK_LOGE("atlas staging vkCreateBuffer failed");
-            return false;
-        }
-        VkMemoryRequirements memReq;
-        vkGetBufferMemoryRequirements(device_, atlasStagingBuffers_[i], &memReq);
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = memReq.size;
-        allocInfo.memoryTypeIndex = findMemoryType(memReq.memoryTypeBits,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        if (vkAllocateMemory(device_, &allocInfo, nullptr, &atlasStagingMemorys_[i]) != VK_SUCCESS) {
-            EVK_LOGE("atlas staging vkAllocateMemory failed");
-            return false;
-        }
-        vkBindBufferMemory(device_, atlasStagingBuffers_[i], atlasStagingMemorys_[i], 0);
+    textureUploadBuffers_.assign(kMaxFramesInFlight, VK_NULL_HANDLE);
+    textureUploadMemorys_.assign(kMaxFramesInFlight, VK_NULL_HANDLE);
+    textureUploadCapacities_.assign(kMaxFramesInFlight, 0);
+    return true;
+}
+
+bool Renderer::ensureTextureUploadCapacity(uint32_t frameSlot,
+                                           VkDeviceSize required) {
+    if (frameSlot >= textureUploadBuffers_.size() || required == 0) {
+        return false;
     }
+    if (textureUploadCapacities_[frameSlot] >= required) {
+        return true;
+    }
+
+    VkDeviceSize capacity = std::max(kInitialTextureUploadCapacity,
+                                     textureUploadCapacities_[frameSlot]);
+    while (capacity < required) {
+        if (capacity > std::numeric_limits<VkDeviceSize>::max() / 2) {
+            capacity = required;
+            break;
+        }
+        capacity *= 2;
+    }
+
+    VkBuffer newBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory newMemory = VK_NULL_HANDLE;
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = capacity;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    if (vkCreateBuffer(device_, &bufferInfo, nullptr, &newBuffer) != VK_SUCCESS) {
+        EVK_LOGE("texture upload vkCreateBuffer failed");
+        return false;
+    }
+
+    VkMemoryRequirements memReq;
+    vkGetBufferMemoryRequirements(device_, newBuffer, &memReq);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReq.size;
+    allocInfo.memoryTypeIndex = findMemoryType(
+        memReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    if (vkAllocateMemory(device_, &allocInfo, nullptr, &newMemory) != VK_SUCCESS) {
+        EVK_LOGE("texture upload vkAllocateMemory failed");
+        vkDestroyBuffer(device_, newBuffer, nullptr);
+        return false;
+    }
+    if (vkBindBufferMemory(device_, newBuffer, newMemory, 0) != VK_SUCCESS) {
+        EVK_LOGE("texture upload vkBindBufferMemory failed");
+        vkFreeMemory(device_, newMemory, nullptr);
+        vkDestroyBuffer(device_, newBuffer, nullptr);
+        return false;
+    }
+
+    if (textureUploadBuffers_[frameSlot] != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device_, textureUploadBuffers_[frameSlot], nullptr);
+    }
+    if (textureUploadMemorys_[frameSlot] != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, textureUploadMemorys_[frameSlot], nullptr);
+    }
+    textureUploadBuffers_[frameSlot] = newBuffer;
+    textureUploadMemorys_[frameSlot] = newMemory;
+    textureUploadCapacities_[frameSlot] = capacity;
     return true;
 }
 
@@ -1203,11 +1299,10 @@ bool Renderer::createTextureResources() {
  * @param tex 目标纹理对象
  * @param width 图像宽（像素）
  * @param height 图像高（像素）
- * @param initialPixel 仅 1x1 白纹理使用的初始像素；atlas 页传 nullptr
  * @return true 表示创建成功
  */
-bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height,
-                                     const uint8_t* initialPixel) {
+bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width,
+                                    uint32_t height) {
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -1234,9 +1329,18 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t he
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (vkAllocateMemory(device_, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS) {
         EVK_LOGE("texture vkAllocateMemory failed");
+        vkDestroyImage(device_, tex.image, nullptr);
+        tex.image = VK_NULL_HANDLE;
         return false;
     }
-    vkBindImageMemory(device_, tex.image, tex.memory, 0);
+    if (vkBindImageMemory(device_, tex.image, tex.memory, 0) != VK_SUCCESS) {
+        EVK_LOGE("texture vkBindImageMemory failed");
+        vkFreeMemory(device_, tex.memory, nullptr);
+        vkDestroyImage(device_, tex.image, nullptr);
+        tex.memory = VK_NULL_HANDLE;
+        tex.image = VK_NULL_HANDLE;
+        return false;
+    }
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1248,6 +1352,10 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t he
     viewInfo.subresourceRange.layerCount = 1;
     if (vkCreateImageView(device_, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
         EVK_LOGE("vkCreateImageView failed");
+        vkDestroyImage(device_, tex.image, nullptr);
+        vkFreeMemory(device_, tex.memory, nullptr);
+        tex.image = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return false;
     }
 
@@ -1258,6 +1366,12 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t he
     setInfo.pSetLayouts = &descriptorSetLayout_;
     if (vkAllocateDescriptorSets(device_, &setInfo, &tex.set) != VK_SUCCESS) {
         EVK_LOGE("vkAllocateDescriptorSets failed");
+        vkDestroyImageView(device_, tex.view, nullptr);
+        vkDestroyImage(device_, tex.image, nullptr);
+        vkFreeMemory(device_, tex.memory, nullptr);
+        tex.view = VK_NULL_HANDLE;
+        tex.image = VK_NULL_HANDLE;
+        tex.memory = VK_NULL_HANDLE;
         return false;
     }
     VkDescriptorImageInfo descImage{};
@@ -1273,11 +1387,7 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t he
     write.pImageInfo = &descImage;
     vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
 
-    // OPTIMAL tiling 的布局对 CPU 不透明，初始内容只能经上传阶段写入；
-    // 1x1 白纹理的唯一像素记在成员里，atlas 页的像素每帧从 FontEngine 取。
-    if (initialPixel) {
-        whitePixel_ = *initialPixel;
-    }
+    tex.uploaded = false;
     tex.pendingUpload = true;
     return true;
 }
@@ -1300,8 +1410,7 @@ void Renderer::ensureStoreTextures() {
         if (tex.image == VK_NULL_HANDLE) {
             TextureObj created;
             if (!createSampledTexture(created, store.width(static_cast<ui::TextureId>(id)),
-                                      store.height(static_cast<ui::TextureId>(id)),
-                                      nullptr)) {
+                                      store.height(static_cast<ui::TextureId>(id)))) {
                 // 本帧建不出就留空槽，下一帧重试；期间该纹理的绘制退化为白块。
                 EVK_LOGW("texture {} unavailable; retried next frame", id);
                 continue;
@@ -1322,31 +1431,37 @@ void Renderer::ensureStoreTextures() {
 void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
     auto& store = ui::TextureStore::instance();
 
-    // 收集本帧要传的 (纹理, 像素, 字节数)。白纹理 4 字节、其余整张纹理，
-    // 全部拷进同一块中转缓冲再分段拷出。
+    // 收集本帧要传的纹理。所有像素随后转换成 Vulkan 要求的 RGBA 字节序，
+    // 连续写入当前帧独占的中转缓冲。
     struct PendingCopy {
         TextureObj* tex;
-        const uint8_t* pixels;
+        ui::TextureId textureId;
         VkDeviceSize size;
         uint32_t width, height;
+        bool white;
     };
     std::vector<PendingCopy> copies;
+    VkDeviceSize total = 0;
     if (whiteTexture_.pendingUpload) {
-        copies.push_back({&whiteTexture_, reinterpret_cast<const uint8_t*>(&whitePixel_),
-                          4, 1, 1});
+        copies.push_back({&whiteTexture_, ui::kInvalidTexture, 4, 1, 1, true});
+        total += 4;
     }
     for (size_t id = 1; id < storeTextures_.size(); ++id) {
         TextureObj& tex = storeTextures_[id];
         if (tex.image == VK_NULL_HANDLE) {
             continue;
         }
-        if (tex.pendingUpload || store.consumeDirty(static_cast<ui::TextureId>(id))) {
-            const uint32_t* pixels = store.pixels(static_cast<ui::TextureId>(id));
-            if (pixels) {
-                const uint32_t w = store.width(static_cast<ui::TextureId>(id));
-                const uint32_t h = store.height(static_cast<ui::TextureId>(id));
-                copies.push_back({&tex, reinterpret_cast<const uint8_t*>(pixels),
-                                  static_cast<VkDeviceSize>(w) * h * 4, w, h});
+        const ui::TextureId textureId = static_cast<ui::TextureId>(id);
+        if (store.consumeDirty(textureId)) {
+            tex.pendingUpload = true;
+        }
+        if (tex.pendingUpload) {
+            const uint32_t w = store.width(textureId);
+            const uint32_t h = store.height(textureId);
+            const VkDeviceSize size = static_cast<VkDeviceSize>(w) * h * 4;
+            if (size > 0) {
+                copies.push_back({&tex, textureId, size, w, h, false});
+                total += size;
             }
         }
     }
@@ -1354,35 +1469,33 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         return;
     }
 
-    // 装不下的纹理回退 pendingUpload，下一帧再传。脏标记已在收集时
-    // 取走，靠渲染器自己的 pendingUpload 保证不丢。
-    const VkDeviceSize capacity = kStagingCapacity;
-    VkDeviceSize total = 0;
-    size_t fit = 0;
-    for (; fit < copies.size(); ++fit) {
-        if (total + copies[fit].size > capacity) {
-            break;
-        }
-        total += copies[fit].size;
-    }
-    for (size_t i = fit; i < copies.size(); ++i) {
-        copies[i].tex->pendingUpload = true;
-    }
-    copies.resize(fit);
-    if (copies.empty()) {
+    if (!ensureTextureUploadCapacity(frameSlot, total)) {
+        EVK_LOGE("unable to allocate {} bytes for texture upload",
+                 static_cast<uint64_t>(total));
         return;
     }
 
     // CPU 侧写入中转缓冲（HOST_VISIBLE + COHERENT，写完即对 GPU 可见）。
     VkDeviceSize offset = 0;
     void* mapped = nullptr;
-    vkMapMemory(device_, atlasStagingMemorys_[frameSlot], 0, VK_WHOLE_SIZE, 0, &mapped);
+    if (vkMapMemory(device_, textureUploadMemorys_[frameSlot], 0, total, 0,
+                    &mapped) != VK_SUCCESS) {
+        EVK_LOGE("texture upload vkMapMemory failed");
+        return;
+    }
     for (const PendingCopy& copy : copies) {
-        std::memcpy(static_cast<uint8_t*>(mapped) + offset, copy.pixels,
-                    static_cast<size_t>(copy.size));
+        uint8_t* destination = static_cast<uint8_t*>(mapped) + offset;
+        if (copy.white) {
+            std::memset(destination, 0xFF, 4);
+        } else if (!store.copyRgbaBytes(copy.textureId, destination,
+                                        static_cast<size_t>(copy.size))) {
+            EVK_LOGE("texture {} RGBA conversion failed", copy.textureId);
+            vkUnmapMemory(device_, textureUploadMemorys_[frameSlot]);
+            return;
+        }
         offset += copy.size;
     }
-    vkUnmapMemory(device_, atlasStagingMemorys_[frameSlot]);
+    vkUnmapMemory(device_, textureUploadMemorys_[frameSlot]);
 
     // 逐个纹理：屏障到 TRANSFER_DST → 拷贝 → 屏障到 SHADER_READ_ONLY。
     offset = 0;
@@ -1395,13 +1508,17 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         toDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
         toDst.subresourceRange.levelCount = 1;
         toDst.subresourceRange.layerCount = 1;
-        // 脏页已在 SHADER_READ_ONLY，新页是 UNDEFINED；UNDEFINED 起点
-        // 允许驱动丢弃旧内容，同一条屏障通吃两种来源。
-        toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        // 首次上传从 UNDEFINED 开始；脏纹理重传时必须声明它当前的采样布局。
+        toDst.oldLayout = copy.tex->uploaded
+                              ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                              : VK_IMAGE_LAYOUT_UNDEFINED;
         toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-        toDst.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        toDst.srcAccessMask = copy.tex->uploaded ? VK_ACCESS_SHADER_READ_BIT : 0;
         toDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        const VkPipelineStageFlags sourceStage =
+            copy.tex->uploaded ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT
+                               : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        vkCmdPipelineBarrier(cmd, sourceStage,
                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                              nullptr, 1, &toDst);
 
@@ -1413,7 +1530,7 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         // RGBA 紧密排列：行间距 = 宽度（纹素），无对齐填充。
         region.bufferRowLength = copy.width;
         region.bufferImageHeight = copy.height;
-        vkCmdCopyBufferToImage(cmd, atlasStagingBuffers_[frameSlot], copy.tex->image,
+        vkCmdCopyBufferToImage(cmd, textureUploadBuffers_[frameSlot], copy.tex->image,
                                VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
         VkImageMemoryBarrier toRead{};
@@ -1433,6 +1550,7 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
                              0, nullptr, 1, &toRead);
 
         offset += copy.size;
+        copy.tex->uploaded = true;
         copy.tex->pendingUpload = false;
     }
 }
@@ -1470,16 +1588,17 @@ void Renderer::destroyTextureResources() {
         destroyTexture(tex);
     }
     storeTextures_.clear();
-    for (size_t i = 0; i < atlasStagingBuffers_.size(); ++i) {
-        if (atlasStagingBuffers_[i] != VK_NULL_HANDLE) {
-            vkDestroyBuffer(device_, atlasStagingBuffers_[i], nullptr);
+    for (size_t i = 0; i < textureUploadBuffers_.size(); ++i) {
+        if (textureUploadBuffers_[i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, textureUploadBuffers_[i], nullptr);
         }
-        if (atlasStagingMemorys_[i] != VK_NULL_HANDLE) {
-            vkFreeMemory(device_, atlasStagingMemorys_[i], nullptr);
+        if (textureUploadMemorys_[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, textureUploadMemorys_[i], nullptr);
         }
     }
-    atlasStagingBuffers_.clear();
-    atlasStagingMemorys_.clear();
+    textureUploadBuffers_.clear();
+    textureUploadMemorys_.clear();
+    textureUploadCapacities_.clear();
     if (descriptorPool_ != VK_NULL_HANDLE) {
         vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
         descriptorPool_ = VK_NULL_HANDLE;
@@ -1586,7 +1705,12 @@ bool Renderer::render(const ui::Canvas& canvas) {
         // 命令录制阶段也不会有 draw，只剩清屏帧。
         // ③ 上传顶点：赶在命令录制前把数据写进 HOST_VISIBLE 缓冲。
         if (!canvas.vertices().empty()) {
-            uploadVertices(canvas.vertices().data(), static_cast<uint32_t>(canvas.vertices().size()));
+            if (!uploadVertices(canvas.vertices().data(),
+                                static_cast<uint32_t>(canvas.vertices().size()),
+                                currentFrame_)) {
+                EVK_LOGE("UI vertex upload failed");
+                return false;
+            }
         }
 
         // ④ reset fence 必须在确认本帧一定会提交之后做：若提前 reset 又中途 return，
@@ -1705,7 +1829,7 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     vkCmdSetViewport(cmd, 0, 1, &viewport);
 
     // 绑定顶点缓冲到槽位 0（对应管线 vertex input 的 binding 0），偏移 0。
-    VkBuffer vertexBuffers[] = {vertexBuffer_};
+    VkBuffer vertexBuffers[] = {vertexBuffers_[currentFrame_]};
     VkDeviceSize offsets[] = {0};
     vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
 

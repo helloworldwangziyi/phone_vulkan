@@ -411,12 +411,20 @@ void testFontEngine(const char* latinPath, const char* cjkPath) {
                     {0.0f, 0.0f, 400.0f, 100.0f}, evk::ui::Color::rgba(0xFFFFFFFF));
     assert(!evk::ui::TextureStore::instance().consumeDirty(pageTex));
 
-    // TextWidget 测量路径：注册字体后挂树构建不崩、布局给出正的高度。
+    // 嵌套 Column 必须把文字的固有行高上报给外层，否则内层会被压成 0 高，
+    // painter 不会产生任何字形批次。
     evk::ui::runApp(
-        evk::ui::text("中英混排 Mixed 123", 32.0f, 0xFFFFFFFF, evk::ui::kFontAny),
+        evk::ui::column(evk::ui::column(
+            evk::ui::text("中英混排 Mixed 123", 32.0f, 0xFFFFFFFF,
+                          evk::ui::kFontAny))),
         {});
     evk::ui::setViewportSize(400.0f, 800.0f);
-    evk::beginFrame(ms(10));
+    assert(evk::beginFrame(ms(10)));
+    bool widgetHasTextBatch = false;
+    for (const auto& batch : g_canvas.batches()) {
+        widgetHasTextBatch = widgetHasTextBatch || batch.textureId != 0;
+    }
+    assert(widgetHasTextBatch);
     evk::ui::shutdownApp();
 
     fonts.reset();
@@ -496,6 +504,16 @@ void testCanvas2dPrimitives() {
     const uint32_t pixels[4] = {0xFFFFFFFFu, 0x22D3EEFFu, 0x6366F1FFu, 0x00000000u};
     const evk::ui::TextureId tex = store.addTexture(2, 2, pixels);
     assert(tex != evk::ui::kInvalidTexture);
+    // 0xRRGGBBAA 必须显式导出为 R,G,B,A 字节，不能受 CPU 端序影响。
+    uint8_t rgbaBytes[16] = {};
+    assert(store.copyRgbaBytes(tex, rgbaBytes, sizeof(rgbaBytes)));
+    assert(rgbaBytes[0] == 0xFF && rgbaBytes[1] == 0xFF &&
+           rgbaBytes[2] == 0xFF && rgbaBytes[3] == 0xFF);
+    assert(rgbaBytes[4] == 0x22 && rgbaBytes[5] == 0xD3 &&
+           rgbaBytes[6] == 0xEE && rgbaBytes[7] == 0xFF);
+    assert(rgbaBytes[12] == 0x00 && rgbaBytes[13] == 0x00 &&
+           rgbaBytes[14] == 0x00 && rgbaBytes[15] == 0x00);
+    assert(!store.copyRgbaBytes(tex, rgbaBytes, sizeof(rgbaBytes) - 1));
     canvas.drawImage(tex, {0.0f, 0.0f, 20.0f, 20.0f}, clip);
     assert(canvas.vertices().size() - n == 6);
     assert(canvas.batches().back().textureId == tex);

@@ -62,6 +62,26 @@ uint32_t TextureStore::height(TextureId id) const {
     return entries_[id - 1].height;
 }
 
+bool TextureStore::copyRgbaBytes(TextureId id, uint8_t* destination,
+                                 size_t destinationSize) const {
+    if (id == 0 || id > entries_.size() || !destination) {
+        return false;
+    }
+    const Entry& entry = entries_[id - 1];
+    const size_t required = entry.data.size() * 4;
+    if (destinationSize < required) {
+        return false;
+    }
+    for (size_t i = 0; i < entry.data.size(); ++i) {
+        const uint32_t rgba = entry.data[i];
+        destination[i * 4] = static_cast<uint8_t>(rgba >> 24);
+        destination[i * 4 + 1] = static_cast<uint8_t>(rgba >> 16);
+        destination[i * 4 + 2] = static_cast<uint8_t>(rgba >> 8);
+        destination[i * 4 + 3] = static_cast<uint8_t>(rgba);
+    }
+    return true;
+}
+
 bool TextureStore::consumeDirty(TextureId id) {
     if (id == 0 || id > entries_.size()) {
         return false;

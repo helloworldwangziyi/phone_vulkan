@@ -11,6 +11,7 @@
  *   - 渲染器：id 0 固定为 1x1 白纹理（纯色批次的占位），不经本仓库。
  * 单线程模型：全部接口只在 UI 线程调用，内部无锁。
  */
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -28,7 +29,7 @@ public:
      * @brief 注册一张 RGBA8888 纹理（像素按行紧密排列，数据会被拷贝）。
      * @param width 宽（像素）
      * @param height 高（像素）
-     * @param rgbaPixels 像素数据；nullptr 表示全透明初始化
+     * @param rgbaPixels 每像素一个 0xRRGGBBAA；nullptr 表示全透明初始化
      * @return 纹理句柄（从 1 起，单调递增）
      */
     TextureId addTexture(uint32_t width, uint32_t height, const uint32_t* rgbaPixels);
@@ -45,6 +46,19 @@ public:
     uint32_t width(TextureId id) const;  ///< 宽（像素）
     uint32_t height(TextureId id) const; ///< 高（像素）
 
+    /**
+     * @brief 按 R、G、B、A 字节顺序导出像素，供图形 API 上传。
+     *
+     * 仓库对外使用便于阅读的 0xRRGGBBAA 数值；该数值在小端 CPU 内存中
+     * 并不是 RGBA 字节序，因此不能 reinterpret_cast 后直接交给 Vulkan。
+     * @param id 纹理句柄
+     * @param destination 接收连续 RGBA8 字节的缓冲
+     * @param destinationSize 缓冲字节数，至少为 width * height * 4
+     * @return 参数及容量有效时返回 true
+     */
+    bool copyRgbaBytes(TextureId id, uint8_t* destination,
+                       size_t destinationSize) const;
+
     /// 读取并清除脏标记；true = 需要整张重新上传。
     bool consumeDirty(TextureId id);
 
@@ -60,7 +74,7 @@ private:
     struct Entry {
         uint32_t width = 0;
         uint32_t height = 0;
-        std::vector<uint32_t> data; ///< RGBA8888，行紧密排列
+        std::vector<uint32_t> data; ///< 每像素 0xRRGGBBAA，行紧密排列
         bool dirty = true; ///< 新建/被改：待渲染器整张上传
     };
 

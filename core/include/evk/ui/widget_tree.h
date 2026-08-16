@@ -185,12 +185,14 @@ public:
     uint32_t color = 0;
 
     Flex(Axis axis, std::vector<std::unique_ptr<Widget>> children);
+    FlexParentData flexParentData(Axis parentAxis) const override;
     std::unique_ptr<View> createRenderObject() const override;
     void updateRenderObject(View& view) const override;
     std::vector<std::unique_ptr<Widget>>& children() override { return children_; }
     void configureChild(View& parent, const Widget& child, View& childView) const override;
 
 private:
+    FlexParentData intrinsicData_;
     std::vector<std::unique_ptr<Widget>> children_;
 };
 

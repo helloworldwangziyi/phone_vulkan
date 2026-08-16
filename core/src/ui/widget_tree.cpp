@@ -419,7 +419,24 @@ void Button::updateRenderObject(View& view) const {
 }
 
 Flex::Flex(Axis direction, std::vector<std::unique_ptr<Widget>> childWidgets)
-    : axis(direction), children_(std::move(childWidgets)) {}
+    : axis(direction), children_(std::move(childWidgets)) {
+    float intrinsicMainSize = 0.0f;
+    for (const auto& child : children_) {
+        if (!child) {
+            continue;
+        }
+        const FlexParentData childData = child->flexParentData(axis);
+        if (childData.mainSize < 0.0f) {
+            return;
+        }
+        intrinsicMainSize += childData.before + childData.mainSize + childData.after;
+    }
+    intrinsicData_.mainSize = intrinsicMainSize;
+}
+
+FlexParentData Flex::flexParentData(Axis parentAxis) const {
+    return parentAxis == axis ? intrinsicData_ : FlexParentData{};
+}
 
 std::unique_ptr<View> Flex::createRenderObject() const {
     auto view = createFlexView(axis);
