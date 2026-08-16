@@ -6,8 +6,10 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <vector>
 
 #include "evk/log.h"
+#include "evk/ui/texture_store.h"
 
 // stb_truetype 以头文件库方式引入：恰在一个翻译单元里定义 IMPLEMENTATION 宏。
 #define STB_TRUETYPE_IMPLEMENTATION
@@ -17,10 +19,10 @@ namespace evk::ui {
 
 namespace {
 
-/// atlas 页边长（方形，R8）。1024 在移动端是安全尺寸：单页 1MB，
+/// atlas 页边长（方形，RGBA）。1024 在移动端是安全尺寸：单页 4MB，
 /// 按常用字号一个中文字形约 50×50，一页能放约 300 个。
 constexpr int kAtlasPageSize = 1024;
-/// 页数上限：白纹理 + 页纹理的 descriptor 池按它预分配；超出后不再缓存新字形
+/// 页数上限：渲染器 descriptor 池按它预分配；超出后不再缓存新字形
 /// （仅告警一次），既有内容不受影响。
 constexpr int kMaxAtlasPages = 16;
 /// 字形四周的空白边（像素）：配合 UV 半像素内缩，阻止线性采样读到相邻字形。
@@ -201,7 +203,7 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
     stbtt_GetGlyphHMetrics(info, glyphIndex, &advance, &leftBearing);
 
     CachedGlyph cached;
-    cached.page = 0;
+    cached.texture = kInvalidTexture;
     cached.x = cached.y = 0;
     cached.w = std::max(0, w);
     cached.h = std::max(0, h);
@@ -237,7 +239,9 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
                 return nullptr;
             }
             AtlasPage page;
-            page.pixels.assign(static_cast<size_t>(kAtlasPageSize) * kAtlasPageSize, 0);
+            page.texture = TextureStore::instance().addTexture(
+                static_cast<uint32_t>(kAtlasPageSize),
+                static_cast<uint32_t>(kAtlasPageSize), nullptr);
             pageIndex = static_cast<int>(pages_.size());
             pages_.push_back(std::move(page));
         }
@@ -250,16 +254,24 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
         }
         const int dstX = page.cursorX;
         const int dstY = page.cursorY;
-        // 写入字形位图（留边保持为零）。
-        stbtt_MakeGlyphBitmap(info,
-                              page.pixels.data() +
-                                  static_cast<size_t>(dstY + kGlyphPadding) * kAtlasPageSize +
-                                  dstX + kGlyphPadding,
-                              w, h, kAtlasPageSize, scale, scale, glyphIndex);
-        page.cursorX += needW;
-        page.dirty = true;
 
-        cached.page = static_cast<uint32_t>(pageIndex);
+        // stbtt 光栅出单通道覆盖率，展开成 RGBA（rgb 恒白、a=覆盖率）：
+        // shader 的"顶点色 × 纹理"公式据此把文字颜色乘上覆盖度。
+        std::vector<unsigned char> coverage(static_cast<size_t>(w) * h);
+        stbtt_MakeGlyphBitmap(info, coverage.data(), w, h, w, scale, scale, glyphIndex);
+        uint32_t* dst = TextureStore::instance().mutablePixels(page.texture) +
+                        static_cast<size_t>(dstY + kGlyphPadding) * kAtlasPageSize +
+                        dstX + kGlyphPadding;
+        for (int row = 0; row < h; ++row) {
+            for (int col = 0; col < w; ++col) {
+                dst[col] = 0xFFFFFF00u | coverage[static_cast<size_t>(row) * w + col];
+            }
+            dst += kAtlasPageSize;
+        }
+        TextureStore::instance().markDirty(page.texture);
+        page.cursorX += needW;
+
+        cached.texture = page.texture;
         cached.x = dstX;
         cached.y = dstY;
     }
@@ -299,7 +311,7 @@ void FontEngine::forEachGlyph(const char* utf8, float sizePx, FontId preferred,
         const CachedGlyph* glyph = rasterizeGlyph(item.fontIndex, item.glyphIndex, sizePx);
         if (glyph && glyph->w > 0 && glyph->h > 0) {
             PlacedGlyph placed;
-            placed.page = glyph->page;
+            placed.texture = glyph->texture;
             const float size = static_cast<float>(kAtlasPageSize);
             // UV 指向"去掉留边的字形本体"，再向内缩半个纹素：
             // 线性采样在最外圈也不会读到隔壁字形或留边的零。
@@ -322,24 +334,15 @@ int FontEngine::pageCount() const {
     return static_cast<int>(pages_.size());
 }
 
-const uint8_t* FontEngine::pagePixels(int page) const {
+TextureId FontEngine::pageTexture(int page) const {
     if (page < 0 || page >= static_cast<int>(pages_.size())) {
-        return nullptr;
+        return kInvalidTexture;
     }
-    return pages_[page].pixels.data();
+    return pages_[page].texture;
 }
 
 int FontEngine::pageSize() const {
     return kAtlasPageSize;
-}
-
-bool FontEngine::consumePageDirty(int page) {
-    if (page < 0 || page >= static_cast<int>(pages_.size())) {
-        return false;
-    }
-    const bool dirty = pages_[page].dirty;
-    pages_[page].dirty = false;
-    return dirty;
 }
 
 } // namespace evk::ui

@@ -85,7 +85,7 @@ private:
     bool createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height,
                               const uint8_t* initialPixel);
     void destroyTextureResources();
-    void ensureAtlasTextures();
+    void ensureStoreTextures();
     void uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot);
     VkDescriptorSet descriptorFor(uint32_t textureId) const;
 
@@ -155,10 +155,11 @@ private:
     VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE; ///< binding0 = 组合图像采样
     TextureObj whiteTexture_;                        ///< textureId 0：纯色批次的白纹理
-    std::vector<TextureObj> atlasTextures_;          ///< textureId n+1 = 字形 atlas 第 n 页
-    std::vector<VkBuffer> atlasStagingBuffers_;      ///< 每 in-flight 帧一块 atlas 上传中转
+    /// TextureStore 第 n 号纹理的 GPU 对象；下标即 n，[0] 占位（白纹理）。
+    std::vector<TextureObj> storeTextures_;
+    std::vector<VkBuffer> atlasStagingBuffers_;      ///< 每 in-flight 帧一块纹理上传中转
     std::vector<VkDeviceMemory> atlasStagingMemorys_;
-    uint8_t whitePixel_ = 255;                       ///< 白纹理的唯一像素（首次上传用）
+    uint32_t whitePixel_ = 0xFFFFFFFFu;              ///< 白纹理的唯一像素（首次上传用）
 };
 
 } // namespace evk

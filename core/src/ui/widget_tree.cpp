@@ -357,7 +357,13 @@ std::unique_ptr<View> Container::createRenderObject() const {
 }
 
 void Container::updateRenderObject(View& view) const {
-    if (color == 0) {
+    // 圆角/描边装饰：背景不再是整块矩形，改由 painter 按视图实际尺寸绘制；
+    // 用户 painter（若给了）在装饰之后执行，两者可以叠加。
+    const bool decorated =
+        cornerRadius > 0.0f || (borderWidth > 0.0f && borderColor != 0);
+    if (decorated) {
+        view.clearBackground();
+    } else if (color == 0) {
         view.clearBackground();
     } else {
         view.setBackground(color);
@@ -365,7 +371,40 @@ void Container::updateRenderObject(View& view) const {
     view.onClick = onTap
         ? [callback = onTap](const ClickEvent&) { callback(); }
         : std::function<void(const ClickEvent&)>{};
-    view.painter = painter;
+    if (decorated) {
+        view.painter = [fill = color, radius = cornerRadius, border = borderColor,
+                        borderWidth = borderWidth, user = painter](PaintContext& paint) {
+            const Size size = paint.size();
+            const Rect bounds = {0.0f, 0.0f, size.width, size.height};
+            if (fill != 0) {
+                paint.drawRoundRect(bounds, radius, fill);
+            }
+            if (borderWidth > 0.0f && border != 0) {
+                paint.strokeRoundRect(bounds, radius, borderWidth, border);
+            }
+            if (user) {
+                user(paint);
+            }
+        };
+    } else {
+        view.painter = painter;
+    }
+}
+
+ImageWidget::ImageWidget(TextureId texture) : texture_(texture) {}
+
+std::unique_ptr<View> ImageWidget::createRenderObject() const {
+    auto view = std::make_unique<View>();
+    updateRenderObject(*view);
+    return view;
+}
+
+void ImageWidget::updateRenderObject(View& view) const {
+    view.clearBackground();
+    view.painter = [texture = texture_](PaintContext& paint) {
+        const Size size = paint.size();
+        paint.drawImage(texture, {0.0f, 0.0f, size.width, size.height});
+    };
 }
 
 Button::Button(ButtonStyle value, std::function<void()> callback)
@@ -641,7 +680,7 @@ void TextWidget::updateRenderObject(View& view) const {
     view.clearBackground();
     view.painter = [content = content_, font = font_, size = fontSize_,
                     color = color_](PaintContext& paint) {
-        paint.drawText(content.c_str(), font, size, color);
+        paint.drawText(content.c_str(), font, 0.0f, 0.0f, size, color);
     };
 }
 
@@ -655,6 +694,10 @@ FlexParentData TextWidget::flexParentData(Axis axis) const {
                                        &width, &height);
     data.mainSize = axis == Axis::Vertical ? height : width;
     return data;
+}
+
+std::unique_ptr<Widget> image(TextureId texture) {
+    return makeWidget<ImageWidget>(texture);
 }
 
 std::unique_ptr<Widget> center(std::unique_ptr<Widget> child) {

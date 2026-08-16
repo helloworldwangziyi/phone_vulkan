@@ -1,5 +1,7 @@
 #pragma once
 
+#include "evk/ui/texture_store.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -73,13 +75,44 @@ public:
                       float x3, float y3,
                       uint32_t c1, uint32_t c2, uint32_t c3);
     /**
-     * @brief 画一行文字（视图局部坐标 (0,0) = 行盒左上角）。
+     * @brief 画一行文字（(x, y) = 行盒左上角，视图局部坐标）。
      * @param utf8 UTF-8 文本
      * @param font 首选字体；kFontAny 表示按注册顺序的回退链
-     * @param sizePx 字号（像素高度）
+     * @param x 行盒左上角 x（视图局部坐标）
+     * @param y 行盒左上角 y（视图局部坐标）
+     * @param sizePx 字号（em 像素大小）
      * @param rgba 文字颜色
      */
-    void drawText(const char* utf8, int32_t font, float sizePx, uint32_t rgba);
+    void drawText(const char* utf8, int32_t font, float x, float y, float sizePx,
+                  uint32_t rgba);
+    /// 画线段（视图局部坐标，宽度按像素展开成四边形）。
+    void drawLine(float x1, float y1, float x2, float y2, float width, uint32_t rgba);
+    /// 画实心圆（圆心为视图局部坐标）。
+    void drawCircle(float cx, float cy, float radius, uint32_t rgba, int segments = 0);
+    /// 画实心椭圆。
+    void drawEllipse(float cx, float cy, float rx, float ry, uint32_t rgba,
+                     int segments = 0);
+    /// 画实心圆角矩形（视图局部坐标，整个视图区域）。
+    void drawRoundRect(const Rect& rect, float radius, uint32_t rgba, int segments = 0);
+    /// 画圆弧/环带（角度定义见 Canvas::drawArc）。
+    void drawArc(float cx, float cy, float radius, float thickness,
+                 float startAngle, float sweepAngle, uint32_t rgba, int segments = 0);
+    /// 画完整圆环（圆心为视图局部坐标）。
+    void drawRing(float cx, float cy, float radius, float thickness, uint32_t rgba) {
+        drawArc(cx, cy, radius, thickness, 0.0f, 6.2831853f, rgba);
+    }
+    /// 画凸多边形（顶点数组 [x0,y0,x1,y1,...]，视图局部坐标）。
+    void drawConvexPolygon(const float* points, int count, uint32_t rgba);
+    /// 画矩形描边（线宽向内侧）。
+    void strokeRect(const Rect& rect, float width, uint32_t rgba);
+    /// 画圆角矩形描边。
+    void strokeRoundRect(const Rect& rect, float radius, float width, uint32_t rgba,
+                         int segments = 0);
+    /// 画双色线性渐变矩形（horizontal = 左→右，否则上→下）。
+    void drawRectGradient(const Rect& rect, uint32_t rgba0, uint32_t rgba1,
+                          bool horizontal);
+    /// 画一张 TextureStore 纹理（拉伸到目标矩形，rgba 作染色，0xFFFFFFFF 原样）。
+    void drawImage(TextureId texture, const Rect& rect, uint32_t rgba = 0xFFFFFFFF);
 
 private:
     Canvas& canvas_;

@@ -53,6 +53,7 @@ core/
     pointer_input.h    pointer dispatch and gesture ownership
     event_bus.h        C++ RAII subscriptions and UI-thread queue
     font_engine.h      TTF parsing, glyph atlas, and font fallback
+    texture_store.h     unified RGBA texture registry (atlas + images)
     controls/
       button_control.h Button render object
       scroll_control.h ScrollView render object

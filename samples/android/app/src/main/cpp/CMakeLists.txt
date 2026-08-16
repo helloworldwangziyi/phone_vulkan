@@ -53,6 +53,7 @@ execute_process(
 add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/samples/app/app_entry.cpp
     ${EVK_ROOT}/samples/app/app_fonts.cpp
+    ${EVK_ROOT}/samples/app/app_images.cpp
     ${EVK_ROOT}/samples/app/screen_metrics.cpp
     ${EVK_ROOT}/samples/app/app_theme.cpp
     ${EVK_ROOT}/samples/app/home_page.cpp
@@ -69,6 +70,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/paint_canvas.cpp
     ${EVK_ROOT}/core/src/ui/event_bus.cpp
     ${EVK_ROOT}/core/src/ui/font_engine.cpp
+    ${EVK_ROOT}/core/src/ui/texture_store.cpp
     ${EVK_ROOT}/core/src/ui/controls/button_control.cpp
     ${EVK_ROOT}/core/src/ui/layout/flex_layout.cpp
     ${EVK_ROOT}/core/src/ui/controls/scroll_control.cpp

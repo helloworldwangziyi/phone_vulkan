@@ -9,6 +9,7 @@
 #include "evk/ui/ui_application.h"
 #include "evk/ui/animation_scheduler.h"
 #include "evk/ui/font_engine.h"
+#include "evk/ui/texture_store.h"
 #include "evk/ui/paint_canvas.h"
 #include "evk/ui/controls/button_control.h"
 #include "evk/ui/controls/scroll_control.h"
@@ -398,14 +399,17 @@ void testFontEngine(const char* latinPath, const char* cjkPath) {
     }
     assert(hasTextBatch);                             ///< 文字进 atlas 纹理批次
     assert(fonts.pageCount() >= 1);
-    assert(fonts.pagePixels(0) != nullptr);
+    const evk::ui::TextureId pageTex = fonts.pageTexture(0);
+    assert(pageTex != evk::ui::kInvalidTexture);
+    assert(evk::ui::TextureStore::instance().pixels(pageTex) != nullptr);
 
-    // 脏页标记：首帧上传后被取走，重复绘制同样文本不再置脏（命中缓存）。
-    assert(fonts.consumePageDirty(0));
+    // 脏页标记（TextureStore 语义）：首帧光栅化置脏，上传后被取走，
+    // 重复绘制同样文本不再置脏（字形命中缓存）。
+    assert(evk::ui::TextureStore::instance().consumeDirty(pageTex));
     canvas.clear();
     canvas.drawText("Hi 你好", evk::ui::kFontAny, 0.0f, 0.0f, 32.0f,
                     {0.0f, 0.0f, 400.0f, 100.0f}, evk::ui::Color::rgba(0xFFFFFFFF));
-    assert(!fonts.consumePageDirty(0));
+    assert(!evk::ui::TextureStore::instance().consumeDirty(pageTex));
 
     // TextWidget 测量路径：注册字体后挂树构建不崩、布局给出正的高度。
     evk::ui::runApp(
@@ -416,6 +420,115 @@ void testFontEngine(const char* latinPath, const char* cjkPath) {
     evk::ui::shutdownApp();
 
     fonts.reset();
+}
+
+/// 2D 图元：顶点数公式、合批、图像登记与子区域贴图。
+void testCanvas2dPrimitives() {
+    auto& store = evk::ui::TextureStore::instance();
+    store.reset();
+    evk::ui::Canvas canvas;
+    const evk::ui::Rect clip{0.0f, 0.0f, 1000.0f, 1000.0f};
+    const evk::ui::Color white = evk::ui::Color::rgba(0xFFFFFFFF);
+    const evk::ui::Color cyan = evk::ui::Color::rgba(0x22D3EEFF);
+
+    canvas.clear();
+    size_t n = 0;
+
+    // 矩形：6 顶点。
+    canvas.drawRect({0.0f, 0.0f, 10.0f, 10.0f}, clip, white);
+    n = canvas.vertices().size();
+    assert(n == 6);
+
+    // 线段：一个四边形 = 6 顶点；零长度线静默跳过。
+    canvas.drawLine(0.0f, 0.0f, 100.0f, 0.0f, 4.0f, clip, white);
+    assert(canvas.vertices().size() - n == 6);
+    n = canvas.vertices().size();
+    canvas.drawLine(5.0f, 5.0f, 5.0f, 5.0f, 4.0f, clip, white);
+    assert(canvas.vertices().size() == n);
+
+    // 圆：segments 个三角形 = 3*segments 顶点。
+    canvas.drawCircle(50.0f, 50.0f, 30.0f, clip, white, 16);
+    assert(canvas.vertices().size() - n == 16 * 3);
+    n = canvas.vertices().size();
+
+    // 椭圆：同理。
+    canvas.drawEllipse(50.0f, 50.0f, 30.0f, 20.0f, clip, white, 8);
+    assert(canvas.vertices().size() - n == 8 * 3);
+    n = canvas.vertices().size();
+
+    // 圆角矩形：3 个矩形（18）+ 4 角 × segments 个三角形。
+    canvas.drawRoundRect({0.0f, 0.0f, 100.0f, 60.0f}, 12.0f, clip, white, 6);
+    assert(canvas.vertices().size() - n == 3 * 6 + 4 * 6 * 3);
+    n = canvas.vertices().size();
+
+    // 弧环：segments 个四边形 = 6*segments；零扫角跳过。
+    canvas.drawArc(50.0f, 50.0f, 30.0f, 8.0f, 0.0f, 1.5f, clip, white, 9);
+    assert(canvas.vertices().size() - n == 9 * 6);
+    n = canvas.vertices().size();
+    canvas.drawArc(50.0f, 50.0f, 30.0f, 8.0f, 0.0f, 0.0f, clip, white, 9);
+    assert(canvas.vertices().size() == n);
+
+    // 凸多边形：count-2 个三角形。
+    const float pentagon[10] = {0, -30, 28, -9, 17, 24, -17, 24, -28, -9};
+    canvas.drawConvexPolygon(pentagon, 5, clip, white);
+    assert(canvas.vertices().size() - n == 3 * 3);
+    n = canvas.vertices().size();
+
+    // 矩形描边：4 个矩形；圆角描边：4 矩形 + 4 角弧。
+    canvas.strokeRect({0.0f, 0.0f, 100.0f, 60.0f}, 3.0f, clip, white);
+    assert(canvas.vertices().size() - n == 4 * 6);
+    n = canvas.vertices().size();
+    canvas.strokeRoundRect({0.0f, 0.0f, 100.0f, 60.0f}, 16.0f, 4.0f, clip, white, 5);
+    assert(canvas.vertices().size() - n == 4 * 6 + 4 * 5 * 6);
+    n = canvas.vertices().size();
+
+    // 渐变矩形：6 顶点，左上角取 c0、右下角取 c1。
+    canvas.drawRectGradient({0.0f, 0.0f, 80.0f, 40.0f}, cyan, white, true, clip);
+    assert(canvas.vertices().size() - n == 6);
+    const auto& v0 = canvas.vertices()[n];
+    const auto& v2 = canvas.vertices()[n + 2];
+    assert(v0.r == cyan.r && v0.g == cyan.g && v0.b == cyan.b);
+    assert(v2.r == white.r && v2.g == white.g && v2.b == white.b);
+    n = canvas.vertices().size();
+
+    // 图像：登记 2x2 纹理后 drawImage 发射 6 顶点、批次纹理号 = 句柄；
+    // 无效句柄与子区域贴图各自行为正确。
+    const uint32_t pixels[4] = {0xFFFFFFFFu, 0x22D3EEFFu, 0x6366F1FFu, 0x00000000u};
+    const evk::ui::TextureId tex = store.addTexture(2, 2, pixels);
+    assert(tex != evk::ui::kInvalidTexture);
+    canvas.drawImage(tex, {0.0f, 0.0f, 20.0f, 20.0f}, clip);
+    assert(canvas.vertices().size() - n == 6);
+    assert(canvas.batches().back().textureId == tex);
+    n = canvas.vertices().size();
+    canvas.drawImage(evk::ui::kInvalidTexture, {0.0f, 0.0f, 20.0f, 20.0f}, clip);
+    assert(canvas.vertices().size() == n);
+    canvas.drawImageRect(tex, {0.0f, 0.0f, 10.0f, 10.0f}, 0.0f, 0.0f, 0.5f, 0.5f, clip);
+    assert(canvas.vertices().size() - n == 6);
+    assert(canvas.vertices()[n].u == 0.0f && canvas.vertices()[n + 1].u == 0.5f);
+
+    // 合批：同 clip + 同纹理的连续几何合并成一个批次。
+    canvas.clear();
+    canvas.drawRect({0.0f, 0.0f, 10.0f, 10.0f}, clip, white);
+    canvas.drawCircle(50.0f, 50.0f, 30.0f, clip, white, 8);
+    canvas.drawLine(0.0f, 0.0f, 30.0f, 30.0f, 2.0f, clip, white);
+    assert(canvas.batches().size() == 1);
+    // 纹理不同则拆批。
+    canvas.drawImage(tex, {0.0f, 0.0f, 20.0f, 20.0f}, clip);
+    assert(canvas.batches().size() == 2);
+    assert(canvas.batches()[1].textureId == tex);
+
+    // Container 圆角/描边与 ImageWidget 挂树渲染不崩。
+    auto card = std::make_unique<evk::ui::Container>(0x1E293BFF);
+    card->cornerRadius = 16.0f;
+    card->borderColor = 0x22D3EEFF;
+    card->borderWidth = 3.0f;
+    evk::ui::runApp(
+        evk::ui::column(evk::ui::image(tex), std::move(card)), {});
+    evk::ui::setViewportSize(400.0f, 800.0f);
+    evk::beginFrame(ms(10));
+    evk::ui::shutdownApp();
+
+    store.reset();
 }
 
 } // namespace
@@ -430,6 +543,8 @@ int main(int argc, char** argv) {
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
     testAnimatedNavigationAndEdgeSwipe();
+
+    testCanvas2dPrimitives();
 
     // 字体测试需要两个字体文件路径（拉丁 + 中文）。
     if (argc >= 3) {

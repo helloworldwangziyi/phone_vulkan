@@ -9,6 +9,7 @@
 
 #include "screen_metrics.h"
 #include "app_fonts.h"
+#include "app_images.h"
 #include "app_theme.h"
 #include "detail_page.h"
 #include "evk/log.h"
@@ -119,6 +120,38 @@ public:
             contentHeight = appCalcHeight(152.0f * quotes_.size());
         }
 
+        /// ---- 2D 图元演示条：一个 painter 画完一行 ----
+        /// 实心圆 / 圆环 / 圆弧 / 线段 / 渐变 / 圆角描边 / 位图徽章，
+        /// 覆盖 Canvas 新增的全部图元类目（凹多边形/子区域贴图见测试）。
+        auto shapeStrip = sizedBox(
+            -1.0f, appCalcHeight(200.0f),
+            container(0, {}, [](PaintContext& paint) {
+                const AppTheme& theme = appTheme();
+                const Size size = paint.size();
+                const float h = size.height;
+                const float step = size.width / 7.0f;
+                paint.drawCircle(step * 0.5f, h * 0.5f, h * 0.32f, theme.accent);
+                paint.drawRing(step * 1.5f, h * 0.5f, h * 0.3f, h * 0.07f,
+                               theme.panelGradient[0]);
+                paint.drawArc(step * 2.5f, h * 0.5f, h * 0.3f, h * 0.07f,
+                              -2.2f, 3.6f, theme.panelAccent);
+                paint.drawLine(step * 3.05f, h * 0.25f, step * 3.95f, h * 0.75f,
+                               h * 0.06f, theme.textSecondary);
+                paint.drawRectGradient({step * 4.1f, h * 0.2f, step * 0.8f, h * 0.6f},
+                                       theme.panelGradient[0], theme.panelGradient[2],
+                                       true);
+                paint.strokeRoundRect({step * 5.1f, h * 0.2f, step * 0.8f, h * 0.6f},
+                                      h * 0.12f, h * 0.045f, theme.accent);
+                if (appImages::badge() != evk::ui::kInvalidTexture) {
+                    paint.drawImage(appImages::badge(),
+                                    {step * 6.05f, h * 0.2f, h * 0.6f, h * 0.6f});
+                }
+            }));
+        auto shapeRow = padding(
+            EdgeInsets::only(appCalcWidth(100.0f), appCalcHeight(20.0f),
+                             appCalcWidth(100.0f), 0.0f),
+            std::move(shapeStrip));
+
         /// ---- 文字标题区：中文粗体标题 + 中英混排副标题 ----
         /// 副标题用 latin 字体排版：汉字在 Roboto 里缺失，FontEngine 自动
         /// 沿注册顺序回退到 NotoSansSC——一行内两种字体无感混排。
@@ -153,6 +186,7 @@ public:
             std::move(panel),
             std::move(detailButton),
             std::move(themeButton),
+            std::move(shapeRow),
             std::move(titleBlock),
             std::move(list)));
         page->color = theme.windowBackground;

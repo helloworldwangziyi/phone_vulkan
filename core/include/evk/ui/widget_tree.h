@@ -140,12 +140,32 @@ struct EdgeInsets {
 class Container final : public RenderObjectWidget {
 public:
     uint32_t color = 0;
+    uint32_t borderColor = 0; ///< 描边色；非 0 且 borderWidth > 0 时生效
+    float borderWidth = 0.0f; ///< 描边宽度（像素，向内侧）
+    float cornerRadius = 0.0f; ///< 圆角半径；> 0 时背景/描边走圆角绘制
     std::function<void()> onTap;
     std::function<void(PaintContext&)> painter;
 
     explicit Container(uint32_t color = 0);
     std::unique_ptr<View> createRenderObject() const override;
     void updateRenderObject(View& view) const override;
+};
+
+/**
+ * @brief 位图 Widget：把 TextureStore 纹理拉伸铺满自身边界。
+ *
+ * 无固有尺寸——在容器里跟随拉伸（配合 SizedBox/Expanded 控制大小）；
+ * 顶点色恒白即原样贴图。要染色/九宫格时用 Container::painter 自绘。
+ */
+class ImageWidget final : public RenderObjectWidget {
+public:
+    explicit ImageWidget(TextureId texture);
+
+    std::unique_ptr<View> createRenderObject() const override;
+    void updateRenderObject(View& view) const override;
+
+private:
+    TextureId texture_; ///< TextureStore 句柄
 };
 
 class Button final : public RenderObjectWidget {
@@ -376,6 +396,7 @@ std::unique_ptr<Widget> padding(
     EdgeInsets insets,
     std::unique_ptr<Widget> child);
 std::unique_ptr<Widget> center(std::unique_ptr<Widget> child);
+std::unique_ptr<Widget> image(TextureId texture);
 std::unique_ptr<Widget> text(std::string content, float fontSize, uint32_t color,
                              FontId font = kFontAny);
 std::unique_ptr<Widget> scrollView(

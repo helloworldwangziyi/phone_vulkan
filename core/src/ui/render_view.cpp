@@ -63,10 +63,74 @@ void PaintContext::drawTriangle(float x1, float y1, float x2, float y2,
         clip_, Color::rgba(c1), Color::rgba(c2), Color::rgba(c3));
 }
 
-void PaintContext::drawText(const char* utf8, int32_t font, float sizePx,
-                            uint32_t rgba) {
-    canvas_.drawText(utf8, font, bounds_.x, bounds_.y, sizePx, clip_,
+void PaintContext::drawText(const char* utf8, int32_t font, float x, float y,
+                            float sizePx, uint32_t rgba) {
+    canvas_.drawText(utf8, font, bounds_.x + x, bounds_.y + y, sizePx, clip_,
                      Color::rgba(rgba));
+}
+
+void PaintContext::drawLine(float x1, float y1, float x2, float y2, float width,
+                            uint32_t rgba) {
+    canvas_.drawLine(bounds_.x + x1, bounds_.y + y1, bounds_.x + x2,
+                     bounds_.y + y2, width, clip_, Color::rgba(rgba));
+}
+
+void PaintContext::drawCircle(float cx, float cy, float radius, uint32_t rgba,
+                              int segments) {
+    canvas_.drawCircle(bounds_.x + cx, bounds_.y + cy, radius, clip_,
+                       Color::rgba(rgba), segments);
+}
+
+void PaintContext::drawEllipse(float cx, float cy, float rx, float ry, uint32_t rgba,
+                               int segments) {
+    canvas_.drawEllipse(bounds_.x + cx, bounds_.y + cy, rx, ry, clip_,
+                        Color::rgba(rgba), segments);
+}
+
+void PaintContext::drawRoundRect(const Rect& rect, float radius, uint32_t rgba,
+                                 int segments) {
+    canvas_.drawRoundRect({bounds_.x + rect.x, bounds_.y + rect.y, rect.w, rect.h},
+                          radius, clip_, Color::rgba(rgba), segments);
+}
+
+void PaintContext::drawArc(float cx, float cy, float radius, float thickness,
+                           float startAngle, float sweepAngle, uint32_t rgba,
+                           int segments) {
+    canvas_.drawArc(bounds_.x + cx, bounds_.y + cy, radius, thickness, startAngle,
+                    sweepAngle, clip_, Color::rgba(rgba), segments);
+}
+
+void PaintContext::drawConvexPolygon(const float* points, int count, uint32_t rgba) {
+    // 多边形顶点要先平移到屏幕坐标，再交给 Canvas。
+    std::vector<float> screen(static_cast<size_t>(count) * 2);
+    for (int i = 0; i < count; ++i) {
+        screen[i * 2] = bounds_.x + points[i * 2];
+        screen[i * 2 + 1] = bounds_.y + points[i * 2 + 1];
+    }
+    canvas_.drawConvexPolygon(screen.data(), count, clip_, Color::rgba(rgba));
+}
+
+void PaintContext::strokeRect(const Rect& rect, float width, uint32_t rgba) {
+    canvas_.strokeRect({bounds_.x + rect.x, bounds_.y + rect.y, rect.w, rect.h},
+                       width, clip_, Color::rgba(rgba));
+}
+
+void PaintContext::strokeRoundRect(const Rect& rect, float radius, float width,
+                                   uint32_t rgba, int segments) {
+    canvas_.strokeRoundRect({bounds_.x + rect.x, bounds_.y + rect.y, rect.w, rect.h},
+                            radius, width, clip_, Color::rgba(rgba), segments);
+}
+
+void PaintContext::drawRectGradient(const Rect& rect, uint32_t rgba0, uint32_t rgba1,
+                                    bool horizontal) {
+    canvas_.drawRectGradient({bounds_.x + rect.x, bounds_.y + rect.y, rect.w, rect.h},
+                             Color::rgba(rgba0), Color::rgba(rgba1), horizontal,
+                             clip_);
+}
+
+void PaintContext::drawImage(TextureId texture, const Rect& rect, uint32_t rgba) {
+    canvas_.drawImage(texture, {bounds_.x + rect.x, bounds_.y + rect.y, rect.w, rect.h},
+                      clip_, Color::rgba(rgba));
 }
 
 ViewRef::ViewRef(View* view)

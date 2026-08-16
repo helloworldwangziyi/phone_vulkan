@@ -1,4 +1,5 @@
 #include "app_fonts.h"
+#include "app_images.h"
 #include "screen_metrics.h"
 #include "app_theme.h"
 #include "home_page.h"
@@ -27,6 +28,7 @@ void createUi() {
     }
     EVK_LOGI("mounting Flutter-style UI root");
     appFonts::registerFonts(); ///< 先注册字体，首个含文字的 build() 才能排版
+    appImages::ensureRegistered(); ///< 程序化位图（径向渐变徽章） ///< 先注册字体，首个含文字的 build() 才能排版
     evk::ui::runApp(
         evk::ui::makeWidget<HomePage>(),
         {

@@ -25,6 +25,7 @@ fi
     "$repo_root/core/src/ui/paint_canvas.cpp" \
     "$repo_root/core/src/ui/event_bus.cpp" \
     "$repo_root/core/src/ui/font_engine.cpp" \
+    "$repo_root/core/src/ui/texture_store.cpp" \
     "$repo_root/core/src/ui/controls/button_control.cpp" \
     "$repo_root/core/src/ui/layout/flex_layout.cpp" \
     "$repo_root/core/src/ui/widget_tree.cpp" \

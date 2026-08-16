@@ -52,12 +52,35 @@ std::unique_ptr<evk::ui::Widget> DetailPage::build(
                         colors[0], colors[1], colors[2]);
                 })));
 
-    /// 层级说明：编号数字来自 Roboto，中文来自 NotoSansSC（回退混排）。
+    /// 层级说明卡：圆角矩形 + 描边 + 居中文字（编号数字来自 Roboto，
+    /// 中文来自 NotoSansSC——一行内回退混排）。
+    const float captionFontSize = appCalcHeight(30.0f);
+    const float captionRadius = appCalcHeight(24.0f);
+    std::string captionText =
+        std::string("Layer #") + std::to_string(variant) + " · 渲染层详情";
     auto caption = padding(
         EdgeInsets::only(appCalcWidth(100.0f), appCalcHeight(20.0f),
                          appCalcWidth(100.0f), 0.0f),
-        text(std::string("Layer #") + std::to_string(variant) + " · 渲染层详情",
-             appCalcHeight(30.0f), theme.textSecondary));
+        sizedBox(
+            -1.0f, appCalcHeight(110.0f),
+            container(0, {},
+                      [text = std::move(captionText), fill = theme.surface,
+                       border = theme.accent, color = theme.textPrimary,
+                       fontSize = captionFontSize, radius = captionRadius,
+                       font = appFonts::cjk()](PaintContext& paint) {
+                          const Size size = paint.size();
+                          const Rect bounds = {0.0f, 0.0f, size.width, size.height};
+                          paint.drawRoundRect(bounds, radius, fill);
+                          paint.strokeRoundRect(bounds, radius, 3.0f, border);
+                          float textWidth = 0.0f;
+                          float textHeight = 0.0f;
+                          evk::ui::FontEngine::instance().measureText(
+                              text.c_str(), fontSize, font, &textWidth, &textHeight);
+                          paint.drawText(text.c_str(), font,
+                                         (size.width - textWidth) * 0.5f,
+                                         (size.height - textHeight) * 0.5f,
+                                         fontSize, color);
+                      })));
 
     auto card = [&](int index) {
         return container(theme.scrollItems[(variant * 3 + index) % 8]);

@@ -4,8 +4,9 @@
  * @file font_engine.h
  * @brief 字体引擎：TTF 解析、多字体回退、按需字形光栅化与 atlas 打包。
  *
- * 纯 CPU 模块，不依赖 Vulkan——主机侧测试可以完整跑。渲染器只消费
- * 产出的 atlas 像素（pagePixels + 脏页标记）。
+ * 纯 CPU 模块，不依赖 Vulkan——主机侧测试可以完整跑。字形 atlas 页
+ * 登记在 TextureStore（RGBA，rgb 恒白、a 为覆盖率），渲染器经统一
+ * 纹理通道上传与采样。
  *
  * 单线程模型：全部接口只在 UI 线程调用，内部无锁。
  * 字形缓存以 (字体, 字形索引, 整数像素高) 为键；每个字号独立光栅化，
@@ -16,6 +17,8 @@
 #include <functional>
 #include <unordered_map>
 #include <vector>
+
+#include "evk/ui/texture_store.h"
 
 namespace evk::ui {
 
@@ -32,7 +35,7 @@ constexpr FontId kFontAny = -1;
  * 坐标全部相对"文本行盒子的左上角"（y 向下），行盒高 = ascent+descent。
  */
 struct PlacedGlyph {
-    uint32_t page;        ///< 字形所在的 atlas 页号（0 起）
+    TextureId texture;    ///< 字形所在的 atlas 页（TextureStore 句柄）
     float u0, v0, u1, v1; ///< 归一化纹理坐标（已做半像素内缩，防相邻字形渗色）
     float x, y;           ///< 字形四边形左上角（相对行盒子左上角）
     float w, h;           ///< 字形四边形屏幕尺寸（像素）
@@ -69,7 +72,7 @@ public:
     /**
      * @brief 单行文本测量（不绘制，不触发光栅化）。
      * @param utf8 UTF-8 文本
-     * @param sizePx 字号（像素高度）
+     * @param sizePx 字号（em 像素大小）
      * @param preferred 首选字体；kFontAny = 无偏好（纯回退链）
      * @param outWidth 输出：行宽（像素）；可为 nullptr
      * @param outHeight 输出：行盒高 = ascent+descent（像素）；可为 nullptr
@@ -81,30 +84,24 @@ public:
     /**
      * @brief 单行排版并逐字形回调（测量与绘制共用同一条排布逻辑）。
      *
-     * 首次遇到的字形会在 atlas 里按需光栅化并打脏页标记，
-     * 渲染器随后把脏页像素上传 GPU（当帧生效）。
+     * 首次遇到的字形会在 atlas 里按需光栅化（页登记进 TextureStore 并
+     * 打脏标记），渲染器随后把脏纹理上传 GPU（当帧生效）。
      * @param utf8 UTF-8 文本
-     * @param sizePx 字号（像素高度）
+     * @param sizePx 字号（em 像素大小）
      * @param preferred 首选字体；kFontAny = 无偏好
      * @param fn 每个字形回调一次，参数是排布结果
      */
     void forEachGlyph(const char* utf8, float sizePx, FontId preferred,
                       const std::function<void(const PlacedGlyph&)>& fn);
 
-    // ---- atlas 访问（渲染层消费） ----
+    // ---- atlas 访问（渲染层/测试消费，像素细节走 TextureStore） ----
 
     /// atlas 页数（随字形增多而增长，页满自动开新页）。
     int pageCount() const;
-    /// 指定页的像素数据（R8，每个字节一个覆盖度样本）。
-    const uint8_t* pagePixels(int page) const;
+    /// 指定页对应的 TextureStore 句柄。
+    TextureId pageTexture(int page) const;
     /// atlas 页边长（方形，当前固定 1024）。
     int pageSize() const;
-
-    /**
-     * @brief 读取并清除页的脏标记。
-     * @return true 表示本页自上次询问后有新字形写入，需要整体重新上传
-     */
-    bool consumePageDirty(int page);
 
 private:
     FontEngine() = default;
@@ -115,19 +112,19 @@ private:
     };
 
     struct CachedGlyph {
-        uint32_t page;  ///< 所在 atlas 页
+        TextureId texture; ///< 所在 atlas 页（TextureStore 句柄）
         int x, y;       ///< 页内像素位置（含 1px 留边）
         int w, h;       ///< 光栅化尺寸（不含留边）
         float xoff, yoff; ///< 相对"笔尖基线"的摆放偏移（stbtt 惯例，y 向下）
         float advance;  ///< 推进宽度（像素）
     };
 
+    /// 一页 atlas：货架法打包游标 + TextureStore 里的像素本体。
     struct AtlasPage {
-        std::vector<uint8_t> pixels; ///< R8 覆盖率位图
-        int cursorX = 0;  ///< 货架法打包：当前行写入位置
-        int cursorY = 0;  ///< 当前行的 y 起点
+        TextureId texture = kInvalidTexture;
+        int cursorX = 0;   ///< 当前行写入位置
+        int cursorY = 0;   ///< 当前行的 y 起点
         int rowHeight = 0; ///< 当前行已用高度（同行按最高字形对齐）
-        bool dirty = false; ///< 有新字形写入，待渲染器取走重传
     };
 
     /// 排版用的解析结果（measureText 与 forEachGlyph 共用）。
@@ -141,7 +138,7 @@ private:
     /// (字体, 字形, 整数像素高) → 缓存条目。
     static uint64_t makeKey(int fontIndex, int glyphIndex, int pxSize);
 
-    /// 查缓存；未命中则光栅化并打进 atlas（写脏页），失败返回 nullptr。
+    /// 查缓存；未命中则光栅化并打进 atlas（写脏标记），失败返回 nullptr。
     const CachedGlyph* rasterizeGlyph(int fontIndex, int glyphIndex, float sizePx);
 
     /// 按回退规则为码点选字体，返回注册表下标；都不含则返回 -1。
@@ -154,7 +151,7 @@ private:
     void lineMetrics(float sizePx, FontId preferred, float* ascent, float* descent) const;
 
     std::vector<FontRecord> fonts_; ///< 注册表（顺序即回退顺序）
-    std::vector<AtlasPage> pages_;  ///< atlas 页
+    std::vector<AtlasPage> pages_;  ///< atlas 页（像素在 TextureStore）
     std::unordered_map<uint64_t, CachedGlyph> glyphCache_; ///< 字形缓存
 };
 

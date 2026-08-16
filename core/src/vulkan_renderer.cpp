@@ -10,6 +10,8 @@
 #include "evk/log.h"
 // FontEngine：字形 atlas 的页数/像素/脏页标记由它提供，渲染器只管上传与采样。
 #include "evk/ui/font_engine.h"
+// TextureStore：字形 atlas 页与业务位图的统一登记处，渲染器按 id 建纹理并上传。
+#include "evk/ui/texture_store.h"
 
 // std::max / std::min：交换链尺寸与裁剪矩形的边界 clamp 要用。
 #include <algorithm>
@@ -1096,10 +1098,15 @@ bool Renderer::createSyncObjects() {
 
 // ---- 纹理设施：白纹理 + 字形 atlas 页 + descriptor ----
 
-/// atlas 页边长与 FontEngine 保持一致（R8，单页 1MB）。
+/// atlas 页边长与 FontEngine 保持一致；RGBA 单页 4MB。
 constexpr int kAtlasPageSize = 1024;
-/// descriptor 池按"白纹理 + 最大页数"预分配。
-constexpr int kMaxDescriptorSets = 16 + 2;
+constexpr VkDeviceSize kAtlasPageBytes =
+    static_cast<VkDeviceSize>(kAtlasPageSize) * kAtlasPageSize * 4;
+/// 中转缓冲容量（2 个 RGBA 页）：首帧文字量大时可能连开多页，
+/// 单帧超出的部分推迟到下一帧（见 uploadPendingTextures 的溢出处理）。
+constexpr VkDeviceSize kStagingCapacity = kAtlasPageBytes * 2;
+/// descriptor 池上限：白纹理 + atlas 页 + 业务位图的总预算。
+constexpr int kMaxDescriptorSets = 64;
 
 /**
  * @brief 创建与 swapchain 无关的纹理设施：采样器、descriptor 布局与池、
@@ -1162,10 +1169,7 @@ bool Renderer::createTextureResources() {
     // 避免 CPU 写第 N 帧数据时 GPU 还在读第 N-1 帧（帧槽位 fence 语义）。
     atlasStagingBuffers_.resize(kMaxFramesInFlight);
     atlasStagingMemorys_.resize(kMaxFramesInFlight);
-    // 2 页容量：首帧文字量大时可能连开多页（页满自动开新页），
-    // 单帧超出的部分推迟到下一帧（见 uploadPendingTextures 的溢出处理）。
-    const VkDeviceSize stagingSize =
-        static_cast<VkDeviceSize>(kAtlasPageSize) * kAtlasPageSize * 2;
+    const VkDeviceSize stagingSize = kStagingCapacity;
     for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
         VkBufferCreateInfo bufferInfo{};
         bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1207,7 +1211,7 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t he
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.format = VK_FORMAT_R8_UNORM;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     imageInfo.extent = {width, height, 1};
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
@@ -1238,7 +1242,7 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t he
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
     viewInfo.image = tex.image;
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8_UNORM;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.layerCount = 1;
@@ -1284,18 +1288,26 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t he
  * 在每帧录制命令前调用；新建纹理标记 pendingUpload，
  * 本帧命令缓冲里就会完成首次像素上传。
  */
-void Renderer::ensureAtlasTextures() {
-    auto& fonts = ui::FontEngine::instance();
-    const int pages = fonts.pageCount();
-    for (int i = static_cast<int>(atlasTextures_.size()); i < pages; ++i) {
-        TextureObj tex;
-        if (!createSampledTexture(tex, static_cast<uint32_t>(fonts.pageSize()),
-                                  static_cast<uint32_t>(fonts.pageSize()), nullptr)) {
-            // 建不出纹理的页不再重试（atlas 也不会回退页号），留空槽占位。
-            EVK_LOGW("atlas texture for page {} unavailable; page skipped", i);
-            tex = TextureObj{};
+void Renderer::ensureStoreTextures() {
+    auto& store = ui::TextureStore::instance();
+    const int count = store.textureCount();
+    // [0] 占位（0 号是渲染器自己的白纹理），下标 i 对应 TextureStore 第 i 号。
+    if (static_cast<int>(storeTextures_.size()) < count + 1) {
+        storeTextures_.resize(count + 1);
+    }
+    for (int id = 1; id <= count; ++id) {
+        TextureObj& tex = storeTextures_[id];
+        if (tex.image == VK_NULL_HANDLE) {
+            TextureObj created;
+            if (!createSampledTexture(created, store.width(static_cast<ui::TextureId>(id)),
+                                      store.height(static_cast<ui::TextureId>(id)),
+                                      nullptr)) {
+                // 本帧建不出就留空槽，下一帧重试；期间该纹理的绘制退化为白块。
+                EVK_LOGW("texture {} unavailable; retried next frame", id);
+                continue;
+            }
+            tex = created;
         }
-        atlasTextures_.push_back(tex);
     }
 }
 
@@ -1308,10 +1320,9 @@ void Renderer::ensureAtlasTextures() {
  * @param frameSlot 本帧槽位（选对应的中转缓冲）
  */
 void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
-    auto& fonts = ui::FontEngine::instance();
-    const int pageSize = fonts.pageSize();
+    auto& store = ui::TextureStore::instance();
 
-    // 收集本帧要传的 (纹理, 像素, 字节数)。整页 1MB、白纹理 1 字节，
+    // 收集本帧要传的 (纹理, 像素, 字节数)。白纹理 4 字节、其余整张纹理，
     // 全部拷进同一块中转缓冲再分段拷出。
     struct PendingCopy {
         TextureObj* tex;
@@ -1321,20 +1332,21 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
     };
     std::vector<PendingCopy> copies;
     if (whiteTexture_.pendingUpload) {
-        copies.push_back({&whiteTexture_, &whitePixel_, 1, 1, 1});
+        copies.push_back({&whiteTexture_, reinterpret_cast<const uint8_t*>(&whitePixel_),
+                          4, 1, 1});
     }
-    for (size_t i = 0; i < atlasTextures_.size(); ++i) {
-        TextureObj& tex = atlasTextures_[i];
+    for (size_t id = 1; id < storeTextures_.size(); ++id) {
+        TextureObj& tex = storeTextures_[id];
         if (tex.image == VK_NULL_HANDLE) {
             continue;
         }
-        if (tex.pendingUpload || fonts.consumePageDirty(static_cast<int>(i))) {
-            const uint8_t* pixels = fonts.pagePixels(static_cast<int>(i));
+        if (tex.pendingUpload || store.consumeDirty(static_cast<ui::TextureId>(id))) {
+            const uint32_t* pixels = store.pixels(static_cast<ui::TextureId>(id));
             if (pixels) {
-                copies.push_back({&tex, pixels,
-                                  static_cast<VkDeviceSize>(pageSize) * pageSize,
-                                  static_cast<uint32_t>(pageSize),
-                                  static_cast<uint32_t>(pageSize)});
+                const uint32_t w = store.width(static_cast<ui::TextureId>(id));
+                const uint32_t h = store.height(static_cast<ui::TextureId>(id));
+                copies.push_back({&tex, reinterpret_cast<const uint8_t*>(pixels),
+                                  static_cast<VkDeviceSize>(w) * h * 4, w, h});
             }
         }
     }
@@ -1342,10 +1354,9 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         return;
     }
 
-    // 中转缓冲容量（2 页）：装不下的页回退 pendingUpload，下一帧再传。
-    // 脏标记已在收集时取走，靠渲染器自己的 pendingUpload 保证不丢。
-    const VkDeviceSize capacity =
-        static_cast<VkDeviceSize>(kAtlasPageSize) * kAtlasPageSize * 2;
+    // 装不下的纹理回退 pendingUpload，下一帧再传。脏标记已在收集时
+    // 取走，靠渲染器自己的 pendingUpload 保证不丢。
+    const VkDeviceSize capacity = kStagingCapacity;
     VkDeviceSize total = 0;
     size_t fit = 0;
     for (; fit < copies.size(); ++fit) {
@@ -1399,7 +1410,7 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         region.imageSubresource.layerCount = 1;
         region.imageExtent = {copy.width, copy.height, 1};
         region.bufferOffset = offset;
-        // R8 紧密排列：行间距 = 宽度，无对齐填充。
+        // RGBA 紧密排列：行间距 = 宽度（纹素），无对齐填充。
         region.bufferRowLength = copy.width;
         region.bufferImageHeight = copy.height;
         vkCmdCopyBufferToImage(cmd, atlasStagingBuffers_[frameSlot], copy.tex->image,
@@ -1435,9 +1446,9 @@ VkDescriptorSet Renderer::descriptorFor(uint32_t textureId) const {
     if (textureId == 0) {
         return whiteTexture_.set;
     }
-    const size_t page = textureId - 1;
-    if (page < atlasTextures_.size() && atlasTextures_[page].set != VK_NULL_HANDLE) {
-        return atlasTextures_[page].set;
+    if (textureId < storeTextures_.size() &&
+        storeTextures_[textureId].set != VK_NULL_HANDLE) {
+        return storeTextures_[textureId].set;
     }
     return whiteTexture_.set;
 }
@@ -1455,10 +1466,10 @@ void Renderer::destroyTextureResources() {
         tex = TextureObj{};
     };
     destroyTexture(whiteTexture_);
-    for (auto& tex : atlasTextures_) {
+    for (auto& tex : storeTextures_) {
         destroyTexture(tex);
     }
-    atlasTextures_.clear();
+    storeTextures_.clear();
     for (size_t i = 0; i < atlasStagingBuffers_.size(); ++i) {
         if (atlasStagingBuffers_[i] != VK_NULL_HANDLE) {
             vkDestroyBuffer(device_, atlasStagingBuffers_[i], nullptr);
@@ -1655,9 +1666,10 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
-    // 纹理上传先行：atlas 长出新页就补建采样纹理，待上传的页（含首次的
-    // 白纹理）在这里经中转缓冲整页拷入。必须发生在 render pass 之外。
-    ensureAtlasTextures();
+    // 纹理上传先行：TextureStore 长出新纹理（atlas 页/业务位图）就补建
+    // GPU 对象，待上传的纹理（含首次的白纹理）经中转缓冲整张拷入。
+    // 必须发生在 render pass 之外。
+    ensureStoreTextures();
     uploadPendingTextures(cmd, currentFrame_);
 
     // render pass begin 信息：用哪个 pass、渲染到哪个 framebuffer、范围多大。
