@@ -112,8 +112,7 @@ Button* buttonFromHandle(esx_view button) {
 
 extern "C" {
 
-esx_view esx_button_create(float x, float y, float width, float height,
-                           esx_view parent, const esx_button_style* style,
+esx_view esx_button_create(esx_view parent, const esx_button_style* style,
                            esx_button_click_func on_click, void* user_data) {
     const esx_button_style defaultStyle{0x3CB371FF, 0x2E8B57FF, 0x808080FF};
     auto button = std::make_unique<Button>();
@@ -122,7 +121,7 @@ esx_view esx_button_create(float x, float y, float width, float height,
     button->userData = user_data;
 
     Button* raw = button.get();
-    const esx_view handle = esxAdoptViewNode(std::move(button), x, y, width, height, parent);
+    const esx_view handle = esxAdoptViewNode(std::move(button), parent);
     if (handle == 0) {
         return 0;
     }

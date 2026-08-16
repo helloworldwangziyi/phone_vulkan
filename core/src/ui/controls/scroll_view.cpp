@@ -329,25 +329,27 @@ ScrollView* scrollViewFromHandle(esx_view scrollView) {
 
 extern "C" {
 
-esx_view esx_scroll_view_create(float x, float y, float width, float height,
-                                float content_width, float content_height,
+esx_view esx_scroll_view_create(float content_width, float content_height,
                                 esx_view parent) {
     auto view = std::make_unique<ScrollView>();
     view->contentWidth = std::max(0.0f, content_width);
     view->contentHeight = std::max(0.0f, content_height);
 
     ScrollView* raw = view.get();
-    const esx_view viewport =
-        esxAdoptViewNode(std::move(view), x, y, width, height, parent);
+    const esx_view viewport = esxAdoptViewNode(std::move(view), parent);
     if (viewport == 0) {
         return 0;
     }
 
-    raw->content = esx_create_view(0, 0, raw->contentWidth, raw->contentHeight, viewport);
+    raw->content = esx_create_view(viewport);
     if (raw->content == 0) {
         esx_destroy_view(viewport);
         return 0;
     }
+    // content 初始矩形 = 内容尺寸（滚动的 0 偏移位置）；viewport 被布局后
+    // handleBoundsChanged → snapOffset 会按 offset 重算 content 位置。
+    esx_view_set_bounds(raw->content, 0.0f, 0.0f, raw->contentWidth,
+                        raw->contentHeight);
     return viewport;
 }
 

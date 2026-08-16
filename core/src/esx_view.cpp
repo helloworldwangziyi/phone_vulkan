@@ -139,8 +139,8 @@ void drawViewTree(evk::ui::View* view, evk::ui::Canvas& canvas) {
 
 extern "C" {
 
-esx_view esx_create_view(float x, float y, float w, float h, esx_view parent) {
-    return esxAdoptViewNode(std::make_unique<evk::ui::View>(), x, y, w, h, parent);
+esx_view esx_create_view(esx_view parent) {
+    return esxAdoptViewNode(std::make_unique<evk::ui::View>(), parent);
 }
 
 void esx_destroy_view(esx_view view) {
@@ -357,14 +357,14 @@ evk::ui::View* esxViewFromHandle(esx_view view) {
 
 /**
  * @brief 把控件实现好的 View 节点（可为 Button/ScrollView 等子类）挂进视图树：
- * 设置布局矩形、挂到 parent（或暂存未挂载列表）、注册句柄。
+ * 挂到 parent（或暂存未挂载列表）、注册句柄；初始矩形 {0,0,0,0}，
+ * 由调用方随后 set_bounds 或容器布局赋予。
  *
  * 句柄从 1 自增（0 无效），登记进 g_handles 后视图才可被 esx_view_* 系列操作；
  * parent=0 时所有权留在 g_unattached，等 esxAdoptChild / esx_set_root_view 接管。
  * 每次创建都 requestRender——视图树一变，下一帧必须重绘。
  */
-esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view,
-                          float x, float y, float w, float h, esx_view parent) {
+esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view, esx_view parent) {
     if (g_buildingFrame) {
         EVK_LOGW("esxAdoptViewNode: cannot change the View tree during draw");
         return 0;
@@ -373,7 +373,6 @@ esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view,
         // 告警不拦截：应在 EngineReady 事件后创建视图（见 event.h）。
         EVK_LOGW("esxAdoptViewNode: creating view before engine is ready");
     }
-    view->rect = {x, y, w, h};
     evk::ui::View* raw = view.get();
 
     if (parent != 0) {

@@ -267,7 +267,7 @@ public:
      *              页面滑出它会被父链 clip 自动裁剪；
      *   bar：顶部导航栏（后创建 = 永远画在页面上层），内含底部分隔线与返回按钮。
      *
-     * 由创建时与 handleBoundsChanged 调用（尺寸变化重排并取消转场）；
+     * 由 handleBoundsChanged 调用（首次 set_bounds 与尺寸变化时重排）；
      * 返回按钮大小按栏高比例折算（barHeight×0.6）。
      */
     void layoutBar() {
@@ -278,6 +278,9 @@ public:
         }
         if (bar != 0) {
             esx_view_set_bounds(bar, 0.0f, 0.0f, w, barHeight);
+        }
+        if (barLine != 0) {
+            esx_view_set_bounds(barLine, 0.0f, barHeight - 1.0f, w, 1.0f);
         }
         if (backButton != 0) {
             const float buttonSize = barHeight * 0.6f;
@@ -441,8 +444,7 @@ Navigation* navigationFromHandle(esx_view nav) {
 
 extern "C" {
 
-esx_view esx_navigation_create(float x, float y, float w, float h,
-                               esx_view parent, float nav_bar_height,
+esx_view esx_navigation_create(esx_view parent, float nav_bar_height,
                                const esx_navigation_style* style) {
     auto view = std::make_unique<Navigation>();
     view->barHeight = std::max(0.0f, nav_bar_height);
@@ -451,29 +453,27 @@ esx_view esx_navigation_create(float x, float y, float w, float h,
                                                0x475569FF, 0xF8FAFCFF};
 
     Navigation* raw = view.get();
-    const esx_view nav = esxAdoptViewNode(std::move(view), x, y, w, h, parent);
+    const esx_view nav = esxAdoptViewNode(std::move(view), parent);
     if (nav == 0) {
         return 0;
     }
 
-    // 页面容器在下层，导航栏后建在最上层。
-    raw->container = esx_create_view(0.0f, raw->barHeight, w,
-                                     std::max(0.0f, h - raw->barHeight), nav);
+    // 页面容器在下层，导航栏后建在最上层。创建时矩形均为 {0,0,0,0}，
+    // 首次 set_bounds 触发 handleBoundsChanged → layoutBar 统一布局。
+    raw->container = esx_create_view(nav);
     if (raw->barHeight > 0.0f) {
-        raw->bar = esx_create_view(0.0f, 0.0f, w, raw->barHeight, nav);
+        raw->bar = esx_create_view(nav);
         esx_view_set_background(raw->bar, raw->style.bar_color);
-        raw->barLine = esx_create_view(0.0f, raw->barHeight - 1.0f, w, 1.0f, raw->bar);
+        raw->barLine = esx_create_view(raw->bar);
         esx_view_set_background(raw->barLine, raw->style.bar_line_color);
         const esx_button_style buttonStyle{raw->style.back_button_color,
                                            raw->style.back_button_pressed_color,
                                            raw->style.back_button_color};
-        raw->backButton = esx_button_create(0.0f, 0.0f, 0.0f, 0.0f, raw->bar,
-                                            &buttonStyle, handleBackClick, raw);
+        raw->backButton = esx_button_create(raw->bar, &buttonStyle,
+                                            handleBackClick, raw);
         esx_view_set_draw_callback(raw->backButton, drawBackArrow, raw);
         esx_view_set_visible(raw->backButton, 0);
     }
-    // 立即布局一次：否则返回按钮要等首次尺寸变化才有非零 bounds。
-    raw->layoutBar();
     return nav;
 }
 

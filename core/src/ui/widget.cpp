@@ -150,7 +150,7 @@ std::vector<std::unique_ptr<Widget>>& Widget::childSpecs() {
 // ---- Box ----
 
 esx_view Box::createView(Element& owner) const {
-    const esx_view view = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view view = esx_create_view(0);
     if (view == 0) {
         return 0;
     }
@@ -195,7 +195,7 @@ esx_view ButtonW::createView(Element& owner) const {
     auto slot = std::make_unique<Slot>();
     slot->fn = [f = onTap](esx_view) { if (f) f(); };
     const esx_view view =
-        esx_button_create(0, 0, 0, 0, 0, &style, &slotViewTrampoline, slot.get());
+        esx_button_create(0, &style, &slotViewTrampoline, slot.get());
     if (view == 0) {
         return 0;
     }
@@ -213,7 +213,7 @@ void ButtonW::updateView(esx_view view, Element& owner) const {
 // ---- ColumnW / RowW ----
 
 esx_view ColumnW::createView(Element& /*owner*/) const {
-    const esx_view view = esx_flex_create(0, 0, 0, 0, 0, 1);
+    const esx_view view = esx_flex_create(0, 1);
     if (view != 0 && color != 0) {
         esx_view_set_background(view, color);
     }
@@ -238,7 +238,7 @@ void ColumnW::configureChild(esx_view container, const Widget& child,
 }
 
 esx_view RowW::createView(Element& /*owner*/) const {
-    const esx_view view = esx_flex_create(0, 0, 0, 0, 0, 0);
+    const esx_view view = esx_flex_create(0, 0);
     if (view != 0 && color != 0) {
         esx_view_set_background(view, color);
     }
@@ -251,11 +251,11 @@ esx_view ScrollW::createView(Element& owner) const {
     auto follow = std::make_unique<ScrollFollow>();
     follow->contentHeight = contentHeight;
     ScrollFollow* raw = follow.get();
-    const esx_view handle = esxAdoptViewNode(std::move(follow), 0, 0, 0, 0, 0);
+    const esx_view handle = esxAdoptViewNode(std::move(follow), 0);
     if (handle == 0) {
         return 0;
     }
-    raw->scroll = esx_scroll_view_create(0, 0, 0, 0, 0, contentHeight, handle);
+    raw->scroll = esx_scroll_view_create(0, contentHeight, handle);
     if (raw->scroll == 0) {
         return handle;
     }

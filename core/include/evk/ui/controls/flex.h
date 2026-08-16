@@ -45,12 +45,11 @@ typedef struct esx_flex_child {
 } esx_flex_child;
 
 /**
- * @brief 创建 Flex 容器。
+ * @brief 创建 Flex 容器（初始矩形 {0,0,0,0}，由 set_bounds 或父容器布局赋予）。
  * @param vertical 非 0：主轴自上而下（Column）；否则主轴自左而右（Row）
  * @return 容器视图句柄；失败返回 0
  */
-esx_view esx_flex_create(float x, float y, float w, float h, esx_view parent,
-                         int32_t vertical);
+esx_view esx_flex_create(esx_view parent, int32_t vertical);
 
 /**
  * @brief 设置/更新子视图的排布参数。

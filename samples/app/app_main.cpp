@@ -57,9 +57,11 @@ void appCreateUi() {
     /// 根视图铺满屏幕（此时已收到 SurfaceChanged，g_screenWidth/Height 是真实像素）。
     /// parent=0 创建 = 暂不挂载，下面 set_root_view 才把它定为根。
     /// appCalcHeight(150) 是导航栏高度（设计稿 150px 换算成真实像素）。
-    g_nav = esx_navigation_create(0, 0, g_screenWidth, g_screenHeight, 0,
-                                  appCalcHeight(150), &navStyle);
+    g_nav = esx_navigation_create(0, appCalcHeight(150), &navStyle);
     esx_set_root_view(g_nav);
+    /// 创建时矩形为 0：这次 set_bounds 触发 Navigation 的 handleBoundsChanged，
+    /// 完成导航栏与页面容器的首次布局。
+    esx_view_set_bounds(g_nav, 0, 0, g_screenWidth, g_screenHeight);
     /// 把首页作为第一页 push 进导航栈（animated=false：首屏无转场）。
     /// pushPage 内部：HomePage::build() → reconcile 挂载视图 → 注册生命周期钩子 → push。
     evk::ui::pushPage(g_nav, std::make_unique<HomePage>(), false);

@@ -152,11 +152,10 @@ FlexView* flexFromHandle(esx_view flex) {
 
 extern "C" {
 
-esx_view esx_flex_create(float x, float y, float w, float h, esx_view parent,
-                         int32_t vertical) {
+esx_view esx_flex_create(esx_view parent, int32_t vertical) {
     auto view = std::make_unique<FlexView>();
     view->vertical = vertical != 0;
-    return esxAdoptViewNode(std::move(view), x, y, w, h, parent);
+    return esxAdoptViewNode(std::move(view), parent);
 }
 
 /**

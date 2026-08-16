@@ -58,8 +58,10 @@ void countViewClick(esx_view /*view*/, const esx_view_click_event* /*event*/,
 
 void testViewClickAndDragCancellation() {
     int clicks = 0;
-    const esx_view root = esx_create_view(0, 0, 200, 200, 0);
-    const esx_view target = esx_create_view(10, 10, 100, 100, root);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 200, 200);
+    const esx_view target = esx_create_view(root);
+    esx_view_set_bounds(target, 10, 10, 100, 100);
     esx_set_root_view(root);
     esx_view_set_click_callback(target, countViewClick, &clicks);
 
@@ -113,12 +115,14 @@ void destroyViewOnPanCancel(esx_view /*view*/, const esx_view_pan_event* event,
 
 void testScrollViewTakesDragFromChildButton() {
     int clicks = 0;
-    const esx_view root = esx_create_view(0, 0, 200, 200, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 200, 200);
     esx_set_root_view(root);
-    const esx_view scroll = esx_scroll_view_create(0, 0, 100, 100, 100, 300, root);
+    const esx_view scroll = esx_scroll_view_create(100, 300, root);
+    esx_view_set_bounds(scroll, 0, 0, 100, 100);
     const esx_view content = esx_scroll_view_get_content(scroll);
-    const esx_view button = esx_button_create(0, 20, 100, 50, content, nullptr,
-                                              countButtonClick, &clicks);
+    const esx_view button = esx_button_create(content, nullptr, countButtonClick, &clicks);
+    esx_view_set_bounds(button, 0, 20, 100, 50);
     assert(button != 0);
 
     using evk::ui::PointerAction;
@@ -146,9 +150,11 @@ void testScrollViewTakesDragFromChildButton() {
 }
 
 void testScrollViewReclampsOffsetAfterResize() {
-    const esx_view root = esx_create_view(0, 0, 200, 300, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 200, 300);
     esx_set_root_view(root);
-    const esx_view scroll = esx_scroll_view_create(0, 0, 100, 100, 100, 300, root);
+    const esx_view scroll = esx_scroll_view_create(100, 300, root);
+    esx_view_set_bounds(scroll, 0, 0, 100, 100);
 
     esx_scroll_view_set_offset(scroll, 0, 200);
     esx_view_set_bounds(scroll, 0, 0, 100, 200);
@@ -159,10 +165,11 @@ void testScrollViewReclampsOffsetAfterResize() {
 
     esx_destroy_view(root);
 
-    const esx_view smallerRoot = esx_create_view(0, 0, 100, 100, 0);
+    const esx_view smallerRoot = esx_create_view(0);
+    esx_view_set_bounds(smallerRoot, 0, 0, 100, 100);
     esx_set_root_view(smallerRoot);
-    const esx_view smallerContent =
-        esx_scroll_view_create(0, 0, 100, 100, 50, 50, smallerRoot);
+    const esx_view smallerContent = esx_scroll_view_create(50, 50, smallerRoot);
+    esx_view_set_bounds(smallerContent, 0, 0, 100, 100);
     esx_view_set_bounds(smallerContent, 0, 0, 50, 50);
     esx_scroll_view_set_offset(smallerContent, 100, 100);
     float offsetX = -1;
@@ -175,12 +182,14 @@ void testScrollViewReclampsOffsetAfterResize() {
 }
 
 void testClickRespectsParentClip() {
-    const esx_view root = esx_create_view(0, 0, 200, 100, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 200, 100);
     esx_set_root_view(root);
-    const esx_view parent = esx_create_view(0, 0, 100, 100, root);
+    const esx_view parent = esx_create_view(root);
+    esx_view_set_bounds(parent, 0, 0, 100, 100);
     int clicks = 0;
-    const esx_view button = esx_button_create(95, 0, 50, 50, parent, nullptr,
-                                              countButtonClick, &clicks);
+    const esx_view button = esx_button_create(parent, nullptr, countButtonClick, &clicks);
+    esx_view_set_bounds(button, 95, 0, 50, 50);
     assert(button != 0);
 
     using evk::ui::PointerAction;
@@ -188,7 +197,8 @@ void testClickRespectsParentClip() {
     evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 105, 20});
     assert(clicks == 0);
 
-    const esx_view plainView = esx_create_view(95, 50, 50, 50, parent);
+    const esx_view plainView = esx_create_view(parent);
+    esx_view_set_bounds(plainView, 95, 50, 50, 50);
     esx_view_set_click_callback(plainView, countViewClick, &clicks);
     evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 99, 70});
     evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 105, 70});
@@ -204,13 +214,14 @@ struct DrawMutationState {
 
 void mutateTreeDuringDraw(esx_view /*view*/, void* userData) {
     auto* state = static_cast<DrawMutationState*>(userData);
-    state->attemptedChild = esx_create_view(0, 0, 10, 10, state->root);
+    state->attemptedChild = esx_create_view(state->root);
     esx_destroy_view(state->root);
 }
 
 void testTreeMutationDuringDrawIsRejected() {
     DrawMutationState state;
-    state.root = esx_create_view(0, 0, 100, 100, 0);
+    state.root = esx_create_view(0);
+    esx_view_set_bounds(state.root, 0, 0, 100, 100);
     esx_set_root_view(state.root);
     esx_view_set_draw_callback(state.root, mutateTreeDuringDraw, &state);
 
@@ -228,21 +239,23 @@ void testInputLifecycleCleanup() {
     using evk::ui::PointerAction;
 
     DestroyOnClickState state;
-    state.root = esx_create_view(0, 0, 200, 200, 0);
+    state.root = esx_create_view(0);
+    esx_view_set_bounds(state.root, 0, 0, 200, 200);
     esx_set_root_view(state.root);
-    const esx_view button = esx_button_create(0, 0, 100, 100, state.root, nullptr,
-                                              destroyRootOnClick, &state);
+    const esx_view button = esx_button_create(state.root, nullptr, destroyRootOnClick, &state);
+    esx_view_set_bounds(button, 0, 0, 100, 100);
     assert(button != 0);
     evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 20, 20});
     evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 20, 20});
     assert(state.clicks == 1);
     assert(esxRootView() == nullptr);
 
-    const esx_view root = esx_create_view(0, 0, 200, 200, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 200, 200);
     esx_set_root_view(root);
     int clicks = 0;
-    const esx_view hiddenButton = esx_button_create(0, 0, 100, 100, root, nullptr,
-                                                    countButtonClick, &clicks);
+    const esx_view hiddenButton = esx_button_create(root, nullptr, countButtonClick, &clicks);
+    esx_view_set_bounds(hiddenButton, 0, 0, 100, 100);
     evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 20, 20});
     esx_view_set_visible(hiddenButton, 0);
     evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 20, 20});
@@ -259,7 +272,8 @@ void testInputLifecycleCleanup() {
     evk::ui::dispatchPointerEvent({PointerAction::Up, 0, 20, 20});
     assert(clicks == 1);
 
-    const esx_view scroll = esx_scroll_view_create(100, 0, 100, 100, 100, 300, root);
+    const esx_view scroll = esx_scroll_view_create(100, 300, root);
+    esx_view_set_bounds(scroll, 100, 0, 100, 100);
     evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 120, 50});
     evk::ui::dispatchPointerEvent({PointerAction::Move, 0, 120, 20});
     esx_destroy_view(scroll);
@@ -272,7 +286,8 @@ void testCancellationCallbacksMayDestroyViews() {
     using evk::ui::PointerAction;
 
     DestroyOnCancelState hideState;
-    hideState.viewToDestroy = esx_create_view(0, 0, 200, 200, 0);
+    hideState.viewToDestroy = esx_create_view(0);
+    esx_view_set_bounds(hideState.viewToDestroy, 0, 0, 200, 200);
     esx_set_root_view(hideState.viewToDestroy);
     esx_view_set_pan_callback(hideState.viewToDestroy, destroyViewOnPanCancel,
                               &hideState);
@@ -282,8 +297,10 @@ void testCancellationCallbacksMayDestroyViews() {
     assert(hideState.cancels == 1);
     assert(esxRootView() == nullptr);
 
-    const esx_view currentRoot = esx_create_view(0, 0, 200, 200, 0);
-    const esx_view candidateRoot = esx_create_view(0, 0, 200, 200, 0);
+    const esx_view currentRoot = esx_create_view(0);
+    esx_view_set_bounds(currentRoot, 0, 0, 200, 200);
+    const esx_view candidateRoot = esx_create_view(0);
+    esx_view_set_bounds(candidateRoot, 0, 0, 200, 200);
     esx_set_root_view(currentRoot);
     DestroyOnCancelState switchState{candidateRoot, 0};
     esx_view_set_pan_callback(currentRoot, destroyViewOnPanCancel, &switchState);
@@ -350,7 +367,8 @@ void capturePan(esx_view /*view*/, const esx_view_pan_event* event, void* userDa
 }
 
 void testPanCarriesVelocity() {
-    const esx_view root = esx_create_view(0, 0, 400, 400, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 400, 400);
     esx_set_root_view(root);
     PanCapture capture;
     esx_view_set_pan_callback(root, capturePan, &capture);
@@ -381,9 +399,11 @@ void testPanCarriesVelocity() {
 void testScrollViewFlingAndClamp() {
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view root = esx_create_view(0, 0, 400, 400, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 400, 400);
     esx_set_root_view(root);
-    const esx_view scroll = esx_scroll_view_create(0, 0, 200, 200, 200, 600, root);
+    const esx_view scroll = esx_scroll_view_create(200, 600, root);
+    esx_view_set_bounds(scroll, 0, 0, 200, 200);
     // 可滚动范围：600-200=400。
 
     using evk::ui::PointerAction;
@@ -422,9 +442,11 @@ void testScrollViewFlingAndClamp() {
 void testScrollViewRubberBandAndSpringBack() {
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view root = esx_create_view(0, 0, 400, 400, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 400, 400);
     esx_set_root_view(root);
-    const esx_view scroll = esx_scroll_view_create(0, 0, 200, 200, 200, 600, root);
+    const esx_view scroll = esx_scroll_view_create(200, 600, root);
+    esx_view_set_bounds(scroll, 0, 0, 200, 200);
     esx_scroll_view_set_offset(scroll, 0, 400); // 先拉到底部
 
     using evk::ui::PointerAction;
@@ -473,9 +495,11 @@ void testScrollViewRubberBandAndSpringBack() {
 void testScrollViewVerticalOnlyIgnoresHorizontal() {
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view root = esx_create_view(0, 0, 400, 400, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 400, 400);
     esx_set_root_view(root);
-    const esx_view scroll = esx_scroll_view_create(0, 0, 200, 200, 200, 600, root);
+    const esx_view scroll = esx_scroll_view_create(200, 600, root);
+    esx_view_set_bounds(scroll, 0, 0, 200, 200);
     esx_scroll_view_set_offset(scroll, 0, 200); // 中部
 
     using evk::ui::PointerAction;
@@ -526,9 +550,11 @@ void testScrollViewVerticalOnlyIgnoresHorizontal() {
 void testScrollViewFlingInterruptedByDown() {
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view root = esx_create_view(0, 0, 400, 400, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 400, 400);
     esx_set_root_view(root);
-    const esx_view scroll = esx_scroll_view_create(0, 0, 200, 200, 200, 600, root);
+    const esx_view scroll = esx_scroll_view_create(200, 600, root);
+    esx_view_set_bounds(scroll, 0, 0, 200, 200);
 
     using evk::ui::PointerAction;
     // 甩出惯性。
@@ -581,13 +607,14 @@ void capturePop(esx_view /*nav*/, esx_view page, void* userData) {
 void testNavigationPushPop() {
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view nav = esx_navigation_create(0, 0, 400, 800, 0, 60, nullptr);
+    const esx_view nav = esx_navigation_create(0, 60, nullptr);
+    esx_view_set_bounds(nav, 0, 0, 400, 800);
     esx_set_root_view(nav);
     PopCapture popCapture;
     esx_navigation_set_on_pop(nav, capturePop, &popCapture);
     assert(esx_navigation_depth(nav) == 0);
 
-    const esx_view page1 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page1 = esx_create_view(0);
     esx_navigation_push(nav, page1, 0);
     assert(esx_navigation_depth(nav) == 1);
     assert(esx_navigation_top_page(nav) == page1);
@@ -600,14 +627,14 @@ void testNavigationPushPop() {
     assert(esx_navigation_depth(nav) == 1);
 
     // 动画 push：page2 从屏右滑入。
-    const esx_view page2 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page2 = esx_create_view(0);
     esx_navigation_push(nav, page2, 1);
     assert(esx_navigation_depth(nav) == 2);
     evk::ui::View* p2 = esxViewFromHandle(page2);
     assert(p2 && p2->rect.x == 400.0f);
 
     // 转场进行中 push 被忽略。
-    const esx_view pageX = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view pageX = esx_create_view(0);
     esx_navigation_push(nav, pageX, 0);
     assert(esx_navigation_depth(nav) == 2);
     esx_destroy_view(pageX);
@@ -639,11 +666,12 @@ void testNavigationPushPop() {
 void testNavigationEdgeSwipe() {
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view nav = esx_navigation_create(0, 0, 400, 800, 0, 60, nullptr);
+    const esx_view nav = esx_navigation_create(0, 60, nullptr);
+    esx_view_set_bounds(nav, 0, 0, 400, 800);
     esx_set_root_view(nav);
-    const esx_view page1 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page1 = esx_create_view(0);
     esx_navigation_push(nav, page1, 0);
-    const esx_view page2 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page2 = esx_create_view(0);
     esx_navigation_push(nav, page2, 0);
     evk::ui::View* p1 = esxViewFromHandle(page1);
     evk::ui::View* p2 = esxViewFromHandle(page2);
@@ -681,7 +709,7 @@ void testNavigationEdgeSwipe() {
     assert(p1->visible && p1->rect.x == 0.0f);
 
     // 热区外的滑动不触发返回。
-    const esx_view page3 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page3 = esx_create_view(0);
     esx_navigation_push(nav, page3, 0);
     evk::ui::View* p3 = esxViewFromHandle(page3);
     evk::ui::dispatchPointerEvent({PointerAction::Down, 0, 200, 300, ms(3000)});
@@ -729,12 +757,13 @@ int32_t recordNavEvent(esx_view /*nav*/, esx_view page, esx_view_nav_event event
 void testNavigationPageLifecycle() {
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view nav = esx_navigation_create(0, 0, 400, 800, 0, 60, nullptr);
+    const esx_view nav = esx_navigation_create(0, 60, nullptr);
+    esx_view_set_bounds(nav, 0, 0, 400, 800);
     esx_set_root_view(nav);
     NavEventLog log;
 
     // 首页 push（无动画）：只收 WILL_ENTER/DID_ENTER（forward=1）。
-    const esx_view page1 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page1 = esx_create_view(0);
     esx_view_set_nav_callback(page1, recordNavEvent, &log);
     esx_navigation_push(nav, page1, 0);
     assert(log.records.size() == 2);
@@ -747,7 +776,7 @@ void testNavigationPageLifecycle() {
 
     // 动画 push page2：WILL 立即发（旧页 LEAVE 先于新页 ENTER），转场后 DID 同序。
     log.records.clear();
-    const esx_view page2 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page2 = esx_create_view(0);
     esx_view_set_nav_callback(page2, recordNavEvent, &log);
     esx_navigation_push(nav, page2, 1);
     assert(log.records.size() == 2);
@@ -795,7 +824,7 @@ void testNavigationPageLifecycle() {
 
     // WILL_ENTER 返回 1 取消 push：page3 未被接管，旧页收到配对 DID_ENTER。
     log.records.clear();
-    const esx_view page3 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page3 = esx_create_view(0);
     esx_view_set_nav_callback(page3, recordNavEvent, &log);
     log.cancelOnWillEnter = page3;
     esx_navigation_push(nav, page3, 0);
@@ -812,7 +841,7 @@ void testNavigationPageLifecycle() {
     esx_destroy_view(page3); // 未被 Navigation 接管，App 自行销毁
 
     // 左滑返回被回弹取消：WILL 对在手势 BEGIN 发出，回弹完成后反向配对收尾。
-    const esx_view page4 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view page4 = esx_create_view(0);
     esx_view_set_nav_callback(page4, recordNavEvent, &log);
     esx_navigation_push(nav, page4, 0);
     log.records.clear();
@@ -849,7 +878,8 @@ void testNavigationPageLifecycle() {
 
 void testEngineReadyGuard() {
     evk::setEngineReady(false);
-    const esx_view view = esx_create_view(0, 0, 10, 10, 0); // 告警但仍可用
+    const esx_view view = esx_create_view(0);
+    esx_view_set_bounds(view, 0, 0, 10, 10); // 告警但仍可用
     assert(view != 0);
     esx_destroy_view(view);
     evk::setEngineReady(true);
@@ -893,9 +923,11 @@ void testEventBus() {
     high.consume = false;
 
     // scope：隐藏视图收不到；可见恢复。同级按注册序。
-    const esx_view root = esx_create_view(0, 0, 200, 200, 0);
+    const esx_view root = esx_create_view(0);
+    esx_view_set_bounds(root, 0, 0, 200, 200);
     esx_set_root_view(root);
-    const esx_view scoped = esx_create_view(0, 0, 10, 10, root);
+    const esx_view scoped = esx_create_view(root);
+    esx_view_set_bounds(scoped, 0, 0, 10, 10);
     EventSlot scopedSlot{&calls, 9, false};
     esx_event_on(kEvt, ESX_PRI_NORMAL, scoped, captureEvent, &scopedSlot);
     calls.clear();
@@ -933,11 +965,12 @@ void testEventBus() {
 // ---- Flex 布局 ----
 
 void testFlexLayout() {
-    const esx_view flex = esx_flex_create(0, 0, 400, 800, 0, 1);
+    const esx_view flex = esx_flex_create(0, 1);
+    esx_view_set_bounds(flex, 0, 0, 400, 800);
     esx_set_root_view(flex);
-    const esx_view a = esx_create_view(0, 0, 0, 0, 0);
-    const esx_view b = esx_create_view(0, 0, 0, 0, 0);
-    const esx_view c = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view a = esx_create_view(0);
+    const esx_view b = esx_create_view(0);
+    const esx_view c = esx_create_view(0);
     const esx_flex_child specA{200, 0, -1, ESX_FLEX_ALIGN_STRETCH, 10, 20, 0};
     const esx_flex_child specB{-1, 1, -1, ESX_FLEX_ALIGN_STRETCH, 0, 0, 0};
     const esx_flex_child specC{-1, 2, 100, ESX_FLEX_ALIGN_CENTER, 0, 0, 0};
@@ -968,8 +1001,9 @@ void testFlexLayout() {
     assert(vc->rect.y == 230.0f && vc->rect.h == 170.0f);
 
     // 横向 Row：主轴互换到水平。
-    const esx_view row = esx_flex_create(0, 0, 300, 100, 0, 0);
-    const esx_view r1 = esx_create_view(0, 0, 0, 0, 0);
+    const esx_view row = esx_flex_create(0, 0);
+    esx_view_set_bounds(row, 0, 0, 300, 100);
+    const esx_view r1 = esx_create_view(0);
     const esx_flex_child specR{-1, 1, -1, ESX_FLEX_ALIGN_STRETCH, 0, 0, 0};
     esx_flex_set_child(row, r1, &specR);
     evk::ui::View* vr1 = esxViewFromHandle(r1);
@@ -1075,7 +1109,8 @@ void testComponentLifecycle() {
     using namespace evk::ui;
     evk::setFrameFunc(renderFrame);
     evk::ui::stopAllAnimations();
-    const esx_view nav = esx_navigation_create(0, 0, 400, 800, 0, 60, nullptr);
+    const esx_view nav = esx_navigation_create(0, 60, nullptr);
+    esx_view_set_bounds(nav, 0, 0, 400, 800);
     esx_set_root_view(nav);
     assert(TestPage::alive == 0);
 

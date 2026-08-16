@@ -77,12 +77,14 @@ typedef int32_t (*esx_view_nav_func)(esx_view nav, esx_view page,
                                      void *user_data);
 
 /**
- * @brief 创建视图。
+ * @brief 创建视图。创建时矩形为 {0,0,0,0}——位置与尺寸一律后置：
+ *        用 esx_view_set_bounds 摆放，或由父容器（Flex/ScrollView/Navigation）
+ *        的布局接管。
  * @param parent =0 表示暂不挂载（之后可作为根视图）；否则作为 parent 的子视图
  *        （挂载在最上层）
  * @return 新视图句柄；失败返回 0
  */
-esx_view esx_create_view(float x, float y, float w, float h, esx_view parent);
+esx_view esx_create_view(esx_view parent);
 
 /** @brief 递归销毁子树，注销所有相关句柄。 */
 void esx_destroy_view(esx_view view);
@@ -93,6 +95,13 @@ void esx_destroy_view(esx_view view);
  */
 void esx_set_root_view(esx_view view);
 
+/**
+ * @brief 设置布局矩形（相对父视图左上角的局部坐标，像素）。
+ *
+ * 这是普通视图唯一的定位手段；Flex/ScrollView/Navigation 的子视图由容器
+ * 布局接管，不要对它们手动 set_bounds（会被容器重排覆盖）。修改会触发
+ * 视图的 handleBoundsChanged 钩子（Flex 借此级联重排子节点）。
+ */
 void esx_view_set_bounds(esx_view view, float x, float y, float w, float h);
 void esx_view_set_visible(esx_view view, int32_t visible);
 void esx_view_set_background(esx_view view, uint32_t rgba); ///< 0xRRGGBBAA
@@ -145,14 +154,14 @@ class Canvas;
 // ---- core 内部函数（非 ABI，供 core/平台壳使用）----
 
 /**
- * @brief 把控件实现好的 View 节点挂进视图树并注册句柄。
+ * @brief 把控件实现好的 View 节点挂进视图树并注册句柄（初始矩形 {0,0,0,0}，
+ *        由调用方随后 set_bounds 或容器布局赋予）。
  * @param view 控件实现好的 View 节点（所有权移交视图树/未挂载列表）
  * @param parent 挂载父视图；=0 暂不挂载
  * @return 新句柄（0 表示失败）
  * @note 仅供 core/ui 控件以自定义 View 子类创建视图时使用。
  */
-esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view,
-                          float x, float y, float w, float h, esx_view parent);
+esx_view esxAdoptViewNode(std::unique_ptr<evk::ui::View> view, esx_view parent);
 
 /**
  * @brief 当前根视图。

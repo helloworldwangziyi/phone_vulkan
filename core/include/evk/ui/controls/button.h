@@ -28,12 +28,11 @@ typedef void (*esx_button_click_func)(esx_view button, void *user_data);
 
 /**
  * @brief 创建按钮：Button 自己处理 pressed/cancel/up 和重绘，App 只接收一次
- * 语义化点击。
+ * 语义化点击。初始矩形 {0,0,0,0}，用 esx_view_set_bounds 摆放或由父容器布局。
  * @param style 三态配色，可 NULL（用内置默认配色）
  * @return 按钮视图句柄；失败返回 0
  */
-esx_view esx_button_create(float x, float y, float width, float height,
-                           esx_view parent, const esx_button_style *style,
+esx_view esx_button_create(esx_view parent, const esx_button_style *style,
                            esx_button_click_func on_click, void *user_data);
 
 /**

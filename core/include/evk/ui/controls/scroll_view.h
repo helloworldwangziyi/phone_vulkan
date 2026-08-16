@@ -22,13 +22,13 @@ typedef void (*esx_scroll_func)(esx_view scroll_view, float offset_x, float offs
  *
  * content 会按 viewport 自动裁剪；只有可滚动的方向参与拖动，越界带橡皮筋
  * 阻尼，松手按速度惯性滑动（fling），冲界后自动回弹。
+ * viewport 初始矩形 {0,0,0,0}，由 set_bounds 或父容器布局赋予。
  *
  * @param content_width 内容宽度 px（决定横向可滚动范围）
  * @param content_height 内容高度 px（决定纵向可滚动范围）
  * @return viewport 视图句柄；失败返回 0
  */
-esx_view esx_scroll_view_create(float x, float y, float width, float height,
-                                float content_width, float content_height,
+esx_view esx_scroll_view_create(float content_width, float content_height,
                                 esx_view parent);
 
 /**

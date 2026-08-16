@@ -39,14 +39,14 @@ typedef void (*esx_navigation_pop_func)(esx_view nav, esx_view page, void *user_
  *
  * @param nav_bar_height 导航栏高度 px；=0 时不显示导航栏
  * @param style 导航栏配色，可 NULL（用内置默认配色）
- * @return 导航容器视图句柄；失败返回 0
+ * @return 导航容器视图句柄；失败返回 0。初始矩形 {0,0,0,0}，
+ *         用 esx_view_set_bounds 赋予（导航栏/页面区域随 bounds 自动布局）
  *
  * @note Navigation 在 SDK 内部占用自身的 pan callback 和导航栏 Button 的
  *       pointer callback，App 只使用本头文件的接口。
  * @note 引擎暂无文字渲染，导航栏只提供返回箭头，不显示标题。
  */
-esx_view esx_navigation_create(float x, float y, float w, float h,
-                               esx_view parent, float nav_bar_height,
+esx_view esx_navigation_create(esx_view parent, float nav_bar_height,
                                const esx_navigation_style *style);
 
 /**
