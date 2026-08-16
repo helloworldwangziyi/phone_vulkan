@@ -11,34 +11,33 @@
 namespace evk {
 
 /**
- * @brief Platform abstraction. The renderer uses this to create a VkSurfaceKHR
- * and query the drawing area size. Logging goes through evk/log.h (EVK_LOG*
- * macros) directly, not through this interface.
+ * @brief 平台抽象接口。渲染器经它创建 VkSurfaceKHR、查询绘制区尺寸；
+ * 日志不经过本接口，统一走 evk/log.h（EVK_LOG* 宏）。
  */
 class IPlatform {
 public:
     virtual ~IPlatform() = default;
 
     /**
-     * @brief Return the name of the platform surface extension that must be enabled
-     * when creating the VkInstance (e.g. VK_KHR_ANDROID_SURFACE_EXTENSION_NAME
-     * on Android; iOS/HarmonyOS provide their own).
-     * @return The surface extension name to enable.
+     * @brief 返回创建 VkInstance 时必须启用的平台 surface 扩展名
+     * （Android 为 VK_KHR_ANDROID_SURFACE_EXTENSION_NAME，
+     * iOS/鸿蒙各有自己的扩展）。
+     * @return 需要启用的 surface 扩展名
      */
     virtual const char* getSurfaceExtensionName() const = 0;
 
     /**
-     * @brief Create a Vulkan surface bound to the native window.
-     * @param instance The instance the surface is created on.
-     * @param surface Out: the created surface handle.
-     * @return true on success.
+     * @brief 创建绑定到原生窗口的 Vulkan surface。
+     * @param instance 创建 surface 所在的 VkInstance
+     * @param surface 输出：创建出的 surface 句柄
+     * @return true 表示创建成功
      */
     virtual bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) = 0;
 
     /**
-     * @brief Return the current size of the surface in pixels.
-     * @param width Out: surface width in pixels.
-     * @param height Out: surface height in pixels.
+     * @brief 返回 surface 当前的像素尺寸。
+     * @param width 输出：surface 宽度（像素）
+     * @param height 输出：surface 高度（像素）
      */
     virtual void getSurfaceSize(uint32_t* width, uint32_t* height) = 0;
 

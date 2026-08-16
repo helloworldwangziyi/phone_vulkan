@@ -13,11 +13,10 @@
 namespace evk {
 
 /**
- * @brief A minimal, self-contained Vulkan renderer.
+ * @brief 极简自包含的 Vulkan 渲染器。
  *
- * It creates a swapchain, render pass, graphics pipeline and renders the
- * 2D UI geometry collected in an ui::Canvas. The actual native surface is
- * provided by IPlatform.
+ * 内部创建 swapchain、render pass、图形管线，把 ui::Canvas 收集的 2D UI
+ * 几何绘制到屏幕；原生 surface 由 IPlatform 提供。
  */
 class Renderer {
 public:
@@ -25,32 +24,32 @@ public:
     ~Renderer();
 
     /**
-     * @brief Initialize the entire Vulkan pipeline.
-     * @return true on success; any step failure aborts startup.
+     * @brief 初始化整套 Vulkan 管线。
+     * @return true 表示成功；任一步失败即中止启动
      */
     bool initialize();
 
     /**
-     * @brief Release all Vulkan resources.
+     * @brief 释放全部 Vulkan 资源。
      */
     void shutdown();
 
     /**
-     * @brief Draw one frame from the canvas content. Returns true on success.
-     * @param canvas The UI geometry collected for this frame.
-     * @return true on success.
+     * @brief 把 Canvas 收集的本帧几何绘制成一帧。
+     * @param canvas 本帧收集的 UI 几何
+     * @return true 表示绘制成功
      */
     bool render(const ui::Canvas& canvas);
 
     /**
-     * @brief Notify the renderer that the surface size has changed.
-     * @param width New surface width in pixels.
-     * @param height New surface height in pixels.
+     * @brief 通知渲染器 surface 尺寸已变化。
+     * @param width 新 surface 宽度（像素）
+     * @param height 新 surface 高度（像素）
      */
     void setSize(uint32_t width, uint32_t height);
 
     /**
-     * @brief Force the swapchain to be recreated on the next render call.
+     * @brief 标记下次 render 调用时强制重建 swapchain。
      */
     void requestSwapchainRebuild();
 
