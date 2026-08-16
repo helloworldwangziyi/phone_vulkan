@@ -8,6 +8,8 @@
 #include "evk/assets/ui_shaders.h"
 // EVK_LOGD/I/W/E 日志宏：spdlog 封装，全局统一的日志入口。
 #include "evk/log.h"
+// FontEngine：字形 atlas 的页数/像素/脏页标记由它提供，渲染器只管上传与采样。
+#include "evk/ui/font_engine.h"
 
 // std::max / std::min：交换链尺寸与裁剪矩形的边界 clamp 要用。
 #include <algorithm>
@@ -115,6 +117,8 @@ bool Renderer::initialize() {
     // ② 选 GPU 与建逻辑设备：这两步都要查询 surface 的 present 支持，故排在 surface 之后。
     if (!pickPhysicalDevice()) return false;
     if (!createLogicalDevice()) return false;
+    // ②½ 纹理设施：descriptor 布局是管线布局的输入（shader 的 set=0），必须先于管线。
+    if (!createTextureResources()) return false;
     // ③ 交换链及其下游：imageView / renderPass / pipeline / framebuffer 全部依赖 swapchain 的
     // 格式与尺寸，窗口尺寸变化时这一段要整体重建（见 recreateSwapchain）。
     if (!createSwapchain()) return false;
@@ -148,6 +152,9 @@ void Renderer::shutdown() {
 
         // 销毁命令池会连带释放从中分配的所有命令缓冲。
         vkDestroyCommandPool(device_, commandPool_, nullptr);
+
+        // 纹理设施（atlas 页 / 白纹理 / 采样器 / descriptor 池与布局 / 上传中转缓冲）。
+        destroyTextureResources();
 
         // swapchain 相关资源（framebuffer / pipeline / renderPass / imageView / swapchain）集中清理。
         cleanupSwapchain();
@@ -729,13 +736,13 @@ bool Renderer::createGraphicsPipeline() {
     // binding 描述"顶点缓冲怎么喂"：binding 0 对应 vkCmdBindVertexBuffers 的槽位 0。
     VkVertexInputBindingDescription bindingDesc{};
     bindingDesc.binding = 0;
-    // stride = 24 字节：UiVertex = vec2 位置 + vec4 颜色 = 6 个 float，交错存放。
-    bindingDesc.stride = sizeof(float) * 6;
+    // stride = 32 字节：UiVertex = vec2 位置 + vec4 颜色 + vec2 纹理坐标 = 8 个 float。
+    bindingDesc.stride = sizeof(ui::UiVertex);
     // inputRate = VERTEX 表示逐顶点推进（另一种是 INSTANCE，用于实例化渲染）。
     bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
     // attribute 描述 shader 里每个输入变量在顶点数据里的位置与格式。
-    VkVertexInputAttributeDescription attrs[2];
+    VkVertexInputAttributeDescription attrs[3];
     // attribute 0 取自 binding 0，对应 shader 里 layout(location=0) 的 vec2 位置。
     attrs[0].binding = 0;
     attrs[0].location = 0;
@@ -748,13 +755,18 @@ bool Renderer::createGraphicsPipeline() {
     attrs[1].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     // offset = 8 字节：颜色紧跟在两个位置 float 之后。
     attrs[1].offset = sizeof(float) * 2;
+    // attribute 2 对应 layout(location=2) 的 vec2 纹理坐标（文字四边形指向 atlas）。
+    attrs[2].binding = 0;
+    attrs[2].location = 2;
+    attrs[2].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[2].offset = sizeof(float) * 6;
 
     // 顶点输入状态 = binding + attribute 的总装，管线的固定功能阶段之一。
     VkPipelineVertexInputStateCreateInfo vertexInput{};
     vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
     vertexInput.vertexBindingDescriptionCount = 1;
     vertexInput.pVertexBindingDescriptions = &bindingDesc;
-    vertexInput.vertexAttributeDescriptionCount = 2;
+    vertexInput.vertexAttributeDescriptionCount = 3;
     vertexInput.pVertexAttributeDescriptions = attrs;
 
     // 输入装配：告诉管线顶点流怎么组成图元。
@@ -859,8 +871,12 @@ bool Renderer::createGraphicsPipeline() {
     pushConstant.size = 64;
 
     // 管线布局 = shader 的"接口签名"：声明它会用到哪些 descriptor 与 push constant。
+    // set 0（组合图像采样，片元阶段）就是批次绑定的白纹理 / 字形 atlas。
+    VkDescriptorSetLayout setLayouts[] = {descriptorSetLayout_};
     VkPipelineLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = setLayouts;
     layoutInfo.pushConstantRangeCount = 1;
     layoutInfo.pPushConstantRanges = &pushConstant;
 
@@ -1078,6 +1094,395 @@ bool Renderer::createSyncObjects() {
     return true;
 }
 
+// ---- 纹理设施：白纹理 + 字形 atlas 页 + descriptor ----
+
+/// atlas 页边长与 FontEngine 保持一致（R8，单页 1MB）。
+constexpr int kAtlasPageSize = 1024;
+/// descriptor 池按"白纹理 + 最大页数"预分配。
+constexpr int kMaxDescriptorSets = 16 + 2;
+
+/**
+ * @brief 创建与 swapchain 无关的纹理设施：采样器、descriptor 布局与池、
+ * 1x1 白纹理、每 in-flight 帧一块的 atlas 上传中转缓冲。
+ *
+ * 白纹理让纯色批次与文字批次共用同一条管线：shader 恒为
+ * "顶点色 × 纹理 r 通道"，纯色批次采样到 1 即直出顶点色。
+ */
+bool Renderer::createTextureResources() {
+    // 采样器：线性过滤（文字边缘抗锯齿靠它插值覆盖率），无 mipmap。
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.maxLod = 0.0f;
+    if (vkCreateSampler(device_, &samplerInfo, nullptr, &sampler_) != VK_SUCCESS) {
+        EVK_LOGE("vkCreateSampler failed");
+        return false;
+    }
+
+    // descriptor 布局：binding 0 = 组合图像采样器，片元阶段可读。
+    VkDescriptorSetLayoutBinding binding{};
+    binding.binding = 0;
+    binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    binding.descriptorCount = 1;
+    binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &binding;
+    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &descriptorSetLayout_) != VK_SUCCESS) {
+        EVK_LOGE("vkCreateDescriptorSetLayout failed");
+        return false;
+    }
+
+    // descriptor 池：白纹理 + 全部 atlas 页各占一个 set。
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = kMaxDescriptorSets;
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = kMaxDescriptorSets;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) {
+        EVK_LOGE("vkCreateDescriptorPool failed");
+        return false;
+    }
+
+    // 白纹理：1x1 R8，值 255（shader 采样 r = 1，公式退化为直出顶点色）。
+    const uint8_t white = 255;
+    if (!createSampledTexture(whiteTexture_, 1, 1, &white)) {
+        return false;
+    }
+
+    // atlas 上传中转：每 in-flight 帧一块整页大小。按帧槽位分开，
+    // 避免 CPU 写第 N 帧数据时 GPU 还在读第 N-1 帧（帧槽位 fence 语义）。
+    atlasStagingBuffers_.resize(kMaxFramesInFlight);
+    atlasStagingMemorys_.resize(kMaxFramesInFlight);
+    // 2 页容量：首帧文字量大时可能连开多页（页满自动开新页），
+    // 单帧超出的部分推迟到下一帧（见 uploadPendingTextures 的溢出处理）。
+    const VkDeviceSize stagingSize =
+        static_cast<VkDeviceSize>(kAtlasPageSize) * kAtlasPageSize * 2;
+    for (uint32_t i = 0; i < kMaxFramesInFlight; ++i) {
+        VkBufferCreateInfo bufferInfo{};
+        bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufferInfo.size = stagingSize;
+        bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        if (vkCreateBuffer(device_, &bufferInfo, nullptr, &atlasStagingBuffers_[i]) != VK_SUCCESS) {
+            EVK_LOGE("atlas staging vkCreateBuffer failed");
+            return false;
+        }
+        VkMemoryRequirements memReq;
+        vkGetBufferMemoryRequirements(device_, atlasStagingBuffers_[i], &memReq);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReq.size;
+        allocInfo.memoryTypeIndex = findMemoryType(memReq.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        if (vkAllocateMemory(device_, &allocInfo, nullptr, &atlasStagingMemorys_[i]) != VK_SUCCESS) {
+            EVK_LOGE("atlas staging vkAllocateMemory failed");
+            return false;
+        }
+        vkBindBufferMemory(device_, atlasStagingBuffers_[i], atlasStagingMemorys_[i], 0);
+    }
+    return true;
+}
+
+/**
+ * @brief 创建一张采样纹理（图像 + 显存 + 视图 + descriptor set）。
+ *
+ * 像素上传不在这里做——新建的纹理标记 pendingUpload，
+ * 首个命令缓冲里经中转缓冲整体拷入（见 uploadPendingTextures）。
+ * @param tex 目标纹理对象
+ * @param width 图像宽（像素）
+ * @param height 图像高（像素）
+ * @param initialPixel 仅 1x1 白纹理使用的初始像素；atlas 页传 nullptr
+ * @return true 表示创建成功
+ */
+bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height,
+                                     const uint8_t* initialPixel) {
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = VK_FORMAT_R8_UNORM;
+    imageInfo.extent = {width, height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (vkCreateImage(device_, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
+        EVK_LOGE("vkCreateImage failed");
+        return false;
+    }
+
+    VkMemoryRequirements memReq;
+    vkGetImageMemoryRequirements(device_, tex.image, &memReq);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReq.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (vkAllocateMemory(device_, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS) {
+        EVK_LOGE("texture vkAllocateMemory failed");
+        return false;
+    }
+    vkBindImageMemory(device_, tex.image, tex.memory, 0);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = tex.image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8_UNORM;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.layerCount = 1;
+    if (vkCreateImageView(device_, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
+        EVK_LOGE("vkCreateImageView failed");
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo setInfo{};
+    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    setInfo.descriptorPool = descriptorPool_;
+    setInfo.descriptorSetCount = 1;
+    setInfo.pSetLayouts = &descriptorSetLayout_;
+    if (vkAllocateDescriptorSets(device_, &setInfo, &tex.set) != VK_SUCCESS) {
+        EVK_LOGE("vkAllocateDescriptorSets failed");
+        return false;
+    }
+    VkDescriptorImageInfo descImage{};
+    descImage.sampler = sampler_;
+    descImage.imageView = tex.view;
+    descImage.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = tex.set;
+    write.dstBinding = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorCount = 1;
+    write.pImageInfo = &descImage;
+    vkUpdateDescriptorSets(device_, 1, &write, 0, nullptr);
+
+    // OPTIMAL tiling 的布局对 CPU 不透明，初始内容只能经上传阶段写入；
+    // 1x1 白纹理的唯一像素记在成员里，atlas 页的像素每帧从 FontEngine 取。
+    if (initialPixel) {
+        whitePixel_ = *initialPixel;
+    }
+    tex.pendingUpload = true;
+    return true;
+}
+
+/**
+ * @brief 字形 atlas 长出新页时补建对应的采样纹理与 descriptor set。
+ *
+ * 在每帧录制命令前调用；新建纹理标记 pendingUpload，
+ * 本帧命令缓冲里就会完成首次像素上传。
+ */
+void Renderer::ensureAtlasTextures() {
+    auto& fonts = ui::FontEngine::instance();
+    const int pages = fonts.pageCount();
+    for (int i = static_cast<int>(atlasTextures_.size()); i < pages; ++i) {
+        TextureObj tex;
+        if (!createSampledTexture(tex, static_cast<uint32_t>(fonts.pageSize()),
+                                  static_cast<uint32_t>(fonts.pageSize()), nullptr)) {
+            // 建不出纹理的页不再重试（atlas 也不会回退页号），留空槽占位。
+            EVK_LOGW("atlas texture for page {} unavailable; page skipped", i);
+            tex = TextureObj{};
+        }
+        atlasTextures_.push_back(tex);
+    }
+}
+
+/**
+ * @brief 把待上传纹理（首次的白纹理 + 新建/脏的 atlas 页）写进命令缓冲。
+ *
+ * 必须在 vkCmdBeginRenderPass 之前调用：布局转换与拷贝都不是
+ * render pass 内合法操作。上传用本帧槽位的中转缓冲，CPU 侧先行写入。
+ * @param cmd 本帧命令缓冲
+ * @param frameSlot 本帧槽位（选对应的中转缓冲）
+ */
+void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
+    auto& fonts = ui::FontEngine::instance();
+    const int pageSize = fonts.pageSize();
+
+    // 收集本帧要传的 (纹理, 像素, 字节数)。整页 1MB、白纹理 1 字节，
+    // 全部拷进同一块中转缓冲再分段拷出。
+    struct PendingCopy {
+        TextureObj* tex;
+        const uint8_t* pixels;
+        VkDeviceSize size;
+        uint32_t width, height;
+    };
+    std::vector<PendingCopy> copies;
+    if (whiteTexture_.pendingUpload) {
+        copies.push_back({&whiteTexture_, &whitePixel_, 1, 1, 1});
+    }
+    for (size_t i = 0; i < atlasTextures_.size(); ++i) {
+        TextureObj& tex = atlasTextures_[i];
+        if (tex.image == VK_NULL_HANDLE) {
+            continue;
+        }
+        if (tex.pendingUpload || fonts.consumePageDirty(static_cast<int>(i))) {
+            const uint8_t* pixels = fonts.pagePixels(static_cast<int>(i));
+            if (pixels) {
+                copies.push_back({&tex, pixels,
+                                  static_cast<VkDeviceSize>(pageSize) * pageSize,
+                                  static_cast<uint32_t>(pageSize),
+                                  static_cast<uint32_t>(pageSize)});
+            }
+        }
+    }
+    if (copies.empty()) {
+        return;
+    }
+
+    // 中转缓冲容量（2 页）：装不下的页回退 pendingUpload，下一帧再传。
+    // 脏标记已在收集时取走，靠渲染器自己的 pendingUpload 保证不丢。
+    const VkDeviceSize capacity =
+        static_cast<VkDeviceSize>(kAtlasPageSize) * kAtlasPageSize * 2;
+    VkDeviceSize total = 0;
+    size_t fit = 0;
+    for (; fit < copies.size(); ++fit) {
+        if (total + copies[fit].size > capacity) {
+            break;
+        }
+        total += copies[fit].size;
+    }
+    for (size_t i = fit; i < copies.size(); ++i) {
+        copies[i].tex->pendingUpload = true;
+    }
+    copies.resize(fit);
+    if (copies.empty()) {
+        return;
+    }
+
+    // CPU 侧写入中转缓冲（HOST_VISIBLE + COHERENT，写完即对 GPU 可见）。
+    VkDeviceSize offset = 0;
+    void* mapped = nullptr;
+    vkMapMemory(device_, atlasStagingMemorys_[frameSlot], 0, VK_WHOLE_SIZE, 0, &mapped);
+    for (const PendingCopy& copy : copies) {
+        std::memcpy(static_cast<uint8_t*>(mapped) + offset, copy.pixels,
+                    static_cast<size_t>(copy.size));
+        offset += copy.size;
+    }
+    vkUnmapMemory(device_, atlasStagingMemorys_[frameSlot]);
+
+    // 逐个纹理：屏障到 TRANSFER_DST → 拷贝 → 屏障到 SHADER_READ_ONLY。
+    offset = 0;
+    for (const PendingCopy& copy : copies) {
+        VkImageMemoryBarrier toDst{};
+        toDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toDst.image = copy.tex->image;
+        toDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toDst.subresourceRange.levelCount = 1;
+        toDst.subresourceRange.layerCount = 1;
+        // 脏页已在 SHADER_READ_ONLY，新页是 UNDEFINED；UNDEFINED 起点
+        // 允许驱动丢弃旧内容，同一条屏障通吃两种来源。
+        toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toDst.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        toDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                             VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                             nullptr, 1, &toDst);
+
+        VkBufferImageCopy region{};
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.layerCount = 1;
+        region.imageExtent = {copy.width, copy.height, 1};
+        region.bufferOffset = offset;
+        // R8 紧密排列：行间距 = 宽度，无对齐填充。
+        region.bufferRowLength = copy.width;
+        region.bufferImageHeight = copy.height;
+        vkCmdCopyBufferToImage(cmd, atlasStagingBuffers_[frameSlot], copy.tex->image,
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        VkImageMemoryBarrier toRead{};
+        toRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        toRead.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        toRead.image = copy.tex->image;
+        toRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        toRead.subresourceRange.levelCount = 1;
+        toRead.subresourceRange.layerCount = 1;
+        toRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+        toRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        toRead.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        toRead.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr,
+                             0, nullptr, 1, &toRead);
+
+        offset += copy.size;
+        copy.tex->pendingUpload = false;
+    }
+}
+
+/**
+ * @brief 批次纹理号 → descriptor set。0 = 白纹理；n = atlas 第 n-1 页。
+ *
+ * atlas 纹理创建失败时对应页退化为白纹理（文字不可见但不崩）。
+ */
+VkDescriptorSet Renderer::descriptorFor(uint32_t textureId) const {
+    if (textureId == 0) {
+        return whiteTexture_.set;
+    }
+    const size_t page = textureId - 1;
+    if (page < atlasTextures_.size() && atlasTextures_[page].set != VK_NULL_HANDLE) {
+        return atlasTextures_[page].set;
+    }
+    return whiteTexture_.set;
+}
+
+/**
+ * @brief 释放纹理设施的全部 Vulkan 对象（白纹理、atlas 页、采样器、
+ * descriptor 池与布局、上传中转缓冲）。
+ */
+void Renderer::destroyTextureResources() {
+    auto destroyTexture = [this](TextureObj& tex) {
+        // descriptor set 归池所有，销毁池即释放，无需单独删。
+        if (tex.view != VK_NULL_HANDLE) vkDestroyImageView(device_, tex.view, nullptr);
+        if (tex.image != VK_NULL_HANDLE) vkDestroyImage(device_, tex.image, nullptr);
+        if (tex.memory != VK_NULL_HANDLE) vkFreeMemory(device_, tex.memory, nullptr);
+        tex = TextureObj{};
+    };
+    destroyTexture(whiteTexture_);
+    for (auto& tex : atlasTextures_) {
+        destroyTexture(tex);
+    }
+    atlasTextures_.clear();
+    for (size_t i = 0; i < atlasStagingBuffers_.size(); ++i) {
+        if (atlasStagingBuffers_[i] != VK_NULL_HANDLE) {
+            vkDestroyBuffer(device_, atlasStagingBuffers_[i], nullptr);
+        }
+        if (atlasStagingMemorys_[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(device_, atlasStagingMemorys_[i], nullptr);
+        }
+    }
+    atlasStagingBuffers_.clear();
+    atlasStagingMemorys_.clear();
+    if (descriptorPool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device_, descriptorPool_, nullptr);
+        descriptorPool_ = VK_NULL_HANDLE;
+    }
+    if (descriptorSetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device_, descriptorSetLayout_, nullptr);
+        descriptorSetLayout_ = VK_NULL_HANDLE;
+    }
+    if (sampler_ != VK_NULL_HANDLE) {
+        vkDestroySampler(device_, sampler_, nullptr);
+        sampler_ = VK_NULL_HANDLE;
+    }
+}
+
 void Renderer::cleanupSwapchain() {
     // 这些资源和 swapchain 的格式、尺寸绑定，所以要一起重建。
     // framebuffer 依赖 imageView 与尺寸，先销。
@@ -1250,6 +1655,11 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     vkBeginCommandBuffer(cmd, &beginInfo);
 
+    // 纹理上传先行：atlas 长出新页就补建采样纹理，待上传的页（含首次的
+    // 白纹理）在这里经中转缓冲整页拷入。必须发生在 render pass 之外。
+    ensureAtlasTextures();
+    uploadPendingTextures(cmd, currentFrame_);
+
     // render pass begin 信息：用哪个 pass、渲染到哪个 framebuffer、范围多大。
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1379,6 +1789,12 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
         scissor.offset = {ox, oy};
         scissor.extent = {static_cast<uint32_t>(ex), static_cast<uint32_t>(ey)};
         vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        // 绑定本批纹理：0 = 白纹理（纯色/渐变），n = 字形 atlas 第 n-1 页。
+        // 同一 (clip, 纹理) 的绘制已在 Canvas 侧合并，这里每批一次绑定。
+        VkDescriptorSet set = descriptorFor(batch.textureId);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout_,
+                                0, 1, &set, 0, nullptr);
 
         // 画这一批：firstVertex 定位到该批在总顶点数组里的起始偏移，
         // 所有批共享同一块顶点缓冲，靠 firstVertex 分段。

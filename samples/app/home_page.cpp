@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "screen_metrics.h"
+#include "app_fonts.h"
 #include "app_theme.h"
 #include "detail_page.h"
 #include "evk/log.h"
@@ -118,6 +119,21 @@ public:
             contentHeight = appCalcHeight(152.0f * quotes_.size());
         }
 
+        /// ---- 文字标题区：中文粗体标题 + 中英混排副标题 ----
+        /// 副标题用 latin 字体排版：汉字在 Roboto 里缺失，FontEngine 自动
+        /// 沿注册顺序回退到 NotoSansSC——一行内两种字体无感混排。
+        auto titleBlock = column(widgetList(
+            padding(
+                EdgeInsets::only(appCalcWidth(100.0f), appCalcHeight(40.0f),
+                                  appCalcWidth(100.0f), 0.0f),
+                text("行情速览", appCalcHeight(56.0f), theme.textPrimary,
+                     appFonts::cjkBold())),
+            padding(
+                EdgeInsets::only(appCalcWidth(100.0f), appCalcHeight(8.0f),
+                                 appCalcWidth(100.0f), 0.0f),
+                text("Market Overview · 沪深300 实时数据",
+                     appCalcHeight(28.0f), theme.textSecondary))));
+
         auto list = expanded(
             padding(
                 EdgeInsets::only(
@@ -137,6 +153,7 @@ public:
             std::move(panel),
             std::move(detailButton),
             std::move(themeButton),
+            std::move(titleBlock),
             std::move(list)));
         page->color = theme.windowBackground;
         return page;

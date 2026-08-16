@@ -72,6 +72,14 @@ public:
     void drawTriangle(float x1, float y1, float x2, float y2,
                       float x3, float y3,
                       uint32_t c1, uint32_t c2, uint32_t c3);
+    /**
+     * @brief 画一行文字（视图局部坐标 (0,0) = 行盒左上角）。
+     * @param utf8 UTF-8 文本
+     * @param font 首选字体；kFontAny 表示按注册顺序的回退链
+     * @param sizePx 字号（像素高度）
+     * @param rgba 文字颜色
+     */
+    void drawText(const char* utf8, int32_t font, float sizePx, uint32_t rgba);
 
 private:
     Canvas& canvas_;

@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cstdio>
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -7,6 +8,7 @@
 #include "evk/frame_scheduler.h"
 #include "evk/ui/ui_application.h"
 #include "evk/ui/animation_scheduler.h"
+#include "evk/ui/font_engine.h"
 #include "evk/ui/paint_canvas.h"
 #include "evk/ui/controls/button_control.h"
 #include "evk/ui/controls/scroll_control.h"
@@ -335,9 +337,90 @@ void testAnimatedNavigationAndEdgeSwipe() {
     evk::ui::shutdownApp();
 }
 
+/// 读整个文件到内存（字体资产用）。
+std::vector<unsigned char> readFile(const char* path) {
+    std::FILE* f = std::fopen(path, "rb");
+    if (!f) {
+        return {};
+    }
+    std::fseek(f, 0, SEEK_END);
+    const long size = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    std::vector<unsigned char> data(static_cast<size_t>(size));
+    const size_t read = size > 0 ? std::fread(data.data(), 1, data.size(), f) : 0;
+    std::fclose(f);
+    data.resize(read);
+    return data;
+}
+
+/// 字体引擎：注册、测量、回退、光栅化进 atlas、Canvas drawText 分批。
+void testFontEngine(const char* latinPath, const char* cjkPath) {
+    auto& fonts = evk::ui::FontEngine::instance();
+    fonts.reset();
+    assert(fonts.fontCount() == 0);
+
+    const auto latinData = readFile(latinPath);
+    const auto cjkData = readFile(cjkPath);
+    assert(!latinData.empty() && !cjkData.empty());
+
+    const evk::ui::FontId latin = fonts.addFont(latinData.data(), latinData.size());
+    const evk::ui::FontId cjk = fonts.addFont(cjkData.data(), cjkData.size());
+    assert(latin == 0 && cjk == 1);
+    assert(fonts.addFont(nullptr, 0) == evk::ui::kInvalidFont);
+
+    // 测量：非空文本有正宽度，宽度随字号增长。
+    float w1 = 0.0f, h1 = 0.0f;
+    fonts.measureText("Hello, world!", 32.0f, latin, &w1, &h1);
+    assert(w1 > 0.0f && h1 > 0.0f);
+    float w2 = 0.0f, h2 = 0.0f;
+    fonts.measureText("Hello, world!", 64.0f, latin, &w2, &h2);
+    assert(w2 > w1 && h2 > h1);
+
+    // 回退：汉字在 Roboto 里没有，注册顺序回退到 CJK 字体后宽度仍可测。
+    float wCjk = 0.0f;
+    fonts.measureText("行情速览", 32.0f, latin, &wCjk, nullptr);
+    assert(wCjk > 0.0f);
+    // 同样文本用 CJK 首选字体测量：四个表意字，宽度显著大于空串。
+    fonts.measureText("行情速览", 32.0f, cjk, &wCjk, nullptr);
+    assert(wCjk > 32.0f * 3.0f); ///< 表意字宽接近字号，4 个字远超 3 倍字号
+
+    // 光栅化：drawText 触发字形进 atlas，Canvas 出现纹理批次。
+    evk::ui::Canvas canvas;
+    canvas.clear();
+    canvas.drawText("Hi 你好", evk::ui::kFontAny, 0.0f, 0.0f, 32.0f,
+                    {0.0f, 0.0f, 400.0f, 100.0f}, evk::ui::Color::rgba(0xFFFFFFFF));
+    assert(canvas.vertices().size() >= 6);          ///< 至少一个字形四边形
+    bool hasTextBatch = false;
+    for (const auto& batch : canvas.batches()) {
+        if (batch.textureId != 0) {
+            hasTextBatch = true;
+        }
+    }
+    assert(hasTextBatch);                             ///< 文字进 atlas 纹理批次
+    assert(fonts.pageCount() >= 1);
+    assert(fonts.pagePixels(0) != nullptr);
+
+    // 脏页标记：首帧上传后被取走，重复绘制同样文本不再置脏（命中缓存）。
+    assert(fonts.consumePageDirty(0));
+    canvas.clear();
+    canvas.drawText("Hi 你好", evk::ui::kFontAny, 0.0f, 0.0f, 32.0f,
+                    {0.0f, 0.0f, 400.0f, 100.0f}, evk::ui::Color::rgba(0xFFFFFFFF));
+    assert(!fonts.consumePageDirty(0));
+
+    // TextWidget 测量路径：注册字体后挂树构建不崩、布局给出正的高度。
+    evk::ui::runApp(
+        evk::ui::text("中英混排 Mixed 123", 32.0f, 0xFFFFFFFF, evk::ui::kFontAny),
+        {});
+    evk::ui::setViewportSize(400.0f, 800.0f);
+    evk::beginFrame(ms(10));
+    evk::ui::shutdownApp();
+
+    fonts.reset();
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     testAppLifecycleCallback();
     testDirtyFramesAreCoalesced();
     testViewTreePaintingAndInput();
@@ -347,5 +430,12 @@ int main() {
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
     testAnimatedNavigationAndEdgeSwipe();
+
+    // 字体测试需要两个字体文件路径（拉丁 + 中文）。
+    if (argc >= 3) {
+        testFontEngine(argv[1], argv[2]);
+    } else {
+        std::printf("font tests skipped (pass latin.ttf cjk.ttf as args)\n");
+    }
     return 0;
 }

@@ -36,6 +36,8 @@ struct AppTheme {
     uint32_t panelGradient[3]; ///< 面板渐变三角形三色
     uint32_t panelAccent; ///< 点击切换后的强调顶点色
     uint32_t scrollItems[8]; ///< 列表项色阶（由深到浅）
+    uint32_t textPrimary; ///< 主文字色（标题/正文）
+    uint32_t textSecondary; ///< 次文字色（说明/副标题）
 };
 
 /// 当前主题（默认深色）。const 引用：换肤后指针不变、值已切换，

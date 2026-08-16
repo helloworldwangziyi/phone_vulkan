@@ -14,6 +14,7 @@ fi
 "$cxx" $sdk_flags -std=c++17 -Wall -Wextra -Werror \
     -I"$repo_root/core/include" \
     -I"$repo_root/third_party/spdlog/include" \
+    -I"$repo_root/third_party/stb" \
     "$repo_root/tests/ui_runtime_test.cpp" \
     "$repo_root/core/src/app_lifecycle.cpp" \
     "$repo_root/core/src/frame_scheduler.cpp" \
@@ -23,11 +24,14 @@ fi
     "$repo_root/core/src/ui/animation_scheduler.cpp" \
     "$repo_root/core/src/ui/paint_canvas.cpp" \
     "$repo_root/core/src/ui/event_bus.cpp" \
+    "$repo_root/core/src/ui/font_engine.cpp" \
     "$repo_root/core/src/ui/controls/button_control.cpp" \
     "$repo_root/core/src/ui/layout/flex_layout.cpp" \
     "$repo_root/core/src/ui/widget_tree.cpp" \
     "$repo_root/core/src/ui/controls/scroll_control.cpp" \
     "$repo_root/core/src/ui/navigation/navigation_stack.cpp" \
-    -o "$test_binary"
+    -o "$test_binary" \
+    "$repo_root/core/assets/fonts/roboto_regular_subset.ttf" \
+    "$repo_root/core/assets/fonts/notosanssc_regular_subset.ttf"
 
 "$test_binary"

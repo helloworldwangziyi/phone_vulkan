@@ -27,6 +27,8 @@ const AppTheme kDarkTheme{
     /*panelAccent*/ 0xF472B6FF,
     /*scrollItems*/ {0x312E81FF, 0x3730A3FF, 0x4338CAFF, 0x4F46E5FF,
                      0x6366F1FF, 0x818CF8FF, 0xA5B4FCFF, 0xC7D2FEFF},
+    /*textPrimary*/ 0xF1F5F9FF,
+    /*textSecondary*/ 0x94A3B8FF,
 };
 
 /// 浅色：米白灰底 + 同系 Indigo 主色（加深以保证对比度）。
@@ -47,6 +49,8 @@ const AppTheme kLightTheme{
     /*panelAccent*/ 0xDB2777FF,
     /*scrollItems*/ {0x312E81FF, 0x3730A3FF, 0x4338CAFF, 0x4F46E5FF,
                      0x6366F1FF, 0x818CF8FF, 0xA5B4FCFF, 0xC7D2FEFF},
+    /*textPrimary*/ 0x0F172AFF,
+    /*textSecondary*/ 0x475569FF,
 };
 
 bool g_dark = true;

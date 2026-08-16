@@ -67,6 +67,27 @@ private:
     bool createCommandBuffers();
     bool createSyncObjects();
     bool createVertexBuffer();
+    /**
+     * @brief 一张采样纹理：图像 + 显存 + 视图 + descriptor set 的组合体。
+     *
+     * 白纹理与字形 atlas 页共用这个结构；descriptor set 在创建时一次性
+     * 绑好 sampler/view，绘制批次只需按 textureId 换绑对应的 set。
+     */
+    struct TextureObj {
+        VkImage image = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        bool pendingUpload = true; ///< 新建/脏页：待首个命令缓冲里上传像素
+    };
+
+    bool createTextureResources();
+    bool createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height,
+                              const uint8_t* initialPixel);
+    void destroyTextureResources();
+    void ensureAtlasTextures();
+    void uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot);
+    VkDescriptorSet descriptorFor(uint32_t textureId) const;
 
     void cleanupSwapchain();
     void recreateSwapchain();
@@ -127,6 +148,17 @@ private:
     VkBuffer vertexBuffer_ = VK_NULL_HANDLE;
     VkDeviceMemory vertexBufferMemory_ = VK_NULL_HANDLE;
     static constexpr uint32_t kVertexCapacity = 8192; ///< 动态顶点缓冲容量（UiVertex 个数）
+
+    // ---- 纹理设施：字形 atlas 采样 + 1x1 白纹理占位 ----
+
+    VkSampler sampler_ = VK_NULL_HANDLE;            ///< 共享采样器（线性 + 边缘钳制）
+    VkDescriptorPool descriptorPool_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout descriptorSetLayout_ = VK_NULL_HANDLE; ///< binding0 = 组合图像采样
+    TextureObj whiteTexture_;                        ///< textureId 0：纯色批次的白纹理
+    std::vector<TextureObj> atlasTextures_;          ///< textureId n+1 = 字形 atlas 第 n 页
+    std::vector<VkBuffer> atlasStagingBuffers_;      ///< 每 in-flight 帧一块 atlas 上传中转
+    std::vector<VkDeviceMemory> atlasStagingMemorys_;
+    uint8_t whitePixel_ = 255;                       ///< 白纹理的唯一像素（首次上传用）
 };
 
 } // namespace evk

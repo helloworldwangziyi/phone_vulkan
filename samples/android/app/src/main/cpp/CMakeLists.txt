@@ -30,8 +30,29 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 
+# 字体资产：二进制内嵌为字节数组（FontEngine 注册用）。
+set(EVK_FONT_HEADER "${EVK_GENERATED_DIR}/evk/assets/font_assets.h")
+set(EVK_FONT_LIST
+    "kFontRobotoRegular=${EVK_ROOT}/core/assets/fonts/roboto_regular_subset.ttf"
+    "kFontNotoSansScRegular=${EVK_ROOT}/core/assets/fonts/notosanssc_regular_subset.ttf"
+    "kFontNotoSansScBold=${EVK_ROOT}/core/assets/fonts/notosanssc_bold_subset.ttf"
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${EVK_ROOT}/core/assets/fonts/roboto_regular_subset.ttf"
+    "${EVK_ROOT}/core/assets/fonts/notosanssc_regular_subset.ttf"
+    "${EVK_ROOT}/core/assets/fonts/notosanssc_bold_subset.ttf"
+)
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+            "-DFONT_LIST=${EVK_FONT_LIST}"
+            -DOUTPUT_HEADER=${EVK_FONT_HEADER}
+            -P "${EVK_ROOT}/cmake/embed_font_assets.cmake"
+    COMMAND_ERROR_IS_FATAL ANY
+)
+
 add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/samples/app/app_entry.cpp
+    ${EVK_ROOT}/samples/app/app_fonts.cpp
     ${EVK_ROOT}/samples/app/screen_metrics.cpp
     ${EVK_ROOT}/samples/app/app_theme.cpp
     ${EVK_ROOT}/samples/app/home_page.cpp
@@ -47,6 +68,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/animation_scheduler.cpp
     ${EVK_ROOT}/core/src/ui/paint_canvas.cpp
     ${EVK_ROOT}/core/src/ui/event_bus.cpp
+    ${EVK_ROOT}/core/src/ui/font_engine.cpp
     ${EVK_ROOT}/core/src/ui/controls/button_control.cpp
     ${EVK_ROOT}/core/src/ui/layout/flex_layout.cpp
     ${EVK_ROOT}/core/src/ui/controls/scroll_control.cpp
@@ -62,6 +84,7 @@ target_include_directories(estarx_vulkan
         ${EVK_ROOT}/third_party/glm
     PRIVATE
         ${EVK_GENERATED_DIR}
+        ${EVK_ROOT}/third_party/stb
 )
 
 if (ANDROID)

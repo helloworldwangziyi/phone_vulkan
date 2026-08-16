@@ -3,12 +3,14 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <string>
 #include <typeinfo>
 #include <utility>
 #include <vector>
 
 #include "evk/ui/controls/button_control.h"
 #include "evk/ui/event_bus.h"
+#include "evk/ui/font_engine.h"
 #include "evk/ui/layout/flex_layout.h"
 #include "evk/ui/render_view.h"
 
@@ -257,6 +259,30 @@ private:
     FlexParentData verticalData_;
 };
 
+/**
+ * @brief 单行文本 Widget：内容、字号、颜色与首选字体。
+ *
+ * 尺寸由 FontEngine 测量得出（布局期间调用，不触发光栅化）：
+ * 纵向容器里占一行高度、横向容器里占实测宽度；绘制在 painter 里经
+ * PaintContext::drawText 完成，字形按需进 atlas。首选字体缺字时
+ * 自动按注册顺序回退（如 Latin 字体 + CJK 字体混排一行）。
+ */
+class TextWidget final : public RenderObjectWidget {
+public:
+    TextWidget(std::string content, float fontSize, uint32_t color,
+               FontId font = kFontAny);
+
+    std::unique_ptr<View> createRenderObject() const override;
+    void updateRenderObject(View& view) const override;
+    FlexParentData flexParentData(Axis axis) const override;
+
+private:
+    std::string content_; ///< 文本内容（UTF-8）
+    float fontSize_;      ///< 字号（像素高度）
+    uint32_t color_;      ///< 文字颜色（RGBA）
+    FontId font_;         ///< 首选字体；kFontAny = 按注册顺序回退
+};
+
 class Element : public BuildContext {
 public:
     virtual ~Element();
@@ -350,6 +376,8 @@ std::unique_ptr<Widget> padding(
     EdgeInsets insets,
     std::unique_ptr<Widget> child);
 std::unique_ptr<Widget> center(std::unique_ptr<Widget> child);
+std::unique_ptr<Widget> text(std::string content, float fontSize, uint32_t color,
+                             FontId font = kFontAny);
 std::unique_ptr<Widget> scrollView(
     std::unique_ptr<Widget> child,
     float contentHeight,

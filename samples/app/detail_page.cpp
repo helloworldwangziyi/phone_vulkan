@@ -1,6 +1,7 @@
 #include "detail_page.h"
 
 #include "screen_metrics.h"
+#include "app_fonts.h"
 #include "app_theme.h"
 #include "evk/log.h"
 #include "evk/ui/navigation/navigation_stack.h"
@@ -51,6 +52,13 @@ std::unique_ptr<evk::ui::Widget> DetailPage::build(
                         colors[0], colors[1], colors[2]);
                 })));
 
+    /// 层级说明：编号数字来自 Roboto，中文来自 NotoSansSC（回退混排）。
+    auto caption = padding(
+        EdgeInsets::only(appCalcWidth(100.0f), appCalcHeight(20.0f),
+                         appCalcWidth(100.0f), 0.0f),
+        text(std::string("Layer #") + std::to_string(variant) + " · 渲染层详情",
+             appCalcHeight(30.0f), theme.textSecondary));
+
     auto card = [&](int index) {
         return container(theme.scrollItems[(variant * 3 + index) % 8]);
     };
@@ -89,6 +97,7 @@ std::unique_ptr<evk::ui::Widget> DetailPage::build(
 
     auto page = std::make_unique<Column>(widgetList(
         std::move(hero),
+        std::move(caption),
         cardRow(0),
         cardRow(2),
         std::move(pushButton)));

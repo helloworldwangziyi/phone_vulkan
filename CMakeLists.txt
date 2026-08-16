@@ -28,6 +28,26 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 
+# 字体资产：二进制内嵌为字节数组（FontEngine 注册用，同 shader 的免运行时读文件方案）。
+set(EVK_FONT_HEADER "${EVK_GENERATED_DIR}/evk/assets/font_assets.h")
+set(EVK_FONT_LIST
+    "kFontRobotoRegular=${CMAKE_CURRENT_SOURCE_DIR}/core/assets/fonts/roboto_regular_subset.ttf"
+    "kFontNotoSansScRegular=${CMAKE_CURRENT_SOURCE_DIR}/core/assets/fonts/notosanssc_regular_subset.ttf"
+    "kFontNotoSansScBold=${CMAKE_CURRENT_SOURCE_DIR}/core/assets/fonts/notosanssc_bold_subset.ttf"
+)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/assets/fonts/roboto_regular_subset.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/assets/fonts/notosanssc_regular_subset.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/assets/fonts/notosanssc_bold_subset.ttf"
+)
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+            "-DFONT_LIST=${EVK_FONT_LIST}"
+            -DOUTPUT_HEADER=${EVK_FONT_HEADER}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_font_assets.cmake"
+    COMMAND_ERROR_IS_FATAL ANY
+)
+
 # Core Vulkan renderer (platform-independent).
 add_library(estarx_vulkan_core STATIC
     core/src/app_lifecycle.cpp
@@ -39,6 +59,7 @@ add_library(estarx_vulkan_core STATIC
     core/src/ui/animation_scheduler.cpp
     core/src/ui/paint_canvas.cpp
     core/src/ui/event_bus.cpp
+    core/src/ui/font_engine.cpp
     core/src/ui/controls/button_control.cpp
     core/src/ui/layout/flex_layout.cpp
     core/src/ui/controls/scroll_control.cpp
@@ -53,6 +74,7 @@ target_include_directories(estarx_vulkan_core
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/glm
     PRIVATE
         ${EVK_GENERATED_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
 )
 
 if (ANDROID)

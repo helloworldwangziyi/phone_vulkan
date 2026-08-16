@@ -19,6 +19,8 @@
 		E57A11000000000000000107 /* animation_scheduler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000016 /* animation_scheduler.cpp */; };
 		E57A11000000000000000108 /* paint_canvas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000017 /* paint_canvas.cpp */; };
 		E57A11000000000000000109 /* event_bus.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000018 /* event_bus.cpp */; };
+		E57A11000000000000000122 /* font_engine.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000027 /* font_engine.cpp */; };
+		E57A11000000000000000123 /* app_fonts.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000028 /* app_fonts.cpp */; };
 		E57A11000000000000000110 /* widget_tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000019 /* widget_tree.cpp */; };
 		E57A11000000000000000111 /* button_control.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001A /* button_control.cpp */; };
 		E57A11000000000000000112 /* flex_layout.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001B /* flex_layout.cpp */; };
@@ -56,6 +58,8 @@
 		E57A11000000000000000016 /* animation_scheduler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = animation_scheduler.cpp; path = ../../../core/src/ui/animation_scheduler.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000017 /* paint_canvas.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = paint_canvas.cpp; path = ../../../core/src/ui/paint_canvas.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000018 /* event_bus.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = event_bus.cpp; path = ../../../core/src/ui/event_bus.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000027 /* font_engine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = font_engine.cpp; path = ../../../core/src/ui/font_engine.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000028 /* app_fonts.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_fonts.cpp; path = ../../../samples/app/app_fonts.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000019 /* widget_tree.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = widget_tree.cpp; path = ../../../core/src/ui/widget_tree.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001A /* button_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button_control.cpp; path = ../../../core/src/ui/controls/button_control.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001B /* flex_layout.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = flex_layout.cpp; path = ../../../core/src/ui/layout/flex_layout.cpp; sourceTree = "<group>"; };
@@ -122,6 +126,7 @@
 				E57A11000000000000000016 /* animation_scheduler.cpp */,
 				E57A11000000000000000017 /* paint_canvas.cpp */,
 				E57A11000000000000000018 /* event_bus.cpp */,
+				E57A11000000000000000027 /* font_engine.cpp */,
 				E57A11000000000000000019 /* widget_tree.cpp */,
 				E57A1100000000000000001A /* button_control.cpp */,
 				E57A1100000000000000001B /* flex_layout.cpp */,
@@ -135,6 +140,7 @@
 			isa = PBXGroup;
 			children = (
 				E57A11000000000000000020 /* app_entry.cpp */,
+				E57A11000000000000000028 /* app_fonts.cpp */,
 				E57A11000000000000000021 /* screen_metrics.cpp */,
 				E57A11000000000000000022 /* app_theme.cpp */,
 				E57A11000000000000000023 /* home_page.cpp */,
@@ -194,7 +200,7 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = E57A110000000000000000F9 /* Build configuration list for PBXNativeTarget "EstarxVulkanSample" */;
 			buildPhases = (
-				E57A110000000000000000F4 /* Embed UI Shaders */,
+				E57A110000000000000000F4 /* Embed Assets */,
 				E57A110000000000000000F2 /* Sources */,
 				E57A110000000000000000F3 /* Frameworks */,
 			);
@@ -240,7 +246,7 @@
 /* End PBXProject section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		E57A110000000000000000F4 /* Embed UI Shaders */ = {
+		E57A110000000000000000F4 /* Embed Assets */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -253,15 +259,16 @@
 				"$(SRCROOT)/../../../core/shaders/ui_fragment.frag",
 				"$(SRCROOT)/../../../cmake/embed_ui_shaders.cmake",
 			);
-			name = "Embed UI Shaders";
+			name = "Embed Assets";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/evk/assets/ui_shaders.h",
+				"$(DERIVED_FILE_DIR)/evk/assets/font_assets.h",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n# glslc / cmake 多在 /opt/homebrew/bin，Xcode 默认 PATH 不含\nexport PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"\nREPO=\"$SRCROOT/../../..\"\nGLSLC=$(command -v glslc || true)\nif [ -z \"$GLSLC\" ]; then\n    echo \"error: glslc not found; install with 'brew install shaderc'\"\n    exit 1\nfi\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=ui \\\n    -DVERT_SRC=\"$REPO/core/shaders/ui_vertex.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/ui_fragment.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/ui_shaders.h\" \\\n    -P \"$REPO/cmake/embed_ui_shaders.cmake\"\n";
+			shellScript = "set -e\n# glslc / cmake 多在 /opt/homebrew/bin，Xcode 默认 PATH 不含\nexport PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"\nREPO=\"$SRCROOT/../../..\"\nGLSLC=$(command -v glslc || true)\nif [ -z \"$GLSLC\" ]; then\n    echo \"error: glslc not found; install with 'brew install shaderc'\"\n    exit 1\nfi\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=ui \\\n    -DVERT_SRC=\"$REPO/core/shaders/ui_vertex.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/ui_fragment.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/ui_shaders.h\" \\\n    -P \"$REPO/cmake/embed_ui_shaders.cmake\"\ncmake \\n    -DFONT_LIST=\"kFontRobotoRegular=$REPO/core/assets/fonts/roboto_regular_subset.ttf;kFontNotoSansScRegular=$REPO/core/assets/fonts/notosanssc_regular_subset.ttf;kFontNotoSansScBold=$REPO/core/assets/fonts/notosanssc_bold_subset.ttf\" \\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/font_assets.h\" \\n    -P \"$REPO/cmake/embed_font_assets.cmake\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -282,12 +289,14 @@
 				E57A11000000000000000107 /* animation_scheduler.cpp in Sources */,
 				E57A11000000000000000108 /* paint_canvas.cpp in Sources */,
 				E57A11000000000000000109 /* event_bus.cpp in Sources */,
+				E57A11000000000000000122 /* font_engine.cpp in Sources */,
 				E57A11000000000000000110 /* widget_tree.cpp in Sources */,
 				E57A11000000000000000111 /* button_control.cpp in Sources */,
 				E57A11000000000000000112 /* flex_layout.cpp in Sources */,
 				E57A11000000000000000113 /* scroll_control.cpp in Sources */,
 				E57A11000000000000000114 /* navigation_stack.cpp in Sources */,
 				E57A11000000000000000115 /* app_entry.cpp in Sources */,
+				E57A11000000000000000123 /* app_fonts.cpp in Sources */,
 				E57A11000000000000000116 /* screen_metrics.cpp in Sources */,
 				E57A11000000000000000117 /* app_theme.cpp in Sources */,
 				E57A11000000000000000118 /* home_page.cpp in Sources */,
@@ -314,6 +323,7 @@
 					"$(SRCROOT)/../../../samples/app",
 					"$(SRCROOT)/../../../platform/ios/cpp",
 					"$(SRCROOT)/../../../third_party/spdlog/include",
+					"$(SRCROOT)/../../../third_party/stb",
 					"$(SRCROOT)/../../../third_party/glm",
 					"$(SRCROOT)/../../../third_party/moltenvk/include",
 					"$(DERIVED_FILE_DIR)",
@@ -349,6 +359,7 @@
 					"$(SRCROOT)/../../../samples/app",
 					"$(SRCROOT)/../../../platform/ios/cpp",
 					"$(SRCROOT)/../../../third_party/spdlog/include",
+					"$(SRCROOT)/../../../third_party/stb",
 					"$(SRCROOT)/../../../third_party/glm",
 					"$(SRCROOT)/../../../third_party/moltenvk/include",
 					"$(DERIVED_FILE_DIR)",

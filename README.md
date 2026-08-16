@@ -52,6 +52,7 @@ core/
     render_view.h      internal retained render-object tree
     pointer_input.h    pointer dispatch and gesture ownership
     event_bus.h        C++ RAII subscriptions and UI-thread queue
+    font_engine.h      TTF parsing, glyph atlas, and font fallback
     controls/
       button_control.h Button render object
       scroll_control.h ScrollView render object
@@ -60,6 +61,8 @@ core/
     navigation/
       navigation_stack.h Navigator and route transitions
   src/ui/                 implementations of the modules above
+  assets/fonts/           embedded font binaries (Roboto + Noto Sans SC, OFL)
+  shaders/                UI vertex/fragment shaders (texture x vertex color)
 platform/
   android/                JNI and Vulkan surface shell
   ios/                    Objective-C++ and MoltenVK shell

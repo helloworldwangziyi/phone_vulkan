@@ -63,6 +63,12 @@ void PaintContext::drawTriangle(float x1, float y1, float x2, float y2,
         clip_, Color::rgba(c1), Color::rgba(c2), Color::rgba(c3));
 }
 
+void PaintContext::drawText(const char* utf8, int32_t font, float sizePx,
+                            uint32_t rgba) {
+    canvas_.drawText(utf8, font, bounds_.x, bounds_.y, sizePx, clip_,
+                     Color::rgba(rgba));
+}
+
 ViewRef::ViewRef(View* view)
     : view_(view), lifetime_(view ? view->lifetime_ : std::weak_ptr<uint8_t>{}) {}
 
