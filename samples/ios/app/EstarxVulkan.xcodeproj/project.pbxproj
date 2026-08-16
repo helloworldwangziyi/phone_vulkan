@@ -7,30 +7,30 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		E57A110000000000000000B1 /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000001 /* main.m */; };
-		E57A110000000000000000B2 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000003 /* AppDelegate.m */; };
-		E57A110000000000000000B3 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000005 /* ViewController.mm */; };
-		E57A11000000000000000101 /* event.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000010 /* event.cpp */; };
-		E57A11000000000000000102 /* render_loop.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000011 /* render_loop.cpp */; };
-		E57A11000000000000000103 /* renderer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000012 /* renderer.cpp */; };
-		E57A11000000000000000104 /* esx_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000013 /* esx_view.cpp */; };
-		E57A11000000000000000105 /* view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000014 /* view.cpp */; };
-		E57A11000000000000000106 /* input.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000015 /* input.cpp */; };
-		E57A11000000000000000107 /* animator.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000016 /* animator.cpp */; };
-		E57A11000000000000000108 /* canvas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000017 /* canvas.cpp */; };
-		E57A11000000000000000109 /* event_bus.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000018 /* event_bus.cpp */; };
-		E57A11000000000000000110 /* widget.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000019 /* widget.cpp */; };
-		E57A11000000000000000111 /* button.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001A /* button.cpp */; };
-		E57A11000000000000000112 /* flex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001B /* flex.cpp */; };
-		E57A11000000000000000113 /* scroll_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001C /* scroll_view.cpp */; };
-		E57A11000000000000000114 /* navigation.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001D /* navigation.cpp */; };
-		E57A11000000000000000115 /* app_main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000020 /* app_main.cpp */; };
-		E57A11000000000000000116 /* app_metrics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000021 /* app_metrics.cpp */; };
-		E57A11000000000000000117 /* app_theme.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000022 /* app_theme.cpp */; };
-		E57A11000000000000000118 /* main_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000023 /* main_page.cpp */; };
-		E57A11000000000000000119 /* detail_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000024 /* detail_page.cpp */; };
-		E57A11000000000000000120 /* bridge_ios.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000025 /* bridge_ios.mm */; };
-		E57A11000000000000000121 /* platform_ios.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000026 /* platform_ios.mm */; };
+		E57A110000000000000000B1 /* zy_ios_app_entry.m in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000001 /* zy_ios_app_entry.m */; };
+		E57A110000000000000000B2 /* ZyAppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000003 /* ZyAppDelegate.m */; };
+		E57A110000000000000000B3 /* ZyViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000005 /* ZyViewController.mm */; };
+		E57A11000000000000000101 /* zy_app_lifecycle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000010 /* zy_app_lifecycle.cpp */; };
+		E57A11000000000000000102 /* zy_frame_scheduler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000011 /* zy_frame_scheduler.cpp */; };
+		E57A11000000000000000103 /* zy_vulkan_renderer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000012 /* zy_vulkan_renderer.cpp */; };
+		E57A11000000000000000104 /* zy_ui_application.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000013 /* zy_ui_application.cpp */; };
+		E57A11000000000000000105 /* zy_render_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000014 /* zy_render_view.cpp */; };
+		E57A11000000000000000106 /* zy_pointer_input.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000015 /* zy_pointer_input.cpp */; };
+		E57A11000000000000000107 /* zy_animation_scheduler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000016 /* zy_animation_scheduler.cpp */; };
+		E57A11000000000000000108 /* zy_paint_canvas.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000017 /* zy_paint_canvas.cpp */; };
+		E57A11000000000000000109 /* zy_event_bus.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000018 /* zy_event_bus.cpp */; };
+		E57A11000000000000000110 /* zy_widget_tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000019 /* zy_widget_tree.cpp */; };
+		E57A11000000000000000111 /* zy_button_control.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001A /* zy_button_control.cpp */; };
+		E57A11000000000000000112 /* zy_flex_layout.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001B /* zy_flex_layout.cpp */; };
+		E57A11000000000000000113 /* zy_scroll_control.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001C /* zy_scroll_control.cpp */; };
+		E57A11000000000000000114 /* zy_navigation_stack.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001D /* zy_navigation_stack.cpp */; };
+		E57A11000000000000000115 /* zy_app_entry.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000020 /* zy_app_entry.cpp */; };
+		E57A11000000000000000116 /* zy_screen_metrics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000021 /* zy_screen_metrics.cpp */; };
+		E57A11000000000000000117 /* zy_app_theme.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000022 /* zy_app_theme.cpp */; };
+		E57A11000000000000000118 /* zy_home_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000023 /* zy_home_page.cpp */; };
+		E57A11000000000000000119 /* zy_detail_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000024 /* zy_detail_page.cpp */; };
+		E57A11000000000000000120 /* zy_ios_shell_bridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000025 /* zy_ios_shell_bridge.mm */; };
+		E57A11000000000000000121 /* zy_ios_vulkan_platform.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000026 /* zy_ios_vulkan_platform.mm */; };
 		E57A11000000000000000131 /* libMoltenVK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000030 /* libMoltenVK.a */; };
 		E57A11000000000000000132 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000031 /* UIKit.framework */; };
 		E57A11000000000000000133 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000032 /* Foundation.framework */; };
@@ -41,34 +41,34 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		E57A11000000000000000001 /* main.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = main.m; sourceTree = "<group>"; };
-		E57A11000000000000000002 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
-		E57A11000000000000000003 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
-		E57A11000000000000000004 /* ViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ViewController.h; sourceTree = "<group>"; };
-		E57A11000000000000000005 /* ViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ViewController.mm; sourceTree = "<group>"; };
+		E57A11000000000000000001 /* zy_ios_app_entry.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = zy_ios_app_entry.m; sourceTree = "<group>"; };
+		E57A11000000000000000002 /* ZyAppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ZyAppDelegate.h; sourceTree = "<group>"; };
+		E57A11000000000000000003 /* ZyAppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ZyAppDelegate.m; sourceTree = "<group>"; };
+		E57A11000000000000000004 /* ZyViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = ZyViewController.h; sourceTree = "<group>"; };
+		E57A11000000000000000005 /* ZyViewController.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = ZyViewController.mm; sourceTree = "<group>"; };
 		E57A11000000000000000006 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		E57A11000000000000000010 /* event.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = event.cpp; path = ../../../core/src/event.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000011 /* render_loop.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = render_loop.cpp; path = ../../../core/src/render_loop.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000012 /* renderer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = renderer.cpp; path = ../../../core/src/renderer.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000013 /* esx_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = esx_view.cpp; path = ../../../core/src/esx_view.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000014 /* view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = view.cpp; path = ../../../core/src/ui/view.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000015 /* input.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = input.cpp; path = ../../../core/src/ui/input.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000016 /* animator.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = animator.cpp; path = ../../../core/src/ui/animator.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000017 /* canvas.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = canvas.cpp; path = ../../../core/src/ui/canvas.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000018 /* event_bus.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = event_bus.cpp; path = ../../../core/src/ui/event_bus.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000019 /* widget.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = widget.cpp; path = ../../../core/src/ui/widget.cpp; sourceTree = "<group>"; };
-		E57A1100000000000000001A /* button.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button.cpp; path = ../../../core/src/ui/controls/button.cpp; sourceTree = "<group>"; };
-		E57A1100000000000000001B /* flex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = flex.cpp; path = ../../../core/src/ui/controls/flex.cpp; sourceTree = "<group>"; };
-		E57A1100000000000000001C /* scroll_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = scroll_view.cpp; path = ../../../core/src/ui/controls/scroll_view.cpp; sourceTree = "<group>"; };
-		E57A1100000000000000001D /* navigation.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = navigation.cpp; path = ../../../core/src/ui/controls/navigation.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000020 /* app_main.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_main.cpp; path = ../../../samples/app/app_main.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000021 /* app_metrics.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_metrics.cpp; path = ../../../samples/app/app_metrics.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000022 /* app_theme.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_theme.cpp; path = ../../../samples/app/app_theme.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000023 /* main_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = main_page.cpp; path = ../../../samples/app/main_page.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000024 /* detail_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = detail_page.cpp; path = ../../../samples/app/detail_page.cpp; sourceTree = "<group>"; };
-		E57A11000000000000000025 /* bridge_ios.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = bridge_ios.mm; path = ../../../platform/ios/cpp/bridge_ios.mm; sourceTree = "<group>"; };
-		E57A11000000000000000026 /* platform_ios.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = platform_ios.mm; path = ../../../platform/ios/cpp/platform_ios.mm; sourceTree = "<group>"; };
-		E57A11000000000000000027 /* bridge_ios.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = bridge_ios.h; path = ../../../platform/ios/cpp/bridge_ios.h; sourceTree = "<group>"; };
+		E57A11000000000000000010 /* zy_app_lifecycle.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_app_lifecycle.cpp; path = ../../../core/src/zy_app_lifecycle.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000011 /* zy_frame_scheduler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_frame_scheduler.cpp; path = ../../../core/src/zy_frame_scheduler.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000012 /* zy_vulkan_renderer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_vulkan_renderer.cpp; path = ../../../core/src/zy_vulkan_renderer.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000013 /* zy_ui_application.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_ui_application.cpp; path = ../../../core/src/ui/zy_ui_application.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000014 /* zy_render_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_render_view.cpp; path = ../../../core/src/ui/zy_render_view.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000015 /* zy_pointer_input.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_pointer_input.cpp; path = ../../../core/src/ui/zy_pointer_input.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000016 /* zy_animation_scheduler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_animation_scheduler.cpp; path = ../../../core/src/ui/zy_animation_scheduler.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000017 /* zy_paint_canvas.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_paint_canvas.cpp; path = ../../../core/src/ui/zy_paint_canvas.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000018 /* zy_event_bus.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_event_bus.cpp; path = ../../../core/src/ui/zy_event_bus.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000019 /* zy_widget_tree.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_widget_tree.cpp; path = ../../../core/src/ui/zy_widget_tree.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000001A /* zy_button_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_button_control.cpp; path = ../../../core/src/ui/controls/zy_button_control.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000001B /* zy_flex_layout.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_flex_layout.cpp; path = ../../../core/src/ui/layout/zy_flex_layout.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000001C /* zy_scroll_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_scroll_control.cpp; path = ../../../core/src/ui/controls/zy_scroll_control.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000001D /* zy_navigation_stack.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_navigation_stack.cpp; path = ../../../core/src/ui/navigation/zy_navigation_stack.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000020 /* zy_app_entry.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_app_entry.cpp; path = ../../../samples/app/zy_app_entry.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000021 /* zy_screen_metrics.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_screen_metrics.cpp; path = ../../../samples/app/zy_screen_metrics.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000022 /* zy_app_theme.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_app_theme.cpp; path = ../../../samples/app/zy_app_theme.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000023 /* zy_home_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_home_page.cpp; path = ../../../samples/app/zy_home_page.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000024 /* zy_detail_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = zy_detail_page.cpp; path = ../../../samples/app/zy_detail_page.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000025 /* zy_ios_shell_bridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = zy_ios_shell_bridge.mm; path = ../../../platform/ios/cpp/zy_ios_shell_bridge.mm; sourceTree = "<group>"; };
+		E57A11000000000000000026 /* zy_ios_vulkan_platform.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = zy_ios_vulkan_platform.mm; path = ../../../platform/ios/cpp/zy_ios_vulkan_platform.mm; sourceTree = "<group>"; };
+		E57A11000000000000000027 /* zy_ios_shell_bridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = zy_ios_shell_bridge.h; path = ../../../platform/ios/cpp/zy_ios_shell_bridge.h; sourceTree = "<group>"; };
 		E57A11000000000000000030 /* libMoltenVK.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libMoltenVK.a; path = "../../../third_party/moltenvk/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"; sourceTree = "<group>"; };
 		E57A11000000000000000031 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		E57A11000000000000000032 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -100,11 +100,11 @@
 		E57A11000000000000000060 /* EstarxSample */ = {
 			isa = PBXGroup;
 			children = (
-				E57A11000000000000000001 /* main.m */,
-				E57A11000000000000000002 /* AppDelegate.h */,
-				E57A11000000000000000003 /* AppDelegate.m */,
-				E57A11000000000000000004 /* ViewController.h */,
-				E57A11000000000000000005 /* ViewController.mm */,
+				E57A11000000000000000001 /* zy_ios_app_entry.m */,
+				E57A11000000000000000002 /* ZyAppDelegate.h */,
+				E57A11000000000000000003 /* ZyAppDelegate.m */,
+				E57A11000000000000000004 /* ZyViewController.h */,
+				E57A11000000000000000005 /* ZyViewController.mm */,
 				E57A11000000000000000006 /* Info.plist */,
 			);
 			path = EstarxSample;
@@ -113,20 +113,20 @@
 		E57A11000000000000000061 /* core */ = {
 			isa = PBXGroup;
 			children = (
-				E57A11000000000000000010 /* event.cpp */,
-				E57A11000000000000000011 /* render_loop.cpp */,
-				E57A11000000000000000012 /* renderer.cpp */,
-				E57A11000000000000000013 /* esx_view.cpp */,
-				E57A11000000000000000014 /* view.cpp */,
-				E57A11000000000000000015 /* input.cpp */,
-				E57A11000000000000000016 /* animator.cpp */,
-				E57A11000000000000000017 /* canvas.cpp */,
-				E57A11000000000000000018 /* event_bus.cpp */,
-				E57A11000000000000000019 /* widget.cpp */,
-				E57A1100000000000000001A /* button.cpp */,
-				E57A1100000000000000001B /* flex.cpp */,
-				E57A1100000000000000001C /* scroll_view.cpp */,
-				E57A1100000000000000001D /* navigation.cpp */,
+				E57A11000000000000000010 /* zy_app_lifecycle.cpp */,
+				E57A11000000000000000011 /* zy_frame_scheduler.cpp */,
+				E57A11000000000000000012 /* zy_vulkan_renderer.cpp */,
+				E57A11000000000000000013 /* zy_ui_application.cpp */,
+				E57A11000000000000000014 /* zy_render_view.cpp */,
+				E57A11000000000000000015 /* zy_pointer_input.cpp */,
+				E57A11000000000000000016 /* zy_animation_scheduler.cpp */,
+				E57A11000000000000000017 /* zy_paint_canvas.cpp */,
+				E57A11000000000000000018 /* zy_event_bus.cpp */,
+				E57A11000000000000000019 /* zy_widget_tree.cpp */,
+				E57A1100000000000000001A /* zy_button_control.cpp */,
+				E57A1100000000000000001B /* zy_flex_layout.cpp */,
+				E57A1100000000000000001C /* zy_scroll_control.cpp */,
+				E57A1100000000000000001D /* zy_navigation_stack.cpp */,
 			);
 			name = core;
 			sourceTree = "<group>";
@@ -134,11 +134,11 @@
 		E57A11000000000000000062 /* samples-app */ = {
 			isa = PBXGroup;
 			children = (
-				E57A11000000000000000020 /* app_main.cpp */,
-				E57A11000000000000000021 /* app_metrics.cpp */,
-				E57A11000000000000000022 /* app_theme.cpp */,
-				E57A11000000000000000023 /* main_page.cpp */,
-				E57A11000000000000000024 /* detail_page.cpp */,
+				E57A11000000000000000020 /* zy_app_entry.cpp */,
+				E57A11000000000000000021 /* zy_screen_metrics.cpp */,
+				E57A11000000000000000022 /* zy_app_theme.cpp */,
+				E57A11000000000000000023 /* zy_home_page.cpp */,
+				E57A11000000000000000024 /* zy_detail_page.cpp */,
 			);
 			name = "samples-app";
 			sourceTree = "<group>";
@@ -146,9 +146,9 @@
 		E57A11000000000000000063 /* platform-ios */ = {
 			isa = PBXGroup;
 			children = (
-				E57A11000000000000000027 /* bridge_ios.h */,
-				E57A11000000000000000025 /* bridge_ios.mm */,
-				E57A11000000000000000026 /* platform_ios.mm */,
+				E57A11000000000000000027 /* zy_ios_shell_bridge.h */,
+				E57A11000000000000000025 /* zy_ios_shell_bridge.mm */,
+				E57A11000000000000000026 /* zy_ios_vulkan_platform.mm */,
 			);
 			name = "platform-ios";
 			sourceTree = "<group>";
@@ -249,19 +249,19 @@
 			inputFileListPaths = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/../../../core/shaders/ui.vert",
-				"$(SRCROOT)/../../../core/shaders/ui.frag",
-				"$(SRCROOT)/../../../cmake/embed_shaders.cmake",
+				"$(SRCROOT)/../../../core/shaders/zy_ui_vertex.vert",
+				"$(SRCROOT)/../../../core/shaders/zy_ui_fragment.frag",
+				"$(SRCROOT)/../../../cmake/zy_embed_ui_shaders.cmake",
 			);
 			name = "Embed UI Shaders";
 			outputFileListPaths = (
 			);
 			outputPaths = (
-				"$(DERIVED_FILE_DIR)/evk/assets/ui_shaders.h",
+				"$(DERIVED_FILE_DIR)/evk/assets/zy_ui_shaders.h",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n# glslc / cmake 多在 /opt/homebrew/bin，Xcode 默认 PATH 不含\nexport PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"\nREPO=\"$SRCROOT/../../..\"\nGLSLC=$(command -v glslc || true)\nif [ -z \"$GLSLC\" ]; then\n    echo \"error: glslc not found; install with 'brew install shaderc'\"\n    exit 1\nfi\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=ui \\\n    -DVERT_SRC=\"$REPO/core/shaders/ui.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/ui.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/ui_shaders.h\" \\\n    -P \"$REPO/cmake/embed_shaders.cmake\"\n";
+			shellScript = "set -e\n# glslc / cmake 多在 /opt/homebrew/bin，Xcode 默认 PATH 不含\nexport PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"\nREPO=\"$SRCROOT/../../..\"\nGLSLC=$(command -v glslc || true)\nif [ -z \"$GLSLC\" ]; then\n    echo \"error: glslc not found; install with 'brew install shaderc'\"\n    exit 1\nfi\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=zy_ui \\\n    -DVERT_SRC=\"$REPO/core/shaders/zy_ui_vertex.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/zy_ui_fragment.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/zy_ui_shaders.h\" \\\n    -P \"$REPO/cmake/zy_embed_ui_shaders.cmake\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -270,30 +270,30 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				E57A110000000000000000B1 /* main.m in Sources */,
-				E57A110000000000000000B2 /* AppDelegate.m in Sources */,
-				E57A110000000000000000B3 /* ViewController.mm in Sources */,
-				E57A11000000000000000101 /* event.cpp in Sources */,
-				E57A11000000000000000102 /* render_loop.cpp in Sources */,
-				E57A11000000000000000103 /* renderer.cpp in Sources */,
-				E57A11000000000000000104 /* esx_view.cpp in Sources */,
-				E57A11000000000000000105 /* view.cpp in Sources */,
-				E57A11000000000000000106 /* input.cpp in Sources */,
-				E57A11000000000000000107 /* animator.cpp in Sources */,
-				E57A11000000000000000108 /* canvas.cpp in Sources */,
-				E57A11000000000000000109 /* event_bus.cpp in Sources */,
-				E57A11000000000000000110 /* widget.cpp in Sources */,
-				E57A11000000000000000111 /* button.cpp in Sources */,
-				E57A11000000000000000112 /* flex.cpp in Sources */,
-				E57A11000000000000000113 /* scroll_view.cpp in Sources */,
-				E57A11000000000000000114 /* navigation.cpp in Sources */,
-				E57A11000000000000000115 /* app_main.cpp in Sources */,
-				E57A11000000000000000116 /* app_metrics.cpp in Sources */,
-				E57A11000000000000000117 /* app_theme.cpp in Sources */,
-				E57A11000000000000000118 /* main_page.cpp in Sources */,
-				E57A11000000000000000119 /* detail_page.cpp in Sources */,
-				E57A11000000000000000120 /* bridge_ios.mm in Sources */,
-				E57A11000000000000000121 /* platform_ios.mm in Sources */,
+				E57A110000000000000000B1 /* zy_ios_app_entry.m in Sources */,
+				E57A110000000000000000B2 /* ZyAppDelegate.m in Sources */,
+				E57A110000000000000000B3 /* ZyViewController.mm in Sources */,
+				E57A11000000000000000101 /* zy_app_lifecycle.cpp in Sources */,
+				E57A11000000000000000102 /* zy_frame_scheduler.cpp in Sources */,
+				E57A11000000000000000103 /* zy_vulkan_renderer.cpp in Sources */,
+				E57A11000000000000000104 /* zy_ui_application.cpp in Sources */,
+				E57A11000000000000000105 /* zy_render_view.cpp in Sources */,
+				E57A11000000000000000106 /* zy_pointer_input.cpp in Sources */,
+				E57A11000000000000000107 /* zy_animation_scheduler.cpp in Sources */,
+				E57A11000000000000000108 /* zy_paint_canvas.cpp in Sources */,
+				E57A11000000000000000109 /* zy_event_bus.cpp in Sources */,
+				E57A11000000000000000110 /* zy_widget_tree.cpp in Sources */,
+				E57A11000000000000000111 /* zy_button_control.cpp in Sources */,
+				E57A11000000000000000112 /* zy_flex_layout.cpp in Sources */,
+				E57A11000000000000000113 /* zy_scroll_control.cpp in Sources */,
+				E57A11000000000000000114 /* zy_navigation_stack.cpp in Sources */,
+				E57A11000000000000000115 /* zy_app_entry.cpp in Sources */,
+				E57A11000000000000000116 /* zy_screen_metrics.cpp in Sources */,
+				E57A11000000000000000117 /* zy_app_theme.cpp in Sources */,
+				E57A11000000000000000118 /* zy_home_page.cpp in Sources */,
+				E57A11000000000000000119 /* zy_detail_page.cpp in Sources */,
+				E57A11000000000000000120 /* zy_ios_shell_bridge.mm in Sources */,
+				E57A11000000000000000121 /* zy_ios_vulkan_platform.mm in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -4,6 +4,6 @@ estarx_vulkan 项目文档。文档与代码同步重建中，随框架演进逐
 
 - [构建指南](构建指南.md) — 环境要求、命令行/Android Studio 构建、模拟器与真机调试
 - [架构设计](架构设计.md) — 分层结构、事件链路、线程模型、跨端规划
-- [声明式 UI 入门](声明式%20UI%20入门.md) — Widget/Element/Component 机制、widget.h 逐段精读、Flutter 对照、学习路线
+- [声明式 UI 入门](声明式%20UI%20入门.md) — Flutter 风格 Widget/Element/State、组合布局与 Navigator
 - [示例应用导读](示例应用导读.md) — sample 启动链路、声明式页面写法、widget 层支撑机制
 - [源码导读](源码导读.md) — 关键文件地图与阅读顺序

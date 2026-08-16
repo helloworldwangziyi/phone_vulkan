@@ -13,7 +13,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.EstarxVulkan">
         <activity
-            android:name=".MainActivity"
+            android:name=".ZyMainActivity"
             android:exported="true"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|uiMode"
             android:screenOrientation="unspecified">

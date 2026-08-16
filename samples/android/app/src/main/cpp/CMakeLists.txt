@@ -10,48 +10,48 @@ set(EVK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../../../../../..)
 find_program(GLSLC_EXECUTABLE glslc REQUIRED)
 
 set(EVK_GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(EVK_UI_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/ui_shaders.h")
+set(EVK_UI_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/zy_ui_shaders.h")
 file(MAKE_DIRECTORY "${EVK_GENERATED_DIR}/evk/assets")
 
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-    "${EVK_ROOT}/core/shaders/ui.vert"
-    "${EVK_ROOT}/core/shaders/ui.frag"
-    "${EVK_ROOT}/cmake/embed_shaders.cmake"
+    "${EVK_ROOT}/core/shaders/zy_ui_vertex.vert"
+    "${EVK_ROOT}/core/shaders/zy_ui_fragment.frag"
+    "${EVK_ROOT}/cmake/zy_embed_ui_shaders.cmake"
 )
 
 execute_process(
     COMMAND "${CMAKE_COMMAND}"
             -DGLSLC_EXECUTABLE=${GLSLC_EXECUTABLE}
-            -DSHADER_NAME=ui
-            -DVERT_SRC=${EVK_ROOT}/core/shaders/ui.vert
-            -DFRAG_SRC=${EVK_ROOT}/core/shaders/ui.frag
+            -DSHADER_NAME=zy_ui
+            -DVERT_SRC=${EVK_ROOT}/core/shaders/zy_ui_vertex.vert
+            -DFRAG_SRC=${EVK_ROOT}/core/shaders/zy_ui_fragment.frag
             -DOUTPUT_HEADER=${EVK_UI_SHADER_HEADER}
-            -P "${EVK_ROOT}/cmake/embed_shaders.cmake"
+            -P "${EVK_ROOT}/cmake/zy_embed_ui_shaders.cmake"
     COMMAND_ERROR_IS_FATAL ANY
 )
 
 add_library(estarx_vulkan SHARED
-    ${EVK_ROOT}/samples/app/app_main.cpp
-    ${EVK_ROOT}/samples/app/app_metrics.cpp
-    ${EVK_ROOT}/samples/app/app_theme.cpp
-    ${EVK_ROOT}/samples/app/main_page.cpp
-    ${EVK_ROOT}/samples/app/detail_page.cpp
-    ${EVK_ROOT}/platform/android/cpp/bridge.cpp
-    ${EVK_ROOT}/platform/android/cpp/platform_android.cpp
-    ${EVK_ROOT}/core/src/event.cpp
-    ${EVK_ROOT}/core/src/render_loop.cpp
-    ${EVK_ROOT}/core/src/renderer.cpp
-    ${EVK_ROOT}/core/src/esx_view.cpp
-    ${EVK_ROOT}/core/src/ui/view.cpp
-    ${EVK_ROOT}/core/src/ui/input.cpp
-    ${EVK_ROOT}/core/src/ui/animator.cpp
-    ${EVK_ROOT}/core/src/ui/canvas.cpp
-    ${EVK_ROOT}/core/src/ui/event_bus.cpp
-    ${EVK_ROOT}/core/src/ui/controls/button.cpp
-    ${EVK_ROOT}/core/src/ui/controls/flex.cpp
-    ${EVK_ROOT}/core/src/ui/controls/scroll_view.cpp
-    ${EVK_ROOT}/core/src/ui/controls/navigation.cpp
-    ${EVK_ROOT}/core/src/ui/widget.cpp
+    ${EVK_ROOT}/samples/app/zy_app_entry.cpp
+    ${EVK_ROOT}/samples/app/zy_screen_metrics.cpp
+    ${EVK_ROOT}/samples/app/zy_app_theme.cpp
+    ${EVK_ROOT}/samples/app/zy_home_page.cpp
+    ${EVK_ROOT}/samples/app/zy_detail_page.cpp
+    ${EVK_ROOT}/platform/android/cpp/zy_android_jni_bridge.cpp
+    ${EVK_ROOT}/platform/android/cpp/zy_android_vulkan_platform.cpp
+    ${EVK_ROOT}/core/src/zy_app_lifecycle.cpp
+    ${EVK_ROOT}/core/src/zy_frame_scheduler.cpp
+    ${EVK_ROOT}/core/src/zy_vulkan_renderer.cpp
+    ${EVK_ROOT}/core/src/ui/zy_ui_application.cpp
+    ${EVK_ROOT}/core/src/ui/zy_render_view.cpp
+    ${EVK_ROOT}/core/src/ui/zy_pointer_input.cpp
+    ${EVK_ROOT}/core/src/ui/zy_animation_scheduler.cpp
+    ${EVK_ROOT}/core/src/ui/zy_paint_canvas.cpp
+    ${EVK_ROOT}/core/src/ui/zy_event_bus.cpp
+    ${EVK_ROOT}/core/src/ui/controls/zy_button_control.cpp
+    ${EVK_ROOT}/core/src/ui/layout/zy_flex_layout.cpp
+    ${EVK_ROOT}/core/src/ui/controls/zy_scroll_control.cpp
+    ${EVK_ROOT}/core/src/ui/navigation/zy_navigation_stack.cpp
+    ${EVK_ROOT}/core/src/ui/zy_widget_tree.cpp
 )
 
 target_include_directories(estarx_vulkan
