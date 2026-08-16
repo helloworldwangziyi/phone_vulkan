@@ -47,18 +47,18 @@ public:
 ~~~
 core/
   include/evk/ui/
-    zy_ui_application.h   runApp, shutdownApp, viewport
-    zy_widget_tree.h      Widget, Element, State and composition widgets
-    zy_render_view.h      internal retained render-object tree
-    zy_pointer_input.h    pointer dispatch and gesture ownership
-    zy_event_bus.h        C++ RAII subscriptions and UI-thread queue
+    ui_application.h   runApp, shutdownApp, viewport
+    widget_tree.h      Widget, Element, State and composition widgets
+    render_view.h      internal retained render-object tree
+    pointer_input.h    pointer dispatch and gesture ownership
+    event_bus.h        C++ RAII subscriptions and UI-thread queue
     controls/
-      zy_button_control.h Button render object
-      zy_scroll_control.h ScrollView render object
+      button_control.h Button render object
+      scroll_control.h ScrollView render object
     layout/
-      zy_flex_layout.h    Row and Column layout capability
+      flex_layout.h    Row and Column layout capability
     navigation/
-      zy_navigation_stack.h Navigator and route transitions
+      navigation_stack.h Navigator and route transitions
   src/ui/                 implementations of the modules above
 platform/
   android/                JNI and Vulkan surface shell
@@ -67,10 +67,11 @@ samples/app/              shared Flutter-style C++ application
 tests/                    runtime contract tests
 ~~~
 
-Project-owned source files use `zy_<responsibility>` names. Java and
-Objective-C class files use the language-standard `Zy<Responsibility>` form;
-platform-mandated names such as `CMakeLists.txt`, `AndroidManifest.xml`, and
-`Info.plist` remain unchanged.
+Project-owned source files use plain `<responsibility>` names such as
+`widget_tree.h` and `android_jni_bridge.cpp`. Java and Objective-C class
+files follow the language-standard class naming (for example
+`NativeBridge.java` and `ViewController.mm`); platform-mandated names such
+as `CMakeLists.txt`, `AndroidManifest.xml`, and `Info.plist` remain unchanged.
 
 ## Build the Android sample
 

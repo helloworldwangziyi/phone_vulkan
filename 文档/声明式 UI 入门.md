@@ -160,8 +160,8 @@ Element/State/View，并清空事件订阅。
 
 ## 8. 阅读顺序
 
-1. core/include/evk/ui/zy_widget_tree.h
-2. core/src/ui/zy_widget_tree.cpp
-3. core/include/evk/ui/navigation/zy_navigation_stack.h
-4. samples/app/zy_home_page.cpp
-5. tests/zy_ui_runtime_test.cpp
+1. core/include/evk/ui/widget_tree.h
+2. core/src/ui/widget_tree.cpp
+3. core/include/evk/ui/navigation/navigation_stack.h
+4. samples/app/home_page.cpp
+5. tests/ui_runtime_test.cpp
