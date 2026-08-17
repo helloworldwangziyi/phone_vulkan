@@ -1,3 +1,38 @@
+/**
+ * @file widget_tree.cpp
+ * @brief 工地的施工队：四种工位（Element）与交接算法（updateChild）的实现。
+ *
+ * @details 头文件讲了「图纸 ↔ 工地」的比喻，这里是把比喻变成代码的地方。
+ * 工地上一共四类工人，各干各的活：
+ *
+ *   - **StatelessElement**（无记忆分包工）：每次 rebuild 重画子图纸，
+ *     自己没有实体，report 实体时直接报孩子的那件；
+ *   - **StatefulElement**（带记事本的工头）：手上一本 State 记事本，
+ *     首次施工 = 领记事本（createState）→ 初始化（initState）→ 按记事本
+ *     画图纸（build）→ 报完工（didMount）；导航旅程事件全部先经他手
+ *     转发给记事本的 hook；
+ *   - **RenderObjectElement**（泥瓦匠）：唯一真正砌墙的工人——
+ *     首次施工按图纸 createRenderObject 造实体并挂到 renderParent，
+ *     换图纸时 updateRenderObject 微调实体，再逐子交接；
+ *   - **ProxyElement**（包工头）：不砌墙，只把子图纸转手给下一个工人。
+ *
+ * 全工地只有一条交接规则（Element::updateChild，见下方大段注释）：
+ * @code
+ *   新图纸为空        → 撤掉孩子工位
+ *   旧工位在且 canUpdate → 老工人接新图纸，就地微调（update → updateElement）
+ *   其余情况          → 拆旧工位（unmount），新工人持新图纸开工（createElement → mount）
+ * @endcode
+ *
+ * 一棵描述树 mount 之后，工位树与实体树的关系：
+ * @code
+ *   描述树（每帧全新）        工位树（存活）           实体树（存活）
+ *   Column ────────────→ RenderObjectElement ──→ FlexView
+ *    ├─ Container           ├─ RenderObjectElement ──→ View
+ *    └─ Expanded            │  （不产实体）
+ *        └─ ScrollViewWidget └─ RenderObjectElement ──→ ScrollView
+ * @endcode
+ */
+
 #include "evk/ui/widget_tree.h"
 
 #include <algorithm>
@@ -10,6 +45,12 @@
 namespace evk::ui {
 namespace {
 
+/**
+ * @brief 无记忆分包工：自己不砌墙，只反复「重画子图纸 → 交接给子工位」。
+ *
+ * 对应 StatelessWidget。实体报告直接透传孩子的实体；导航事件也一路
+ * 下沉（自己无记事本，无权拦截）。
+ */
 class StatelessElement final : public Element {
 public:
     View* renderObject() const override {
@@ -41,6 +82,20 @@ private:
     std::unique_ptr<Element> child_;
 };
 
+/**
+ * @brief 带记事本的工头：手上握着 State，页面的一切可变状态都在他这里。
+ *
+ * 首次施工的仪式（对照 Flutter 的 State 生命周期）：
+ *   createState（领新记事本）→ attach（记事本写上工位地址）→ initState
+ *   （一次性初始化）→ build（按记事本画图纸）→ didMount（实体已落位，
+ *   此时才注册事件监听——HomePage 的 listen 就在 didMount 里）。
+ *
+ * 拆除时倒序：拆子工位 → dispose（最后救生索，取消在飞请求）→
+ * detach（撕掉记事本与工位的绑定）→ 撕记事本。
+ *
+ * 导航旅程（RouteEvent）到 State hook 的翻译官：Will* 被记事本否决时
+ * 向上返回 false，导航栈据此取消本次导航。
+ */
 class StatefulElement final : public Element {
 public:
     View* renderObject() const override {
@@ -112,6 +167,19 @@ private:
     std::unique_ptr<Element> child_;
 };
 
+/**
+ * @brief 泥瓦匠：唯一真正砌墙的工人，工位与实体（View）一一对应。
+ *
+ * 首次施工：createRenderObject 造实体 → 挂到 renderParent（父实体）或
+ * 暂存为游离实体（页面根，随后被导航栈接管）→ updateChildren 逐子开工。
+ *
+ * 换图纸（updateElement）：updateRenderObject 微调实体本身
+ * （颜色、painter、样式……）→ updateChildren 逐子交接 → 通知实体
+ * 「我的 bounds 变了」触发容器级联重排（FlexView 就是靠这个钩子布局）。
+ *
+ * 拆除：先拆全部子工位，再把实体从父实体上摘下来销毁——顺序不能反，
+ * 父实体的孩子列表要在子实体存活期间保持一致。
+ */
 class RenderObjectElement final : public Element {
 public:
     View* renderObject() const override { return view_; }
@@ -197,6 +265,12 @@ private:
     std::vector<std::unique_ptr<Element>> children_;
 };
 
+/**
+ * @brief 包工头：不砌墙、无实体，只把一张子图纸转手给下一道工序的工人。
+ *
+ * 对应 ProxyWidget（Expanded/Center）。他的全部价值在「转手之前改一改
+ * 孩子图纸上的便签（flexParentData）」，实体报告与导航事件都是透传。
+ */
 class ProxyElement final : public Element {
 public:
     View* renderObject() const override {
@@ -228,6 +302,13 @@ private:
     std::unique_ptr<Element> child_;
 };
 
+/**
+ * @brief SizedBox 的实体：自己的 bounds 被（Flex 等）写入后，把孩子塞满。
+ *
+ * 注意这是布局链的典型形态：父布局只管写「我这个盒子多大」，盒内如何
+ * 分配是实体自己 handleBoundsChanged 里的事——尺寸变化沿树级联，
+ * App 全程不写 layout 函数。
+ */
 class SizedBoxView final : public View {
 public:
     void handleBoundsChanged() override {
@@ -237,6 +318,9 @@ public:
     }
 };
 
+/**
+ * @brief Padding 的实体：孩子缩进 insets 后占据剩余空间。
+ */
 class PaddingView final : public View {
 public:
     EdgeInsets insets;
@@ -285,6 +369,14 @@ const StatefulWidget& State::widget() const {
     return dynamic_cast<const StatefulWidget&>(element_->widget());
 }
 
+/**
+ * @brief 翻新入口：记事本改一笔 → 设计师重画图纸 → 工位微调 → 请求渲染。
+ *
+ * 顺序是「先 mutate、再 build、再 rebuild」：工位重画发生在实体修改之前，
+ * 因此 build() 里读到的状态一定是 mutate 之后的新状态。未在岗（页面已
+ * pop、mounted() == false）的 setState 直接忽略——这是迟到数据的第一道
+ * 防线（第二道是调用方自己检查 mounted/取消标志）。
+ */
 void State::setState(std::function<void()> mutate) {
     if (!mounted()) {
         return;
@@ -418,6 +510,14 @@ void Button::updateRenderObject(View& view) const {
     updateButtonView(view, style, onPressed, enabled);
 }
 
+/**
+ * @brief Flex 图纸的构造：顺手算「固有主轴尺寸」（intrinsic main size）。
+ *
+ * 全部孩子都有固定主轴尺寸（mainSize≥0）时，把「尺寸 + 前后间距」累加
+ * 成自己的固有尺寸，写进对外便签（intrinsicData_）——这样 Column/Row
+ * 套在别的 Flex 里、或作为页面根时，父布局知道它「最小要多长」。
+ * 有一个孩子是弹性的（flex>0）就放弃固有尺寸（主尺寸为负 = 交给父布局）。
+ */
 Flex::Flex(Axis direction, std::vector<std::unique_ptr<Widget>> childWidgets)
     : axis(direction), children_(std::move(childWidgets)) {
     float intrinsicMainSize = 0.0f;
@@ -498,6 +598,19 @@ Expanded::Expanded(std::unique_ptr<Widget> child, float flex)
                            : FlexParentData{};
 }
 
+/**
+ * @brief Expanded/Center/SizedBox/Padding 共用的「便签接力」模式：
+ *        构造时把孩子对外报的便签抄一份存着，回答时改几笔再上报。
+ *
+ * 这些转接件自己不产实体，却要参与父 Flex 的排布——靠的就是把孩子的
+ * flexParentData 往上「接力」时做手脚：
+ *   - Expanded：把 mainSize 置 -1、flex 置自己的系数（吃剩余空间）；
+ *   - Center  ：把 crossAlignment 改成正中；
+ *   - SizedBox：把主/交叉尺寸改成自己的固定值（变相固定孩子）；
+ *   - Padding ：把内边距折算进孩子报的尺寸。
+ * 注意按轴向存两份（horizontal/vertical）：同一节点在两个方向的父容器里
+ * 排布参数可以完全不同。
+ */
 FlexParentData Expanded::flexParentData(Axis axis) const {
     FlexParentData data = axis == Axis::Vertical ? verticalData_ : horizontalData_;
     data.mainSize = -1.0f;
@@ -615,6 +728,33 @@ bool Element::dispatchRouteEvent(RouteEvent, bool) {
     return true;
 }
 
+/**
+ * @brief 交接算法核心：全工地唯一的「新旧对照」规则，相当于 Flutter 的
+ *        Element::updateChild。
+ *
+ * @details 把一次交接想成包工头站在工位槽前，手里拿着新图纸：
+ *
+ * @code
+ * 新图纸是空（这张子图纸被撤了）？
+ *   └─ 是 → 老工人收工走人（unmount），工位槽清空。
+ * 老工人在岗，且老图纸与新图纸「同一类构件」（canUpdate）？
+ *   └─ 是 → 老工人接过新图纸，就地微调（update → updateElement）。
+ *            实体保留、内部状态（滚动 offset、pressed……）保留。
+ * 其余情况（新构件类型变了 / 工位本来就空）？
+ *   └─ 老工人先收工（unmount，拆实体、撕记事本），
+ *      再按新图纸派新工人开工（createElement → mount）。
+ * @endcode
+ *
+ * 这套规则是全机制的「守恒律」：
+ *   - 描述树怎么变都不直接操作实体——一切经工位对照后落成
+ *     「微调」或「重建」二选一；
+ *   - 滚动位置保留、列表数据到达自动增删行、主题切换只改色不重建，
+ *     全是这条规则的自然推论，没有任何一处是特判。
+ *
+ * @param child        待交接的工位槽（按引用传入：可被替换成新工位）
+ * @param widget       新子图纸（unique_ptr：交接后图纸所有权归工位）
+ * @param renderParent 孩子的实体应挂靠的父实体
+ */
 void Element::updateChild(
     std::unique_ptr<Element>& child,
     std::unique_ptr<Widget> widget,
@@ -638,6 +778,13 @@ void Element::updateChild(
     child->mount(std::move(widget), this, renderParent, navigator_);
 }
 
+/**
+ * @brief 开工入口：一张根图纸 → 一个在岗工位（mountWidget）。
+ *
+ * 步骤：按图纸的派遣令 createElement 派出工人 → mount 把图纸、挂靠点、
+ * 导航器交到他手上并 marked 在岗 → firstMount 完成首次施工。
+ * 页面根（renderParent=nullptr）建出的实体处于游离状态，由导航栈随后接管。
+ */
 std::unique_ptr<Element> mountWidget(
     std::unique_ptr<Widget> widget,
     View* renderParent,
@@ -650,6 +797,14 @@ std::unique_ptr<Element> mountWidget(
     element->mount(std::move(widget), parent, renderParent, navigator);
     return element;
 }
+
+// ============================================================================
+// 小写工厂：一行画一张常用图纸。
+//
+// 为什么有工厂还有类？类（Container/Button/……）适合直接 new 与继承扩展；
+// 工厂是「build() 里的简写」——page 树要一行行读下来像设计稿，而不是
+// 一摞 new 表达式。HomePage 的 build 就是全部用工厂 + widgetList 拼的。
+// ============================================================================
 
 std::unique_ptr<Widget> container(
     uint32_t color,

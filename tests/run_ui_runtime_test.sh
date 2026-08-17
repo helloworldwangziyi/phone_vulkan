@@ -31,8 +31,9 @@ fi
     "$repo_root/core/src/ui/widget_tree.cpp" \
     "$repo_root/core/src/ui/controls/scroll_control.cpp" \
     "$repo_root/core/src/ui/navigation/navigation_stack.cpp" \
-    -o "$test_binary" \
+    -o "$test_binary"
+
+# 字体测试需要两个字体文件路径作为运行参数（argv[1]=拉丁、argv[2]=中文）。
+"$test_binary" \
     "$repo_root/core/assets/fonts/roboto_regular_subset.ttf" \
     "$repo_root/core/assets/fonts/notosanssc_regular_subset.ttf"
-
-"$test_binary"

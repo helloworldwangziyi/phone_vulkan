@@ -62,7 +62,7 @@
 		E57A11000000000000000018 /* event_bus.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = event_bus.cpp; path = ../../../core/src/ui/event_bus.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000027 /* font_engine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = font_engine.cpp; path = ../../../core/src/ui/font_engine.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000029 /* texture_store.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = texture_store.cpp; path = ../../../core/src/ui/texture_store.cpp; sourceTree = "<group>"; };
-		E57A1100000000000002A /* app_images.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_images.cpp; path = ../../../samples/app/app_images.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000002A /* app_images.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_images.cpp; path = ../../../samples/app/app_images.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000028 /* app_fonts.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_fonts.cpp; path = ../../../samples/app/app_fonts.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000019 /* widget_tree.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = widget_tree.cpp; path = ../../../core/src/ui/widget_tree.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001A /* button_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button_control.cpp; path = ../../../core/src/ui/controls/button_control.cpp; sourceTree = "<group>"; };
@@ -76,7 +76,7 @@
 		E57A11000000000000000024 /* detail_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = detail_page.cpp; path = ../../../samples/app/detail_page.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000025 /* ios_shell_bridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ios_shell_bridge.mm; path = ../../../platform/ios/cpp/ios_shell_bridge.mm; sourceTree = "<group>"; };
 		E57A11000000000000000026 /* ios_vulkan_platform.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ios_vulkan_platform.mm; path = ../../../platform/ios/cpp/ios_vulkan_platform.mm; sourceTree = "<group>"; };
-		E57A11000000000000000027 /* ios_shell_bridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ios_shell_bridge.h; path = ../../../platform/ios/cpp/ios_shell_bridge.h; sourceTree = "<group>"; };
+		E57A1100000000000000002B /* ios_shell_bridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ios_shell_bridge.h; path = ../../../platform/ios/cpp/ios_shell_bridge.h; sourceTree = "<group>"; };
 		E57A11000000000000000030 /* libMoltenVK.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libMoltenVK.a; path = "../../../third_party/moltenvk/MoltenVK.xcframework/ios-arm64/libMoltenVK.a"; sourceTree = "<group>"; };
 		E57A11000000000000000031 /* UIKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UIKit.framework; path = System/Library/Frameworks/UIKit.framework; sourceTree = SDKROOT; };
 		E57A11000000000000000032 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
@@ -146,7 +146,7 @@
 			children = (
 				E57A11000000000000000020 /* app_entry.cpp */,
 				E57A11000000000000000028 /* app_fonts.cpp */,
-				E57A1100000000000002A /* app_images.cpp */,
+				E57A1100000000000000002A /* app_images.cpp */,
 				E57A11000000000000000021 /* screen_metrics.cpp */,
 				E57A11000000000000000022 /* app_theme.cpp */,
 				E57A11000000000000000023 /* home_page.cpp */,
@@ -158,7 +158,7 @@
 		E57A11000000000000000063 /* platform-ios */ = {
 			isa = PBXGroup;
 			children = (
-				E57A11000000000000000027 /* ios_shell_bridge.h */,
+				E57A1100000000000000002B /* ios_shell_bridge.h */,
 				E57A11000000000000000025 /* ios_shell_bridge.mm */,
 				E57A11000000000000000026 /* ios_vulkan_platform.mm */,
 			);
