@@ -33,6 +33,7 @@
 		E57A11000000000000000117 /* app_theme.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000022 /* app_theme.cpp */; };
 		E57A11000000000000000118 /* home_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000023 /* home_page.cpp */; };
 		E57A11000000000000000119 /* detail_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000024 /* detail_page.cpp */; };
+		E57A11000000000000000126 /* watchlist_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000037 /* watchlist_page.cpp */; };
 		E57A11000000000000000120 /* ios_shell_bridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000025 /* ios_shell_bridge.mm */; };
 		E57A11000000000000000121 /* ios_vulkan_platform.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000026 /* ios_vulkan_platform.mm */; };
 		E57A11000000000000000131 /* libMoltenVK.a in Frameworks */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000030 /* libMoltenVK.a */; };
@@ -74,6 +75,7 @@
 		E57A11000000000000000022 /* app_theme.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_theme.cpp; path = ../../../samples/app/app_theme.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000023 /* home_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = home_page.cpp; path = ../../../samples/app/home_page.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000024 /* detail_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = detail_page.cpp; path = ../../../samples/app/detail_page.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000037 /* watchlist_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = watchlist_page.cpp; path = ../../../samples/app/watchlist_page.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000025 /* ios_shell_bridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ios_shell_bridge.mm; path = ../../../platform/ios/cpp/ios_shell_bridge.mm; sourceTree = "<group>"; };
 		E57A11000000000000000026 /* ios_vulkan_platform.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = ios_vulkan_platform.mm; path = ../../../platform/ios/cpp/ios_vulkan_platform.mm; sourceTree = "<group>"; };
 		E57A1100000000000000002B /* ios_shell_bridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ios_shell_bridge.h; path = ../../../platform/ios/cpp/ios_shell_bridge.h; sourceTree = "<group>"; };
@@ -151,6 +153,7 @@
 				E57A11000000000000000022 /* app_theme.cpp */,
 				E57A11000000000000000023 /* home_page.cpp */,
 				E57A11000000000000000024 /* detail_page.cpp */,
+				E57A11000000000000000037 /* watchlist_page.cpp */,
 			);
 			name = "samples-app";
 			sourceTree = "<group>";
@@ -309,6 +312,7 @@
 				E57A11000000000000000117 /* app_theme.cpp in Sources */,
 				E57A11000000000000000118 /* home_page.cpp in Sources */,
 				E57A11000000000000000119 /* detail_page.cpp in Sources */,
+				E57A11000000000000000126 /* watchlist_page.cpp in Sources */,
 				E57A11000000000000000120 /* ios_shell_bridge.mm in Sources */,
 				E57A11000000000000000121 /* ios_vulkan_platform.mm in Sources */,
 			);
