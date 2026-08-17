@@ -118,12 +118,17 @@ bool Renderer::initialize() {
     // ② 选 GPU 与建逻辑设备：这两步都要查询 surface 的 present 支持，故排在 surface 之后。
     if (!pickPhysicalDevice()) return false;
     if (!createLogicalDevice()) return false;
+    // ②¼ MSAA 采样数：只依赖物理设备属性，renderPass/pipeline 创建前定下来即可。
+    msaaSamples_ = pickMsaaSampleCount();
     // ②½ 纹理设施：descriptor 布局是管线布局的输入（shader 的 set=0），必须先于管线。
     if (!createTextureResources()) return false;
     // ③ 交换链及其下游：imageView / renderPass / pipeline / framebuffer 全部依赖 swapchain 的
     // 格式与尺寸，窗口尺寸变化时这一段要整体重建（见 recreateSwapchain）。
     if (!createSwapchain()) return false;
     if (!createImageViews()) return false;
+    // MSAA 颜色图尺寸/格式跟随 swapchain，必须在 renderPass（声明采样数）与
+    // framebuffer（挂视图）之前创建；失败时内部会降级为单采样，不中止启动。
+    createColorResources();
     if (!createRenderPass()) return false;
     if (!createGraphicsPipeline()) return false;
     if (!createFramebuffers()) return false;
@@ -620,37 +625,152 @@ bool Renderer::createImageViews() {
     return true;
 }
 
-bool Renderer::createRenderPass() {
-    // 这个三角形示例只需要一个颜色附件：清屏、绘制、呈现即可。
-    // 附件描述：renderPass 不绑定具体图像，只声明"有一个什么样的附件、怎么用"。
-    VkAttachmentDescription colorAttachment{};
-    // 格式必须与 swapchain 图像一致，否则后面创建 framebuffer 会失败。
-    colorAttachment.format = swapchainImageFormat_;
-    // 单采样，不做 MSAA。
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    // loadOp = CLEAR：render pass 开始时把附件清成 clearValue，每帧清屏就靠它。
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    // storeOp = STORE：渲染结束后保留结果；要呈现到屏幕，必须存。
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    // 没有模板附件，stencil 操作直接 DONT_CARE。
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    // initialLayout = UNDEFINED：不关心旧内容（反正要清屏），允许驱动直接丢弃它。
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    // finalLayout = PRESENT_SRC_KHR：渲染完图像要交给呈现引擎，布局必须转成它。
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+VkSampleCountFlagBits Renderer::pickMsaaSampleCount() const {
+    // 采样数上限是设备属性：颜色附件最多允许多少采样点/像素，按位掩码给出。
+    VkPhysicalDeviceProperties props{};
+    vkGetPhysicalDeviceProperties(physicalDevice_, &props);
+    const VkSampleCountFlags supported =
+        props.limits.framebufferColorSampleCounts;
 
-    // 附件引用：subpass 不直接用附件，而是引用其下标（0 即上面的 colorAttachment），
-    // 并指定渲染期间它处于 COLOR_ATTACHMENT_OPTIMAL 布局（最适合作为渲染目标）。
+    // 移动端 GPU 几乎都支持 4x；8x 显存带宽再翻倍而边缘质量收益很小，
+    // 所以只在 4 → 2 里挑，都不支持就老老实实单采样（走无 resolve 的旧路径）。
+    if (supported & VK_SAMPLE_COUNT_4_BIT) return VK_SAMPLE_COUNT_4_BIT;
+    if (supported & VK_SAMPLE_COUNT_2_BIT) return VK_SAMPLE_COUNT_2_BIT;
+    return VK_SAMPLE_COUNT_1_BIT;
+}
+
+bool Renderer::createColorResources() {
+    // 单采样 = 未启用 MSAA，renderPass/framebuffer 都走旧的单附件路径。
+    if (msaaSamples_ == VK_SAMPLE_COUNT_1_BIT) return true;
+
+    // 多采样颜色图：与 swapchain 图像同尺寸、同格式，只是 samples = N、
+    // 用途是"被绘制"（颜色附件）。resolve 由 subpass 自动完成，不需要
+    // TRANSFER 用途位。创建套路与 createSampledTexture 相同：
+    // 图像 → 查显存需求 → 分配（设备本地）→ 绑定 → 建视图。
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.format = swapchainImageFormat_;
+    imageInfo.extent = {swapchainExtent_.width, swapchainExtent_.height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.samples = msaaSamples_;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    if (vkCreateImage(device_, &imageInfo, nullptr, &msaaColorImage_) != VK_SUCCESS) {
+        EVK_LOGE("msaa vkCreateImage failed");
+        msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+        return false;
+    }
+
+    VkMemoryRequirements memReq;
+    vkGetImageMemoryRequirements(device_, msaaColorImage_, &memReq);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReq.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memReq.memoryTypeBits,
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (vkAllocateMemory(device_, &allocInfo, nullptr, &msaaColorImageMemory_) != VK_SUCCESS) {
+        EVK_LOGE("msaa vkAllocateMemory failed");
+        vkDestroyImage(device_, msaaColorImage_, nullptr);
+        msaaColorImage_ = VK_NULL_HANDLE;
+        msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+        return false;
+    }
+    if (vkBindImageMemory(device_, msaaColorImage_, msaaColorImageMemory_, 0) != VK_SUCCESS) {
+        EVK_LOGE("msaa vkBindImageMemory failed");
+        vkFreeMemory(device_, msaaColorImageMemory_, nullptr);
+        vkDestroyImage(device_, msaaColorImage_, nullptr);
+        msaaColorImageMemory_ = VK_NULL_HANDLE;
+        msaaColorImage_ = VK_NULL_HANDLE;
+        msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+        return false;
+    }
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = msaaColorImage_;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = swapchainImageFormat_;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.layerCount = 1;
+    if (vkCreateImageView(device_, &viewInfo, nullptr, &msaaColorImageView_) != VK_SUCCESS) {
+        EVK_LOGE("msaa vkCreateImageView failed");
+        vkDestroyImage(device_, msaaColorImage_, nullptr);
+        vkFreeMemory(device_, msaaColorImageMemory_, nullptr);
+        msaaColorImage_ = VK_NULL_HANDLE;
+        msaaColorImageMemory_ = VK_NULL_HANDLE;
+        msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+        return false;
+    }
+    return true;
+}
+
+bool Renderer::createRenderPass() {
+    // 附件描述：renderPass 不绑定具体图像，只声明"有一个什么样的附件、怎么用"。
+    //
+    // MSAA 开启时附件变成两个，各司其职：
+    //   [0] swapchain 图像 —— 绘制结果的最终归宿，兼作 resolve 目标；
+    //   [1] MSAA 多采样颜色图 —— 管线真正的绘制目标。
+    // 绘制先写进多采样图（每个像素存 N 个采样点），subpass 结束时硬件把
+    // resolve attachment（指向 [0]）对每像素 N 个采样自动平均成单采样值写回
+    // swapchain 图像——这一步叫 resolve，圆弧/斜边边缘像素因此拿到 0~1 之间的
+    // 渐变覆盖率，而不是"要么整像素要么没有"的硬边，锯齿由此消除。
+    const bool msaaEnabled = msaaSamples_ != VK_SAMPLE_COUNT_1_BIT;
+
+    // 附件 [0]：呈现目标。格式必须与 swapchain 图像一致，否则 framebuffer 创建会失败。
+    VkAttachmentDescription presentAttachment{};
+    presentAttachment.format = swapchainImageFormat_;
+    presentAttachment.samples = VK_SAMPLE_COUNT_1_BIT; // resolve 后落地的图像是单采样
+    // loadOp = CLEAR：render pass 开始时把附件清成 clearValue，每帧清屏就靠它。
+    presentAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    // storeOp = STORE：渲染结束后保留结果；要呈现到屏幕，必须存。
+    presentAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    // 没有模板附件，stencil 操作直接 DONT_CARE。
+    presentAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    presentAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    // initialLayout = UNDEFINED：不关心旧内容（反正要清屏），允许驱动直接丢弃它。
+    presentAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // finalLayout = PRESENT_SRC_KHR：渲染完图像要交给呈现引擎，布局必须转成它。
+    presentAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+    // 附件 [1]：MSAA 多采样颜色图（仅 msaaEnabled 时使用）。
+    VkAttachmentDescription msaaAttachment{};
+    msaaAttachment.format = swapchainImageFormat_;
+    msaaAttachment.samples = msaaSamples_; // 每像素 N 个采样点
+    msaaAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    // storeOp = DONT_CARE：多采样图只在本 subpass 内被绘制+resolve 消费，
+    // 之后内容再无用途，驱动可以不写回显存省带宽。
+    msaaAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    msaaAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    msaaAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    msaaAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    // resolve 之后多采样图的使命结束，停留在通用的颜色附件布局即可（无需呈现）。
+    msaaAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    VkAttachmentDescription attachments[2] = {presentAttachment, msaaAttachment};
+
+    // 附件引用：subpass 不直接用附件，而是引用其下标，并指定渲染期间的布局。
+    // 颜色引用指向多采样图（关闭 MSAA 时就是 [0] 即 swapchain 本身）。
     VkAttachmentReference colorRef{};
-    colorRef.attachment = 0;
+    colorRef.attachment = msaaEnabled ? 1 : 0;
     colorRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-    // 唯一的 subpass：跑图形管线、写 1 个颜色附件。
+    // resolve 引用指向 [0]：subpass 结束时把颜色附件的每像素 N 采样平均写进它。
+    // 数组下标必须与 pColorAttachments 一一对应（这里各只有 1 个）。
+    VkAttachmentReference resolveRef{};
+    resolveRef.attachment = 0;
+    resolveRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+    // 唯一的 subpass：跑图形管线、写 1 个颜色附件（可选 + 1 个 resolve 目标）。
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
+    subpass.pResolveAttachments = msaaEnabled ? &resolveRef : nullptr;
 
     // subpass 依赖：描述"render pass 之外到我们的 subpass"的执行与内存依赖，
     // Vulkan 靠它自动插入布局转换与同步，避免图像还没 acquire 完就被写入。
@@ -666,11 +786,11 @@ bool Renderer::createRenderPass() {
     dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-    // 总装：1 个附件、1 个 subpass、1 条依赖，最小可用 render pass。
+    // 总装：MSAA 时 2 个附件（多采样图 + 呈现图），否则 1 个；subpass 与依赖各 1 条。
     VkRenderPassCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    createInfo.attachmentCount = 1;
-    createInfo.pAttachments = &colorAttachment;
+    createInfo.attachmentCount = msaaEnabled ? 2 : 1;
+    createInfo.pAttachments = attachments;
     createInfo.subpassCount = 1;
     createInfo.pSubpasses = &subpass;
     createInfo.dependencyCount = 1;
@@ -818,11 +938,15 @@ bool Renderer::createGraphicsPipeline() {
     // depthBias 用于阴影贴图类深度偏移，2D 关闭。
     rasterizer.depthBiasEnable = VK_FALSE;
 
-    // 多重采样状态：单采样（每像素 1 个样本），相当于关闭 MSAA。
+    // 多重采样状态：rasterizationSamples 必须与 renderPass 附件声明的一致
+    // （msaaSamples_，移动端通常 4x）。每个像素跑 N 次覆盖测试，边缘像素
+    // 得到 1/N 精度的覆盖率——这就是 MSAA 抗锯齿的全部魔法。
+    // sampleShading 保持关闭：片段着色器每像素仍只跑一次（采样结果广播到
+    // 各采样点），文字的灰度抗锯齿来自字形 atlas 本身，无需逐采样着色。
     VkPipelineMultisampleStateCreateInfo multisampling{};
     multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
     multisampling.sampleShadingEnable = VK_FALSE;
-    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    multisampling.rasterizationSamples = msaaSamples_;
 
     // 颜色混合附件状态：描述这一个颜色附件的写入与混合方式。
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
@@ -925,16 +1049,18 @@ bool Renderer::createFramebuffers() {
     // 每个 swapchain 图像视图都对应一个 framebuffer。
     // 每张图像配一个；渲染时按 acquire 到的 imageIndex 选用对应的那一个。
     swapchainFramebuffers_.resize(swapchainImageViews_.size());
+    const bool msaaEnabled = msaaSamples_ != VK_SAMPLE_COUNT_1_BIT;
     for (size_t i = 0; i < swapchainImageViews_.size(); ++i) {
         // framebuffer 把 render pass 声明的"抽象附件"绑定到具体 imageView；
-        // 数组顺序要与 render pass 的附件下标一一对应。
-        VkImageView attachments[] = {swapchainImageViews_[i]};
+        // 数组顺序要与 render pass 的附件下标一一对应：
+        // [0] 呈现/resolve 目标（swapchain 图像），[1] MSAA 多采样颜色图。
+        VkImageView attachments[] = {swapchainImageViews_[i], msaaColorImageView_};
 
         VkFramebufferCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         // 指定兼容的 render pass（通常就是同一个）。
         createInfo.renderPass = renderPass_;
-        createInfo.attachmentCount = 1;
+        createInfo.attachmentCount = msaaEnabled ? 2 : 1;
         createInfo.pAttachments = attachments;
         // 宽高按 swapchain 尺寸；layers 非立体渲染恒为 1。
         createInfo.width = swapchainExtent_.width;
@@ -1626,6 +1752,20 @@ void Renderer::cleanupSwapchain() {
     vkDestroyPipelineLayout(device_, pipelineLayout_, nullptr);
     vkDestroyRenderPass(device_, renderPass_, nullptr);
 
+    // MSAA 多采样颜色图：尺寸跟随 swapchain，同一批销毁重建。
+    if (msaaColorImageView_ != VK_NULL_HANDLE) {
+        vkDestroyImageView(device_, msaaColorImageView_, nullptr);
+        msaaColorImageView_ = VK_NULL_HANDLE;
+    }
+    if (msaaColorImage_ != VK_NULL_HANDLE) {
+        vkDestroyImage(device_, msaaColorImage_, nullptr);
+        msaaColorImage_ = VK_NULL_HANDLE;
+    }
+    if (msaaColorImageMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(device_, msaaColorImageMemory_, nullptr);
+        msaaColorImageMemory_ = VK_NULL_HANDLE;
+    }
+
     // imageView 与 swapchain 本体最后销。
     for (auto view : swapchainImageViews_) {
         vkDestroyImageView(device_, view, nullptr);
@@ -1642,9 +1782,11 @@ void Renderer::recreateSwapchain() {
     vkDeviceWaitIdle(device_);
     // 然后按 initialize() 里"依赖 swapchain 的那一段"原序重建；
     // 命令池、顶点缓冲、同步对象与尺寸无关，不用动。
+    // MSAA 采样数是设备属性不随 resize 变化，只需重建跟随尺寸的多采样颜色图。
     cleanupSwapchain();
     createSwapchain();
     createImageViews();
+    createColorResources();
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
@@ -1807,9 +1949,15 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     renderPassInfo.renderArea.extent = swapchainExtent_;
 
     // 清屏色：深蓝灰 (0.06, 0.06, 0.09)，作用于 render pass 里 loadOp=CLEAR 的附件。
-    VkClearValue clearColor = {{{0.06f, 0.06f, 0.09f, 1.0f}}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
+    // MSAA 开启时有两个附件（[0] 呈现图、[1] 多采样图）都是 CLEAR，按附件下标
+    // 顺序各给一份；用同一个颜色，resolve 平均后落到屏幕的底色一致。
+    VkClearValue clearColors[2] = {
+        {{{0.06f, 0.06f, 0.09f, 1.0f}}},
+        {{{0.06f, 0.06f, 0.09f, 1.0f}}},
+    };
+    renderPassInfo.clearValueCount =
+        msaaSamples_ != VK_SAMPLE_COUNT_1_BIT ? 2 : 1;
+    renderPassInfo.pClearValues = clearColors;
 
     // INLINE 表示命令直接录在这条 primary 缓冲里（另一种是执行 secondary 缓冲）。
     vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);

@@ -60,6 +60,22 @@ private:
     bool createLogicalDevice();
     bool createSwapchain();
     bool createImageViews();
+    /**
+     * @brief 查设备 MSAA 采样数上限，取 4→2→1 中最先被支持的一档。
+     *
+     * 颜色附件的可用采样数是设备属性（limits.framebufferColorSampleCounts），
+     * 只依赖物理设备，initialize 时查一次即可，resize 不必重查。
+     * 上限封在 4x：8x 显存带宽再翻倍，边缘质量收益却很小。
+     */
+    VkSampleCountFlagBits pickMsaaSampleCount() const;
+    /**
+     * @brief 创建 MSAA 多重采样颜色图（图像 + 显存 + 视图）。
+     *
+     * 尺寸/格式与 swapchain 图像一致，采样数为 msaaSamples_。管线画进这张
+     * 多采样图，subpass 结束时由 resolve attachment 自动平均回 swapchain 图像。
+     * msaaSamples_ 为 1 时是空操作；分配失败则降级为单采样（宁可锯齿也不黑屏）。
+     */
+    bool createColorResources();
     bool createRenderPass();
     bool createGraphicsPipeline();
     bool createFramebuffers();
@@ -125,6 +141,13 @@ private:
     std::vector<VkImageView> swapchainImageViews_;
     VkFormat swapchainImageFormat_ = VK_FORMAT_UNDEFINED;
     VkExtent2D swapchainExtent_{};
+
+    // ---- MSAA 多重采样设施：几何边缘抗锯齿 ----
+    /// 实际启用的采样数（pickMsaaSampleCount 选出；1 = 未启用 MSAA）。
+    VkSampleCountFlagBits msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+    VkImage msaaColorImage_ = VK_NULL_HANDLE;       ///< 多采样颜色图（管线真正的绘制目标）
+    VkDeviceMemory msaaColorImageMemory_ = VK_NULL_HANDLE;
+    VkImageView msaaColorImageView_ = VK_NULL_HANDLE; ///< 挂进 framebuffer 的视图
 
     VkRenderPass renderPass_ = VK_NULL_HANDLE;
     VkPipelineLayout pipelineLayout_ = VK_NULL_HANDLE;
