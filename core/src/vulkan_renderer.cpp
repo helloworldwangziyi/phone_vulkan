@@ -647,6 +647,10 @@ bool Renderer::createColorResources() {
     // 用途是"被绘制"（颜色附件）。resolve 由 subpass 自动完成，不需要
     // TRANSFER 用途位。创建套路与 createSampledTexture 相同：
     // 图像 → 查显存需求 → 分配（设备本地）→ 绑定 → 建视图。
+    //
+    // TRANSIENT 声明这张图只在 render pass 内存活（storeOp 已是 DONT_CARE），
+    // 再配 LAZILY_ALLOCATED 显存：tile GPU（移动端主流）把多采样数据全程
+    // 留在片上，4x 全屏 RGBA8 这块显存根本不必真实分配出来，省十几 MB 带宽与占用。
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -656,7 +660,8 @@ bool Renderer::createColorResources() {
     imageInfo.arrayLayers = 1;
     imageInfo.samples = msaaSamples_;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
+                      VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (vkCreateImage(device_, &imageInfo, nullptr, &msaaColorImage_) != VK_SUCCESS) {
@@ -667,11 +672,40 @@ bool Renderer::createColorResources() {
 
     VkMemoryRequirements memReq;
     vkGetImageMemoryRequirements(device_, msaaColorImage_, &memReq);
+
+    // 优先 DEVICE_LOCAL + LAZILY_ALLOCATED（findMemoryType 找不到会静默返回 0，
+    // 无法区分"第 0 类"与"没找到"，这里自己扫）。桌面端常没有 lazy 类型，
+    // 那就退回不带 TRANSIENT 的普通设备本地显存——功能一样，只是少了省显存的优化。
+    VkPhysicalDeviceMemoryProperties memProps;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &memProps);
+    constexpr VkMemoryPropertyFlags kLazyLocal =
+        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+    uint32_t memoryType = UINT32_MAX;
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        if ((memReq.memoryTypeBits & (1u << i)) &&
+            (memProps.memoryTypes[i].propertyFlags & kLazyLocal) == kLazyLocal) {
+            memoryType = i;
+            break;
+        }
+    }
+    if (memoryType == UINT32_MAX) {
+        vkDestroyImage(device_, msaaColorImage_, nullptr);
+        msaaColorImage_ = VK_NULL_HANDLE;
+        imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+        if (vkCreateImage(device_, &imageInfo, nullptr, &msaaColorImage_) != VK_SUCCESS) {
+            EVK_LOGE("msaa vkCreateImage (non-transient) failed");
+            msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
+            return false;
+        }
+        vkGetImageMemoryRequirements(device_, msaaColorImage_, &memReq);
+        memoryType = findMemoryType(memReq.memoryTypeBits,
+                                    VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    }
+
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memReq.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memReq.memoryTypeBits,
-        VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    allocInfo.memoryTypeIndex = memoryType;
     if (vkAllocateMemory(device_, &allocInfo, nullptr, &msaaColorImageMemory_) != VK_SUCCESS) {
         EVK_LOGE("msaa vkAllocateMemory failed");
         vkDestroyImage(device_, msaaColorImage_, nullptr);
@@ -1300,15 +1334,19 @@ constexpr int kMaxDescriptorSets = 64;
  * "顶点色 × 纹理 r 通道"，纯色批次采样到 1 即直出顶点色。
  */
 bool Renderer::createTextureResources() {
-    // 采样器：线性过滤（文字边缘抗锯齿靠它插值覆盖率），无 mipmap。
+    // 采样器：线性过滤（文字边缘抗锯齿靠它插值覆盖率）+ 三线性 mip
+    // （业务位图缩小采样时在相邻两级 mip 间再插值一次，消除闪烁锯齿）。
+    // maxLod 拉到 VK_LOD_CLAMP_NONE：实际采样层数被各纹理自身的 levelCount
+    // 钳住——白纹理和 atlas 页只有 1 级，自动退化为普通线性过滤。
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
     samplerInfo.magFilter = VK_FILTER_LINEAR;
     samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-    samplerInfo.maxLod = 0.0f;
+    samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
     if (vkCreateSampler(device_, &samplerInfo, nullptr, &sampler_) != VK_SUCCESS) {
         EVK_LOGE("vkCreateSampler failed");
         return false;
@@ -1343,8 +1381,8 @@ bool Renderer::createTextureResources() {
         return false;
     }
 
-    // 白纹理也是 RGBA8；其四个通道在上传阶段显式写为 255。
-    if (!createSampledTexture(whiteTexture_, 1, 1)) {
+    // 白纹理也是 RGBA8；其四个通道在上传阶段显式写为 255。单级 mip。
+    if (!createSampledTexture(whiteTexture_, 1, 1, 1)) {
         return false;
     }
 
@@ -1425,16 +1463,18 @@ bool Renderer::ensureTextureUploadCapacity(uint32_t frameSlot,
  * @param tex 目标纹理对象
  * @param width 图像宽（像素）
  * @param height 图像高（像素）
+ * @param mipLevels mip 链层数；>1 时视图覆盖全部层级，上传逐层写入
  * @return true 表示创建成功
  */
 bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width,
-                                    uint32_t height) {
+                                    uint32_t height, uint32_t mipLevels) {
+    tex.mipLevels = std::max(1u, mipLevels);
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
     imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     imageInfo.extent = {width, height, 1};
-    imageInfo.mipLevels = 1;
+    imageInfo.mipLevels = tex.mipLevels;
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -1474,7 +1514,7 @@ bool Renderer::createSampledTexture(TextureObj& tex, uint32_t width,
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
     viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.levelCount = tex.mipLevels;
     viewInfo.subresourceRange.layerCount = 1;
     if (vkCreateImageView(device_, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
         EVK_LOGE("vkCreateImageView failed");
@@ -1534,9 +1574,14 @@ void Renderer::ensureStoreTextures() {
     for (int id = 1; id <= count; ++id) {
         TextureObj& tex = storeTextures_[id];
         if (tex.image == VK_NULL_HANDLE) {
+            // 业务位图建完整 mip 链（缩小采样抗锯齿）；atlas 页注册时
+            // 标了 mipmapped=false，保持单级。
+            const ui::TextureId textureId = static_cast<ui::TextureId>(id);
+            const uint32_t mipLevels = store.mipmapped(textureId)
+                                           ? store.mipLevelCount(textureId) : 1;
             TextureObj created;
-            if (!createSampledTexture(created, store.width(static_cast<ui::TextureId>(id)),
-                                      store.height(static_cast<ui::TextureId>(id)))) {
+            if (!createSampledTexture(created, store.width(textureId),
+                                      store.height(textureId), mipLevels)) {
                 // 本帧建不出就留空槽，下一帧重试；期间该纹理的绘制退化为白块。
                 EVK_LOGW("texture {} unavailable; retried next frame", id);
                 continue;
@@ -1557,19 +1602,20 @@ void Renderer::ensureStoreTextures() {
 void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
     auto& store = ui::TextureStore::instance();
 
-    // 收集本帧要传的纹理。所有像素随后转换成 Vulkan 要求的 RGBA 字节序，
-    // 连续写入当前帧独占的中转缓冲。
+    // 收集本帧要传的纹理。mipmapped 位图要带上整条 mip 链
+    // （各级 RGBA8 紧密排列，CPU 预生成），单级纹理 size 仍等于 w*h*4。
     struct PendingCopy {
         TextureObj* tex;
         ui::TextureId textureId;
         VkDeviceSize size;
         uint32_t width, height;
+        uint32_t mipLevels;
         bool white;
     };
     std::vector<PendingCopy> copies;
     VkDeviceSize total = 0;
     if (whiteTexture_.pendingUpload) {
-        copies.push_back({&whiteTexture_, ui::kInvalidTexture, 4, 1, 1, true});
+        copies.push_back({&whiteTexture_, ui::kInvalidTexture, 4, 1, 1, 1, true});
         total += 4;
     }
     for (size_t id = 1; id < storeTextures_.size(); ++id) {
@@ -1584,9 +1630,10 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         if (tex.pendingUpload) {
             const uint32_t w = store.width(textureId);
             const uint32_t h = store.height(textureId);
-            const VkDeviceSize size = static_cast<VkDeviceSize>(w) * h * 4;
+            const VkDeviceSize size =
+                static_cast<VkDeviceSize>(store.mipChainBytes(textureId));
             if (size > 0) {
-                copies.push_back({&tex, textureId, size, w, h, false});
+                copies.push_back({&tex, textureId, size, w, h, tex.mipLevels, false});
                 total += size;
             }
         }
@@ -1613,9 +1660,9 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         uint8_t* destination = static_cast<uint8_t*>(mapped) + offset;
         if (copy.white) {
             std::memset(destination, 0xFF, 4);
-        } else if (!store.copyRgbaBytes(copy.textureId, destination,
-                                        static_cast<size_t>(copy.size))) {
-            EVK_LOGE("texture {} RGBA conversion failed", copy.textureId);
+        } else if (!store.copyMipChain(copy.textureId, destination,
+                                       static_cast<size_t>(copy.size))) {
+            EVK_LOGE("texture {} mip chain conversion failed", copy.textureId);
             vkUnmapMemory(device_, textureUploadMemorys_[frameSlot]);
             return;
         }
@@ -1623,7 +1670,8 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
     }
     vkUnmapMemory(device_, textureUploadMemorys_[frameSlot]);
 
-    // 逐个纹理：屏障到 TRANSFER_DST → 拷贝 → 屏障到 SHADER_READ_ONLY。
+    // 逐个纹理：屏障到 TRANSFER_DST（整条 mip 链）→ 逐级拷贝 →
+    // 屏障到 SHADER_READ_ONLY。各级一次布局转换即可，无需逐层折腾。
     offset = 0;
     for (const PendingCopy& copy : copies) {
         VkImageMemoryBarrier toDst{};
@@ -1632,7 +1680,7 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         toDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         toDst.image = copy.tex->image;
         toDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        toDst.subresourceRange.levelCount = 1;
+        toDst.subresourceRange.levelCount = copy.mipLevels;
         toDst.subresourceRange.layerCount = 1;
         // 首次上传从 UNDEFINED 开始；脏纹理重传时必须声明它当前的采样布局。
         toDst.oldLayout = copy.tex->uploaded
@@ -1648,16 +1696,28 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
                              VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
                              nullptr, 1, &toDst);
 
-        VkBufferImageCopy region{};
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.layerCount = 1;
-        region.imageExtent = {copy.width, copy.height, 1};
-        region.bufferOffset = offset;
-        // RGBA 紧密排列：行间距 = 宽度（纹素），无对齐填充。
-        region.bufferRowLength = copy.width;
-        region.bufferImageHeight = copy.height;
-        vkCmdCopyBufferToImage(cmd, textureUploadBuffers_[frameSlot], copy.tex->image,
-                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        // mip 链在缓冲中级间紧密排列：逐级一个 copy region，
+        // region 的 mipLevel 指层、extent 逐级缩半、bufferOffset 顺序前进。
+        VkDeviceSize levelOffset = offset;
+        uint32_t levelW = copy.width;
+        uint32_t levelH = copy.height;
+        for (uint32_t level = 0; level < copy.mipLevels; ++level) {
+            VkBufferImageCopy region{};
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = level;
+            region.imageSubresource.layerCount = 1;
+            region.imageExtent = {levelW, levelH, 1};
+            region.bufferOffset = levelOffset;
+            // RGBA 紧密排列：行间距 = 宽度（纹素），无对齐填充。
+            region.bufferRowLength = levelW;
+            region.bufferImageHeight = levelH;
+            vkCmdCopyBufferToImage(cmd, textureUploadBuffers_[frameSlot],
+                                   copy.tex->image,
+                                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            levelOffset += static_cast<VkDeviceSize>(levelW) * levelH * 4;
+            levelW = std::max(1u, levelW >> 1);
+            levelH = std::max(1u, levelH >> 1);
+        }
 
         VkImageMemoryBarrier toRead{};
         toRead.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1665,7 +1725,7 @@ void Renderer::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot) {
         toRead.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         toRead.image = copy.tex->image;
         toRead.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        toRead.subresourceRange.levelCount = 1;
+        toRead.subresourceRange.levelCount = copy.mipLevels;
         toRead.subresourceRange.layerCount = 1;
         toRead.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         toRead.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;

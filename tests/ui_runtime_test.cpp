@@ -1,6 +1,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -514,6 +515,30 @@ void testCanvas2dPrimitives() {
     assert(rgbaBytes[12] == 0x00 && rgbaBytes[13] == 0x00 &&
            rgbaBytes[14] == 0x00 && rgbaBytes[15] == 0x00);
     assert(!store.copyRgbaBytes(tex, rgbaBytes, sizeof(rgbaBytes) - 1));
+
+    // mip 链：2x2 位图应有 2 级（2x2 → 1x1），链总长 16 + 4 = 20 字节；
+    // level 1 是四个源像素的「按 alpha 加权预乘平均」。
+    assert(store.mipmapped(tex));
+    assert(store.mipLevelCount(tex) == 2);
+    assert(store.mipChainBytes(tex) == 20);
+    uint8_t mipChain[20] = {};
+    assert(store.copyMipChain(tex, mipChain, sizeof(mipChain)));
+    // level 0 与 copyRgbaBytes 导出完全一致。
+    assert(std::memcmp(mipChain, rgbaBytes, 16) == 0);
+    // level 1：sumA = 765 → a = (765+2)/4 = 191；
+    // r = (255*(255+34+99) + 765/2)/765 = 129，g = 189，b = 245。
+    assert(mipChain[16] == 129 && mipChain[17] == 189 &&
+           mipChain[18] == 245 && mipChain[19] == 191);
+    assert(!store.copyMipChain(tex, mipChain, sizeof(mipChain) - 1));
+
+    // 非 mipmapped 纹理（字形 atlas 页的方式）：恒 1 级，链 = 原图本身。
+    const evk::ui::TextureId flat = store.addTexture(2, 2, pixels, false);
+    assert(!store.mipmapped(flat));
+    assert(store.mipLevelCount(flat) == 1);
+    assert(store.mipChainBytes(flat) == 16);
+    uint8_t flatBytes[16] = {};
+    assert(store.copyMipChain(flat, flatBytes, sizeof(flatBytes)));
+    assert(std::memcmp(flatBytes, rgbaBytes, 16) == 0);
     canvas.drawImage(tex, {0.0f, 0.0f, 20.0f, 20.0f}, clip);
     assert(canvas.vertices().size() - n == 6);
     assert(canvas.batches().back().textureId == tex);

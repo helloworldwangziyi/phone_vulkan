@@ -96,12 +96,18 @@ private:
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
         VkDescriptorSet set = VK_NULL_HANDLE;
+        uint32_t mipLevels = 1;  ///< mip 链层数（业务位图 >1，白纹理/atlas 页为 1）
         bool uploaded = false;     ///< true = 当前布局为 SHADER_READ_ONLY_OPTIMAL
         bool pendingUpload = true; ///< 新建/脏页：待首个命令缓冲里上传像素
     };
 
     bool createTextureResources();
-    bool createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height);
+    /**
+     * @param mipLevels mip 链层数：>1 时上传阶段逐层写入（缩小采样抗锯齿）；
+     *                  1 表示无 mip（白纹理、字形 atlas 页）
+     */
+    bool createSampledTexture(TextureObj& tex, uint32_t width, uint32_t height,
+                              uint32_t mipLevels);
     bool ensureTextureUploadCapacity(uint32_t frameSlot, VkDeviceSize required);
     void destroyTextureResources();
     void ensureStoreTextures();

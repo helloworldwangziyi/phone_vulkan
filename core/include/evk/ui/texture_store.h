@@ -30,9 +30,13 @@ public:
      * @param width 宽（像素）
      * @param height 高（像素）
      * @param rgbaPixels 每像素一个 0xRRGGBBAA；nullptr 表示全透明初始化
+     * @param mipmapped true = 上传时为它生成完整 mip 链（缩小采样抗锯齿）；
+     *                  字形 atlas 页传 false——页会反复改传，且低级 mip
+     *                  会把相邻字形糊在一起
      * @return 纹理句柄（从 1 起，单调递增）
      */
-    TextureId addTexture(uint32_t width, uint32_t height, const uint32_t* rgbaPixels);
+    TextureId addTexture(uint32_t width, uint32_t height, const uint32_t* rgbaPixels,
+                         bool mipmapped = true);
 
     /// 已注册纹理数（最大有效 id = textureCount()）。
     int textureCount() const;
@@ -59,6 +63,30 @@ public:
     bool copyRgbaBytes(TextureId id, uint8_t* destination,
                        size_t destinationSize) const;
 
+    /// 该纹理是否生成 mip 链（注册时指定；false 时以下两个接口按 1 级处理）。
+    bool mipmapped(TextureId id) const;
+
+    /**
+     * @brief 完整 mip 链层数：逐级缩半直到 1x1。非 mipmapped 纹理恒为 1。
+     */
+    uint32_t mipLevelCount(TextureId id) const;
+
+    /// 完整 mip 链的总字节数（各级 RGBA8、行紧密、级间紧密排列）。
+    size_t mipChainBytes(TextureId id) const;
+
+    /**
+     * @brief 导出整个 mip 链：level 0 为原图，之后逐级 2x2 缩半。
+     *
+     * 缩半用「按 alpha 加权的预乘平均」：颜色先乘透明度再求均值，
+     * 避免普通 box filter 把全透明像素的颜色混进半透明边缘（光晕）。
+     * @param id 纹理句柄
+     * @param destination 接收缓冲，容量至少为 mipChainBytes(id)
+     * @param destinationSize 缓冲字节数
+     * @return 参数及容量有效时返回 true
+     */
+    bool copyMipChain(TextureId id, uint8_t* destination,
+                      size_t destinationSize) const;
+
     /// 读取并清除脏标记；true = 需要整张重新上传。
     bool consumeDirty(TextureId id);
 
@@ -75,6 +103,7 @@ private:
         uint32_t width = 0;
         uint32_t height = 0;
         std::vector<uint32_t> data; ///< 每像素 0xRRGGBBAA，行紧密排列
+        bool mipmapped = true; ///< 上传时是否生成 mip 链（业务位图开，atlas 页关）
         bool dirty = true; ///< 新建/被改：待渲染器整张上传
     };
 

@@ -239,9 +239,13 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
                 return nullptr;
             }
             AtlasPage page;
+            // atlas 页不要 mip 链：页会随新字形反复重传（每级都要重算），
+            // 而且文字恒 1:1 采样用不到缩小过滤，低级 mip 还会把相邻字形
+            // 糊在一起（留边只有 1px）。
             page.texture = TextureStore::instance().addTexture(
                 static_cast<uint32_t>(kAtlasPageSize),
-                static_cast<uint32_t>(kAtlasPageSize), nullptr);
+                static_cast<uint32_t>(kAtlasPageSize), nullptr,
+                /*mipmapped=*/false);
             pageIndex = static_cast<int>(pages_.size());
             pages_.push_back(std::move(page));
         }
