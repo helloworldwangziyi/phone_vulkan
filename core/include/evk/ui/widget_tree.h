@@ -2,40 +2,49 @@
 
 /**
  * @file widget_tree.h
- * @brief 声明式 UI 的「图纸 ↔ 工地」机制：Widget 描述树、Element 挂载树与状态容器。
+ * @brief 声明式 UI 核心：Widget（界面描述）→ Element（常驻协调节点）→ View（真实渲染节点）。
  *
- * @details 把整个 UI 系统想象成一个装修工地，三个角色各司其职：
+ * @details 框架里有三棵树，职责分开：
  *
- *   - **Widget = 设计图纸**。设计师（build()）每次都重新画一整沓新图纸，
- *     画完旧图纸立刻作废——图纸本身是不可变的，要改只能画新的。
- *   - **Element = 工地工位**。每张图纸上的构件，在工地上都有一个对应的
- *     驻场工位；工位持有真正建成的实体（View），跨多次翻新存活。
- *   - **View = 建成的实体构件**（墙、柜子、灯具……），真正参与布局、命中
- *     与绘制。
+ *   - **Widget 树**：不可变的「界面描述」。每次 build() 都返回一棵全新的
+ *     Widget 树，回答「界面现在应该是什么样」。Widget 不持有任何运行时
+ *     状态，用完即弃——要改界面只能造新 Widget。
+ *   - **Element 树**：常驻的协调节点树，与 Widget 树位置一一对应。每个
+ *     Element 持有当前 Widget 的副本，并（直接或间接）持有一个 View；
+ *     它跨多次重建存活，负责把新旧两份描述逐个位置对比，决定复用还是
+ *     重建。
+ *   - **View 树**：真正干活的节点——布局（handleBoundsChanged 级联）、
+ *     绘制（paint → Canvas）、命中测试（hitTest）。由 Element 创建并
+ *     持有，App 不直接操作。
  *
- * 一次翻新（setState）的流程：
+ * 一次 setState 的完整流程：
  * @code
- *   ① 在记事本上改一笔          State::setState 的 mutate()
- *   ② 设计师按记事本重画图纸     State::build()
- *   ③ 每个工位对照新旧图纸       Element::updateChild
- *        ├─ 同类构件  → 就地微调 update → updateElement （不拆工位，状态保留）
- *        └─ 构件换类型 → 拆工位重建 unmount → createElement → mount
+ *   ① 改状态         State::setState 的 mutate()
+ *   ② 生成新描述     State::build() 返回一棵全新 Widget 树
+ *   ③ 逐位置对比     Element::updateChild：
+ *       ├─ 同位置同类型 → Element::update：换掉 Widget 副本，就地微调
+ *       │                 View（View 与其内部状态——滚动偏移、按压态——保留）
+ *       ├─ 类型变了     → 旧子树 unmount 销毁，新子树 mount 重建
+ *       └─ 新描述为空   → 旧子树 unmount 销毁
+ *   ④ 标记重绘       requestRender()，下一个 VSync 才真正构建并提交帧
  * @endcode
  *
- * 图纸分四种，对应四种工位（对照 Flutter 同名类）：
- *   - StatelessWidget    → StatelessElement：自己不产实体，每次 build 画子图纸；
- *   - StatefulWidget     → StatefulElement：工位多一本记事本（State），
- *                          生命周期 hook 与 setState 都在这本记事本上；
- *   - RenderObjectWidget → RenderObjectElement：实体构件图纸，create/update
- *                          对应真实 View；
- *   - ProxyWidget        → ProxyElement：不产实体的「转接件」，只包一张子图纸，
- *                          顺手在孩子的便签上添几笔（Expanded/Center 就干这个）。
+ * 四类 Widget 与四类 Element 一一对应（命名对照 Flutter）：
+ *   - StatelessWidget    → StatelessElement：不产生 View；rebuild = 重新
+ *                          build 出子 Widget 后继续对比下去；
+ *   - StatefulWidget     → StatefulElement：挂一个 State 对象，页面状态、
+ *                          生命周期 hook、setState 都在 State 上；
+ *   - RenderObjectWidget → RenderObjectElement：唯一直接创建并持有 View
+ *                          的 Widget/Element（Container/Text/ScrollView…）；
+ *   - ProxyWidget        → ProxyElement：不产生 View，只在传递中修改子
+ *                          Widget 的排布参数（Expanded/Center）。
  *
- * 与 Flutter 的差异：无 key 机制（同位置同类型即复用）、无独立 RenderObject
- * 层（Element 直接持有 View）、setState 同步 rebuild（Flutter 延迟到帧）。
+ * 与 Flutter 的差异：无 key（同位置同类型即复用）、无独立 RenderObject
+ * 层（Element 直接持有 View）、setState 同步完成重建（Flutter 延迟到帧）。
  *
- * @see evk::ui::View 实体构件（render_view.h）
- * @see evk::ui::FlexParentData 图纸上写给父布局的便签（layout/flex_layout.h）
+ * @see evk::ui::View 渲染节点（render_view.h）
+ * @see evk::ui::FlexParentData Widget 向 Column/Row 声明排布参数的结构
+ * （layout/flex_layout.h）
  */
 
 #include <cstdint>
@@ -60,10 +69,10 @@ class State;
 class StatefulWidget;
 
 /**
- * @brief 工位发给设计师的「工作证」：build() 里凭它找到导航器与实体。
+ * @brief build() 里能拿到的框架句柄，由 Element 自己实现。
  *
- * 设计师在 build() 里画图纸时，手上只有这张工作证，不能直接碰工地上的
- * 其他工位。需要跳页（navigator().push）或取当前实体的信息时，都从它出发。
+ * build() 里访问不到其他 Element，只能通过它：navigator() 用于跳页，
+ * renderObject() 取本节点对应的 View（读取信息用，不要直接改）。
  */
 class BuildContext {
 public:
@@ -87,37 +96,36 @@ enum class RouteEvent {
 };
 
 /**
- * @brief 设计图纸基类：只描述「这里该是什么样」，不可变、用完即弃。
+ * @brief 界面描述基类：不可变，build() 每次造新的，用完即弃。
  *
- * 图纸上写了三件事：
- *   1. 该派哪类工人（createElement，由四种 Widget 子类各自回答）；
- *   2. 新旧图纸对照规则（canUpdate：默认同类型即同类，决定工位「微调」
- *      还是「拆了重建」）；
- *   3. 写给父布局的便签（flexParentData：我在 Flex 容器里想占多大、对齐哪边）。
+ * 框架对一张 Widget 只做三件事：
+ *   1. 它首次出现（或同位置类型变化重建）时，调 createElement() 造一个
+ *      常驻 Element；
+ *   2. 重建对比时调 canUpdate()：返回 true → 旧 Element 就地复用（微调），
+ *      false → 销毁旧子树、重建新子树；
+ *   3. 父容器是 Column/Row 时读 flexParentData()，取它的排布参数。
  */
 class Widget {
 public:
     virtual ~Widget() = default;
 
-    // 图纸不可变：禁止拷贝（要变就画一张新的），只允许把图纸「递」给工位。
+    // 不可变：禁止拷贝（要变就造新的），只允许移动（所有权交给 Element 持有）。
     Widget(const Widget&) = delete;
     Widget& operator=(const Widget&) = delete;
     Widget(Widget&&) = default;
     Widget& operator=(Widget&&) = default;
 
-    /// 图纸上写的工人派遣令：这张图纸该由哪类工位承接（由子类实现）。
+    /// 造本 Widget 对应的常驻 Element。仅在首次出现或类型变化重建时被调一次。
     virtual std::unique_ptr<Element> createElement() const = 0;
 
-    /// 新旧图纸对照：默认「同一类型」就算同一构件，工位可复用。
+    /// 同位置的新旧 Widget 是否算「同一个东西」：默认同类型即可复用 Element。
     virtual bool canUpdate(const Widget& other) const {
         return typeid(*this) == typeid(other);
     }
 
     /**
-     * @brief 图纸上写给父布局的便签（Flutter 的 parent data）。
-     *
-     * 只在父容器是 Flex（Column/Row）时被读取：主轴尺寸、弹性系数、
-     * 交叉轴尺寸与对齐、间距。普通父容器根本不看这张便签。
+     * @brief 向 Column/Row 父容器声明排布参数（主轴尺寸、flex 系数、
+     *        交叉轴约束与对齐）。父容器不是 Flex 时不会被读取。
      */
     virtual FlexParentData flexParentData(Axis axis) const;
 
@@ -126,97 +134,98 @@ protected:
 };
 
 /**
- * @brief 分包图纸：自己不直接对应实体，每次 build() 画一张子图纸交差。
+ * @brief 无状态组件：不产生 View，rebuild 时重新 build 出子 Widget 树。
  *
- * 典型用途：把一段固定的子树（标题栏、徽章行）包成一个可复用组件——
- * 状态不变时每次重建它只是「重画子图纸」，工位不会动。
+ * 用途：把一段子树封装成可复用组件。重建时它只是再 build 一遍，
+ * 下方子树仍走正常的对比复用流程。
  */
 class StatelessWidget : public Widget {
 public:
     std::unique_ptr<Element> createElement() const override;
 
-    /// 画子图纸。context 是工位发的工作证（拿导航器/实体用）。
+    /// 生成子描述树。context 由本组件的 Element 提供（拿导航器/View 用）。
     virtual std::unique_ptr<Widget> build(BuildContext& context) const = 0;
 };
 
 /**
- * @brief 带记事本的图纸：工位会为它专门配一本 State 记事本。
+ * @brief 有状态组件：对应的 Element 会持有一个 State 对象。
  *
- * Widget 本身依旧不可变；可变的东西（页码、勾选、请求状态……）全部记在
- * State 里。同一位置的新旧 StatefulWidget 只要类型相同，工位与记事本都会
- * 复用——这就是「重建后状态还在」的根基。
+ * Widget 本身依然不可变；所有可变数据（页码、勾选、加载状态……）放在
+ * State 里。同位置同类型重建时 Element 与 State 都保留——这就是
+ * 「界面重建了，但状态还在」的原因。
  */
 class StatefulWidget : public Widget {
 public:
     std::unique_ptr<Element> createElement() const override;
 
-    /// 为新工位配一本新记事本。
+    /// 为本组件的 Element 创建 State。仅在 Element 首次 mount 时调用一次。
     virtual std::unique_ptr<State> createState() const = 0;
 };
 
 /**
- * @brief 工位的记事本：页面唯一允许「可变」的地方。
+ * @brief 页面的可变状态与生命周期容器（对应 Flutter 的 State）。
  *
- * 分工铁律：Widget 描述不可变，State 可变。改界面的正确姿势永远是
- * 「记事本上改一笔 → setState → 设计师重画图纸 → 工地 diff」，
- * 而不是直接去搬工地上的实体。
+ * 分工铁律：Widget 不可变、State 可变。改界面的唯一路径是
+ * 「改 State 字段 → setState() → build() 生成新描述 → 框架对比重建」，
+ * 不要直接改 View。
  *
- * 生命周期（对照 Flutter 的 State）：
+ * 生命周期（由 StatefulElement 驱动，顺序固定）：
  * @code
- *   attach → initState → build → didMount
- *   （每次 setState：mutate → build → reconcile → requestRender）
- *   unmount → dispose → detach
+ *   mount 时：attach → initState → 首次 build → didMount
+ *   setState：mutate → build → 子树对比重建 → requestRender
+ *   销毁时 ：dispose → detach
  * @endcode
- * 导航四段旅程（onWillEnter/onDidEnter/onWillLeave/onDidLeave）由
- * StatefulElement 在 RouteEvent 到达时转发过来。
+ * 导航旅程 hook（onWillEnter 等）由导航栈经 StatefulElement 转发，
+ * Will* 返回 false 可否决本次导航（见 RouteEvent）。
  */
 class State {
 public:
     virtual ~State() = default;
 
-    /// 记事本刚挂上工位（attach 后、首次 build 前）——一次性的初始化。
+    /// 首次 build 之前调用一次：一次性初始化。
     virtual void initState() {}
 
-    /// 首次 build 完成、实体已挂上工地之后——注册事件监听的时机。
+    /// 首次 build 完成、View 已挂树之后调用一次：注册事件监听的时机。
     virtual void didMount() {}
 
-    /// 工位拆除前——释放外部资源、取消在飞请求的最后机会。
+    /// 子树销毁前调用：释放外部资源、取消在飞请求的最后时机。
     virtual void dispose() {}
 
-    /// 按记事本画图纸（唯一必写的方法）。
+    /// 生成界面描述（唯一必须实现的方法）。会被频繁调用，必须便宜。
     virtual std::unique_ptr<Widget> build(BuildContext& context) = 0;
 
-    /// 导航 hook：返回 false 可拦截本次进入。
+    /// 导航 hook：返回 false 可否决本次进入。
     virtual bool onWillEnter(bool) { return true; }
     /// 导航 hook：已进入台前（发起请求/订阅数据的时机）。
     virtual void onDidEnter(bool) {}
-    /// 导航 hook：返回 false 可拦截本次离开（如未保存表单）。
+    /// 导航 hook：返回 false 可否决本次离开（如未保存表单）。
     virtual bool onWillLeave(bool) { return true; }
     /// 导航 hook：已离开台前。
     virtual void onDidLeave(bool) {}
 
-    /// 记事本是否还挂在工位上（未挂上的 setState 会被忽略）。
+    /// State 是否仍挂在 Element 上。false 时 setState 会被忽略（页面已 pop）。
     bool mounted() const;
 
-    /// 工作证（build 之外也能用它拿导航器）。
+    /// 框架句柄：build 之外也能拿导航器。
     BuildContext& context() const;
 
-    /// 本工位当前承接的图纸（StatefulWidget 配置）。
+    /// 本 Element 当前持有的 Widget 配置（重建后指向新 Widget）。
     const StatefulWidget& widget() const;
 
-    /// 把图纸动态转成具体类型（如 widgetAs<HomePage>() 读配置字段）。
+    /// 把 Widget 配置转成具体类型（如 widgetAs<HomePage>() 读配置字段）。
     template <typename T>
     const T& widgetAs() const {
         return dynamic_cast<const T&>(widget());
     }
 
     /**
-     * @brief 翻新入口：改一笔记事本，然后重画图纸并 diff 到工地。
+     * @brief 触发界面重建：先执行 mutate 改状态，再 build 出新描述，
+     *        同步完成子树对比重建，最后 requestRender 标记重绘。
      *
-     * @param mutate 先执行的记事本修改（可空：状态已在别处改好，只触发重建）。
+     * @param mutate 状态修改（可空：状态已在别处改好，只触发重建）。
      *
-     * @note 重建是同步立即完成的（与 Flutter 延迟到帧不同），
-     *       build() 必须便宜：别发请求、别重计算。
+     * @note 重建是同步完成的（与 Flutter 延迟到帧不同），build() 必须
+     *       便宜：别发请求、别重计算。mounted() 为 false 时调用无效。
      */
     void setState(std::function<void()> mutate = {});
 
@@ -225,18 +234,18 @@ public:
      *
      * @param eventId   事件 id（App 自定义，从 1 起）
      * @param priority  派发优先级
-     * @param handler   回调；scope 自动绑定本工位的实体视图——
-     *                  页面被导航覆盖时收不到事件（隐式 pause）
+     * @param handler   回调；自动绑定本节点的 View——页面被导航覆盖时
+     *                  收不到事件（隐式 pause）
      */
     void listen(
         int32_t eventId,
         EventPriority priority,
         std::function<void(const void* data)> handler);
 
-    /// 挂上工位（框架内部调用）。
+    /// 绑定到 Element（框架内部调用，mount 路径）。
     void attach(Element* element);
 
-    /// 离开工位（框架内部调用）。
+    /// 与 Element 解绑（框架内部调用，unmount 路径）。
     void detach();
 
 private:
@@ -245,14 +254,15 @@ private:
 };
 
 /**
- * @brief 实体构件图纸：这张图纸上的构件，会在工地上建成一个真实的 View。
+ * @brief 直接对应一个 View 的 Widget（Container/Text/ScrollView…）。
  *
- * 与 Flutter 的 RenderObjectWidget 同名同构，只是「渲染对象」简化为
- * retained 的 View 树节点。四个问题由子类回答：
- *   - createRenderObject：怎么造实体；
- *   - updateRenderObject：同类型图纸微调时怎么改实体；
- *   - children/childParent：孩子图纸在哪、建成后挂到哪个实体上；
- *   - configureChild：孩子落位后，给它写排布参数（Flex 靠这个工作）。
+ * 对应 Flutter 的 RenderObjectWidget，只是渲染对象简化为常驻 View。
+ * 框架在不同阶段问子类四个问题：
+ *   - createRenderObject：首次 mount 时——怎么造 View（造完挂到父 View 下）；
+ *   - updateRenderObject：同类型重建时——怎么把新参数应用到已存在的 View；
+ *   - children / childParent：子 Widget 有哪些、它们的 View 挂到哪个
+ *     View 下（ScrollViewWidget 借此把孩子挂进滚动 content）；
+ *   - configureChild：子 View 落位后——写排布参数（Flex 靠它布局）。
  */
 class RenderObjectWidget : public Widget {
 public:
@@ -266,11 +276,10 @@ public:
 };
 
 /**
- * @brief 转接件图纸：工地上不产实体，只包一张子图纸。
+ * @brief 不产生 View 的转接 Widget：只为修改子 Widget 的排布参数。
  *
- * 它存在的意义是「在孩子的便签上添几笔」：Expanded 把 flex 写进便签，
- * Center 把交叉轴对齐改成正中——自己不出实体，孩子的实体还是孩子的。
- * 对照 Flutter 的 ProxyWidget（Expanded/Center 都是它）。
+ * Expanded 把 flex 系数写进参数，Center 把交叉轴对齐改成居中；
+ * 最终显示的 View 仍是子 Widget 造的那个。对应 Flutter 的 ProxyWidget。
  */
 class ProxyWidget : public Widget {
 public:
@@ -284,9 +293,7 @@ protected:
     std::unique_ptr<Widget> child_;
 };
 
-/**
- * @brief 四边内边距（Padding 的图纸参数）。
- */
+/// 四边内边距（Padding 的参数）。
 struct EdgeInsets {
     float left = 0.0f;
     float top = 0.0f;
@@ -299,11 +306,11 @@ struct EdgeInsets {
 };
 
 /**
- * @brief 万能砖块：背景色 + 可选描边/圆角 + 点击 + 自绘。
+ * @brief 通用块级组件：背景色 + 可选描边/圆角 + 点击 + 自绘。
  *
  * 一个类顶 Flutter 的 Container + GestureDetector + CustomPaint。
- * 有 onTap 才注册点击回调（无 onTap 的 Container 不成为触控目标）；
- * painter 在帧构建期间被调用，只能用 PaintContext 画，不能改视图树。
+ * 传了 onTap 才成为触控目标；painter 在帧构建期间被调用，只能经
+ * PaintContext 绘制，不能改视图树。
  */
 class Container final : public RenderObjectWidget {
 public:
@@ -320,7 +327,7 @@ public:
 };
 
 /**
- * @brief 位图 Widget：把 TextureStore 纹理拉伸铺满自身边界。
+ * @brief 位图组件：把 TextureStore 纹理拉伸铺满自身边界。
  *
  * 无固有尺寸——在容器里跟随拉伸（配合 SizedBox/Expanded 控制大小）；
  * 顶点色恒白即原样贴图。要染色/九宫格时用 Container::painter 自绘。
@@ -336,9 +343,7 @@ private:
     TextureId texture_; ///< TextureStore 句柄
 };
 
-/**
- * @brief 按钮图纸：包 Button 控件（自带 pressed 状态机与禁用态）。
- */
+/// 按钮组件：包 Button 控件（自带 pressed 状态机与禁用态）。
 class Button final : public RenderObjectWidget {
 public:
     ButtonStyle style;
@@ -351,12 +356,12 @@ public:
 };
 
 /**
- * @brief Flex 线性容器图纸（Column/Row 的公共基类）。
+ * @brief 线性容器（Column/Row 的公共基类）。
  *
- * 工地上的实体是 FlexView：先扣固定项与间距，剩余主轴空间按 flex 系数
- * 分给弹性项（Expanded）。子视图的排布参数全部来自孩子图纸上的
- * flexParentData 便签——所以「App 不写 layout 函数」，尺寸一变
- * FlexView 自动级联重排。
+ * 对应的 View 是 FlexView：主轴空间先扣固定项与间距，剩余按 flex 系数
+ * 分给弹性项（Expanded）。每个孩子的排布参数来自其 Widget 的
+ * flexParentData()——所以 App 不写布局函数：尺寸变化时 FlexView 经
+ * handleBoundsChanged 自动级联重排。
  */
 class Flex : public RenderObjectWidget {
 public:
@@ -388,10 +393,10 @@ public:
 };
 
 /**
- * @brief 可滚动容器图纸：包 ScrollView 控件（拖动/惯性/回弹）。
+ * @brief 可滚动容器（拖动 / 惯性 / 回弹）。
  *
- * 单子节点：孩子建成后挂到滚动的 content 实体上（childParent 重定向）。
- * contentHeight 由 App 显式给出（v1 无测量、无懒构建）；滚动 offset 是
+ * 单子组件：子 View 挂到滚动 content 实体下（childParent 重定向）。
+ * contentHeight 由 App 显式给出（v1 无测量、无懒构建）；滚动偏移是
  * 控件内部状态，重建后保留。
  */
 class ScrollViewWidget final : public RenderObjectWidget {
@@ -416,9 +421,9 @@ private:
 };
 
 /**
- * @brief 转接件：把孩子的 flex 便签改成「吃满剩余主轴空间」。
+ * @brief 转接组件：让孩子在 Column/Row 里按 flex 系数瓜分剩余主轴空间。
  *
- * 对照 Flutter 的 Expanded。flex 参数 = 弹性系数（多个 Expanded 按比例分）。
+ * 对应 Flutter 的 Expanded。多个 Expanded 按 flex 比例分配。
  */
 class Expanded final : public ProxyWidget {
 public:
@@ -435,7 +440,7 @@ private:
  * @brief 固定尺寸盒子：给孩子一个明确的宽高。
  *
  * 宽或高传 -1 表示该方向不约束（如 SizedBox(-1, 540, child) 只定高度）。
- * 工地上对应的 SizedBoxView 会在自身尺寸变化时把孩子塞满。
+ * 对应的 SizedBoxView 会在自身尺寸变化时把孩子塞满。
  */
 class SizedBox final : public RenderObjectWidget {
 public:
@@ -455,10 +460,9 @@ private:
 };
 
 /**
- * @brief 内边距盒子：孩子的实体缩进 insets 后塞进剩余空间。
+ * @brief 内边距盒子：孩子的 View 缩进 insets 后占据剩余空间。
  *
- * 便签上会把 insets 折算进自己对外报的尺寸（Flex 父容器看到的尺寸
- * = 孩子尺寸 + 内边距）。
+ * 对 Column/Row 父容器上报的排布尺寸 = 孩子尺寸 + 内边距。
  */
 class Padding final : public RenderObjectWidget {
 public:
@@ -477,10 +481,10 @@ private:
 };
 
 /**
- * @brief 居中转接件：把孩子的交叉轴对齐改成正中。
+ * @brief 居中转接组件：把孩子的交叉轴对齐改成居中。
  *
- * 对照 Flutter 的 Center（本质是 Align）。注意它不产实体：需要背景色时
- * 外面再包一层 Container。
+ * 对应 Flutter 的 Center（本质是 Align）。注意它不产生 View：需要
+ * 背景色时外面再包一层 Container。
  */
 class Center final : public ProxyWidget {
 public:
@@ -517,16 +521,26 @@ private:
 };
 
 /**
- * @brief 工地工位基类：Widget 描述树的「驻场工人」，持有真实实体。
+ * @brief 常驻协调节点：持有一份 Widget 副本，并（直接或间接）持有一个
+ *        View，跨多次重建存活。
  *
- * 一棵 Widget 描述树 mount 后，就变成一棵一一对应的 Element 树——
- * 图纸是每次重建画新的，工位是跨重建存活的。工位的四项基本功：
+ * 框架对 Element 的四个操作，调用者都是框架本身：
  *
- *   - mount：拿到新图纸与挂靠位置，firstMount 首次施工；
- *   - update：换上新图纸，updateElement 微调实体（不拆工位）；
- *   - unmount：拆除——先拆孩子与实体，再撕记事本；
- *   - updateChild（交接算法）：对照新旧子图纸决定每个孩子「微调」还是
- *     「换工人」，见实现文件里的大段注释。
+ *   - mount：子树「上岗」。两种时机——该位置首次出现（mountWidget），
+ *     或同位置 Widget 类型变化、旧子树销毁后的重建（updateChild）。
+ *     做的事：保存 Widget 副本、父 Element、View 挂靠点与导航器，
+ *     标记 mounted，然后 firstMount() 一次性构建（造 View / 配 State /
+ *     建孩子）。从此在岗，直到 unmount；
+ *   - update：同位置、同类型的新 Widget 到达时就地微调——换掉 Widget
+ *     副本，updateElement() 把新参数应用到现有结构上。View 与其内部
+ *     状态（滚动偏移、按压态……）全部保留；
+ *   - rebuild：让子树与当前 Widget 重新同步。各子类做法不同：
+ *     Stateless 重新 build、Stateful 调 State::build、RenderObject
+ *     微调 View 并逐子对比；
+ *   - unmount：销毁整棵子树——先拆孩子与 View，再销毁 State。
+ *
+ * updateChild() 是唯一的「新旧对比」规则（相当于 Flutter 的
+ * Element::updateChild），实现见 widget_tree.cpp。
  */
 class Element : public BuildContext {
 public:
@@ -539,60 +553,70 @@ public:
     const Widget& widget() const { return *widget_; }
     bool mounted() const { return mounted_; }
 
+    /**
+     * @brief 子树上岗：绑定新 Widget 与挂靠信息，然后 firstMount()
+     *        一次性构建（造 View / 配 State / 建孩子）。框架内部调用。
+     */
     void mount(
         std::unique_ptr<Widget> widget,
         Element* parent,
         View* renderParent,
         Navigator* navigator);
 
-    /// 换图纸微调（前提：canUpdate 判定同类型）。
+    /// 就地微调：换成同类型的新 Widget，updateElement() 应用新参数。
     void update(std::unique_ptr<Widget> widget);
 
-    /// 重画（各类工位各干各的：stateless 重 build、stateful 问记事本、render 微调实体）。
+    /// 让子树与当前 Widget 重新同步（各子类实现不同，见类注释）。
     virtual void rebuild() = 0;
 
-    /// 拆除工位：拆孩子 → 拆实体 → 撕记事本，再清空自身。
+    /// 销毁子树：先拆孩子与 View，再清空自身（StatefulElement 还会销毁 State）。
     virtual void unmount();
 
-    /// 导航旅程转发：StatefulElement 转发给 State 的 hook，其余沿子树下沉。
+    /// 导航事件下沉转发：StatefulElement 先问 State 的 hook，再传给子树。
     virtual bool dispatchRouteEvent(RouteEvent event, bool forward);
 
 protected:
     Element() = default;
 
-    /// 首次施工（mount 时调用一次）。
+    /// 首次构建（mount 时恰好调用一次）。
     virtual void firstMount() = 0;
 
-    /// 换图纸时的微调动作。
+    /// update 时把新 Widget 的参数应用到现有结构。
     virtual void updateElement() = 0;
 
     /**
-     * @brief 交接算法核心：把一张新子图纸交给一个工位槽。
+     * @brief 唯一的对比规则：把一个子位置的新 Widget 与旧 Element 对齐
+     *        ——复用微调、或销毁重建（规则见 widget_tree.cpp）。
      *
-     * @param child        待交接的工位槽（可空）
-     * @param widget       新子图纸（空 = 撤掉这个孩子）
-     * @param renderParent 孩子实体应挂靠的实体父节点
+     * @param child        该位置的旧 Element 槽（可被替换成新 Element）
+     * @param widget       新 Widget（空 = 该位置撤销，销毁旧子树）
+     * @param renderParent 孩子的 View 应挂到的父 View
      */
     void updateChild(
         std::unique_ptr<Element>& child,
         std::unique_ptr<Widget> widget,
         View* renderParent);
 
-    std::unique_ptr<Widget> widget_;   ///< 当前承接的图纸（对照用）
-    Element* parent_ = nullptr;        ///< 工位树上的父工位
-    View* renderParent_ = nullptr;     ///< 实体应挂靠的实体父节点
-    Navigator* navigator_ = nullptr;   ///< 导航器（BuildContext 用）
+    std::unique_ptr<Widget> widget_;   ///< 当前持有的 Widget 副本（对比基准）
+    Element* parent_ = nullptr;        ///< Element 树上的父节点
+    View* renderParent_ = nullptr;     ///< 子 View 应挂到的父 View
+    Navigator* navigator_ = nullptr;   ///< 导航器（BuildContext::navigator 用）
     bool mounted_ = false;             ///< 是否在岗
 };
 
 /**
- * @brief 开工入口：一张图纸 → 一个在岗工位。
+ * @brief 顶层入口：把一张根 Widget 变成一棵在岗的 Element 子树。
  *
- * @param widget       根图纸
- * @param renderParent 根实体挂靠点（页面根传 nullptr 表示游离，随后被导航接管）
+ * 流程：widget->createElement() 造根 Element → element->mount(...) 绑定
+ * 挂靠信息并 firstMount()；firstMount 内部经 updateChild 递归，整棵
+ * 子树一次建好。
+ *
+ * @param widget       根 Widget
+ * @param renderParent 根 View 的挂靠点；页面根传 nullptr（先游离，
+ *                     随后由导航栈接管）
  * @param navigator    导航器
- * @param parent       工位树父工位（根传 nullptr）
- * @return 建成的工位；图纸为空返回 nullptr
+ * @param parent       Element 树父节点（根传 nullptr）
+ * @return 建好的 Element 根；widget 为空返回 nullptr
  */
 std::unique_ptr<Element> mountWidget(
     std::unique_ptr<Widget> widget,
@@ -600,13 +624,13 @@ std::unique_ptr<Element> mountWidget(
     Navigator* navigator,
     Element* parent = nullptr);
 
-/// 建造辅助：Args 完美转发构造一张图纸（makeWidget<Container>(color)）。
+/// 构造辅助：完美转发造一个 Widget（makeWidget<Container>(color)）。
 template <typename W, typename... Args>
 std::unique_ptr<Widget> makeWidget(Args&&... args) {
     return std::make_unique<W>(std::forward<Args>(args)...);
 }
 
-/// 建造辅助：多张图纸装进一个列表（column/row 的参数收集）。
+/// 构造辅助：把多个 Widget 收进一个列表（column/row 的参数收集）。
 template <typename... Widgets>
 std::vector<std::unique_ptr<Widget>> widgetList(Widgets&&... widgets) {
     std::vector<std::unique_ptr<Widget>> result;
@@ -615,7 +639,7 @@ std::vector<std::unique_ptr<Widget>> widgetList(Widgets&&... widgets) {
     return result;
 }
 
-/// 建造辅助：纵向 Flex 图纸。
+/// 构造辅助：纵向 Flex 描述。
 template <typename... Widgets>
 std::unique_ptr<Widget> column(Widgets&&... widgets) {
     return makeWidget<Column>(widgetList(std::forward<Widgets>(widgets)...));
@@ -625,7 +649,7 @@ inline std::unique_ptr<Widget> column(std::vector<std::unique_ptr<Widget>> widge
     return makeWidget<Column>(std::move(widgets));
 }
 
-/// 建造辅助：横向 Flex 图纸。
+/// 构造辅助：横向 Flex 描述。
 template <typename... Widgets>
 std::unique_ptr<Widget> row(Widgets&&... widgets) {
     return makeWidget<Row>(widgetList(std::forward<Widgets>(widgets)...));
@@ -635,7 +659,7 @@ inline std::unique_ptr<Widget> row(std::vector<std::unique_ptr<Widget>> widgets)
     return makeWidget<Row>(std::move(widgets));
 }
 
-// ---- 小写工厂：一行画一张常用图纸（HomePage 的 build 全靠它们）----
+// ---- 小写工厂：build() 里的简写，一行造一个常用组件（HomePage 的 build 全靠它们）----
 
 std::unique_ptr<Widget> container(
     uint32_t color = 0,

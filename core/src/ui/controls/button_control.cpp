@@ -1,3 +1,8 @@
+/**
+ * @file button_control.cpp
+ * @brief ButtonView 的实现：按压状态机与配色切换。
+ */
+
 #include "evk/ui/controls/button_control.h"
 
 #include <utility>
@@ -9,6 +14,13 @@
 namespace evk::ui {
 namespace {
 
+/**
+ * @brief 按钮对应的 View：Down 按下着色、Move 出界取消、Up 界内松手
+ *        触发 onPressed、Cancel 复位。
+ *
+ * pressed 是 View 内部状态，widget 重建（updateButtonView）不打断——
+ * 除非被禁用（updateButtonView 会兜底取消进行中的按压）。
+ */
 class ButtonView final : public View {
 public:
     ButtonStyle style;

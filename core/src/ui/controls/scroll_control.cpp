@@ -1,3 +1,9 @@
+/**
+ * @file scroll_control.cpp
+ * @brief 滚动控件实现：ScrollView（手势 → 偏移）、ScrollContentView
+ *        （单子填充布局）、ScrollAnimation（fling 惯性 / 回弹状态机）。
+ */
+
 #include "evk/ui/controls/scroll_control.h"
 
 #include <algorithm>
@@ -13,12 +19,24 @@
 namespace evk::ui {
 namespace {
 
+/// 橡皮筋阻尼系数：越界部分的显示位移打 0.45 折。
 constexpr float kRubberBand = 0.45f;
+/// 松手速度低于该值不起 fling（避免轻蹭就滑走）。
 constexpr float kFlingMinVelocity = 50.0f;
+/// fling 衰减到该值以下即停（px/s）。
 constexpr float kFlingStopVelocity = 30.0f;
+/// fling 减速度（px/s²），越大滑停得越快。
 constexpr float kFlingDeceleration = 2400.0f;
+/// 回弹动画时长（250ms，easeOutCubic）。
 constexpr int64_t kSpringDurationNanos = 250'000'000;
 
+/**
+ * @brief 滚动视口：位置固定的容器，持有内容尺寸、跟手偏移与显示偏移。
+ *
+ * rawX/rawY 是未钳制的跟手值（手势直接累加），offsetX/offsetY 是经
+ * 橡皮筋阻尼后的显示值；手势（handlePan）只改 raw*，渲染与 onScroll
+ * 回调只看 offset*。松手时按是否越界、速度大小进入回弹或 fling。
+ */
 class ScrollView final : public View {
 public:
     View* content = nullptr;
@@ -151,6 +169,12 @@ public:
     void startScrollAnimation(bool springOnly, float velocityX, float velocityY);
 };
 
+/**
+ * @brief content 层：ScrollView 的唯一孩子，App 子树的挂载点。
+ *
+ * 自身 bounds 被 ScrollView 写成 (-offset, -offset, 内容宽, 内容高) 来
+ * 实现平移；bounds 变化时把唯一孩子塞满自己，让子树整体跟随。
+ */
 class ScrollContentView final : public View {
 public:
     void handleBoundsChanged() override {
@@ -160,6 +184,10 @@ public:
     }
 };
 
+/**
+ * @brief 一次滚动动画的状态：spring = 回弹插值（from → to），否则
+ *        fling 惯性（速度按 kFlingDeceleration 衰减，越界即转入回弹）。
+ */
 struct ScrollAnimation {
     ViewRef viewport;
     bool spring = false;

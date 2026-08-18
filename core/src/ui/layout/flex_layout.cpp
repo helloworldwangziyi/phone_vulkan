@@ -1,3 +1,9 @@
+/**
+ * @file flex_layout.cpp
+ * @brief FlexView 的实现：两段式排布（先扣固定项与间距，剩余按 flex
+ *        系数分配），交叉轴按对齐规则摆放。
+ */
+
 #include "evk/ui/layout/flex_layout.h"
 
 #include <algorithm>
@@ -9,6 +15,14 @@
 namespace evk::ui {
 namespace {
 
+/**
+ * @brief Flex 容器对应的 View：持有每个孩子的 FlexParentData，自身
+ *        bounds 变化或孩子增删时全量重排。
+ *
+ * 没有增量布局与测量缓存：每棵子树尺寸变化都触发一次 O(n) 重排，
+ * 靠「n 小 + 纯算术」保证便宜（对照 Flutter 的 RenderFlex 同理，
+ * 只是它走完整的 constraints 协议）。
+ */
 class FlexView final : public View {
 public:
     Axis axis = Axis::Vertical;
@@ -19,6 +33,11 @@ public:
         return index < parentData.size() ? parentData[index] : fallback;
     }
 
+    /**
+     * 两段式排布：第一遍累加固定项（mainSize >= 0）与前/后间距，得出
+     * 剩余主轴空间；第二遍定每个孩子的主轴尺寸（固定值或按 flex 瓜分
+     * 剩余），再按交叉轴规则算偏移与尺寸，写 bounds（触发孩子级联）。
+     */
     void layoutChildren() {
         const bool vertical = axis == Axis::Vertical;
         const float mainExtent = vertical ? rect.h : rect.w;
