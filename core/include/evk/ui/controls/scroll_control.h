@@ -7,7 +7,8 @@
  * 结构：ScrollView（视口，位置固定）内挂一层 content View，App 的子树
  * 挂在 content 下；滚动 = 把 content 平移到 (-offsetX, -offsetY)，视口外
  * 的部分由 View::paint 逐层收敛的 clip 天然裁掉，无需特判。横向与纵向
- * 可同时滚动（content 可比视口更宽、更高）。
+ * 都可滚动（content 可比视口更宽、更高）；一段拖动手势按主方向锁定
+ * 单轴——横竖互斥，不斜向跟手。
  *
  * 滚动偏移是 View 的内部状态而非 Widget 配置，widget 重建后保留——
  * updateScrollView 只在内容尺寸变化时才收编越界，避免无条件钳制打断
@@ -39,6 +40,28 @@ View* scrollContent(View& scrollView);
 /// 同类型重建时应用新参数；仅内容尺寸变化时才收编越界偏移。
 void updateScrollView(
     View& scrollView,
+    float contentWidth,
+    float contentHeight,
+    std::function<void(float offsetX, float offsetY)> onScroll = {});
+
+/**
+ * @brief 造一个列表滚动视口：content 按固定行高纵向堆叠全部孩子。
+ *
+ * 行高固定（对照 Flutter ListView 的 itemExtent）：第 i 行位置
+ * = (0, i × itemExtent)，免测量。contentWidth 可大于视口宽——横向与
+ * 纵向同时可滚（行情表格：上下翻行、左右看更多列）。v1 为全量构建，
+ * 无懒加载。
+ */
+std::unique_ptr<View> createListView(
+    float itemExtent,
+    float contentWidth,
+    float contentHeight,
+    std::function<void(float offsetX, float offsetY)> onScroll = {});
+
+/// 同类型重建时应用列表参数（行高 / 内容尺寸 / 回调）。
+void updateListView(
+    View& listView,
+    float itemExtent,
     float contentWidth,
     float contentHeight,
     std::function<void(float offsetX, float offsetY)> onScroll = {});

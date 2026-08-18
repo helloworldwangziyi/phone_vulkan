@@ -30,12 +30,20 @@ constexpr float kFlingDeceleration = 2400.0f;
 /// 回弹动画时长（250ms，easeOutCubic）。
 constexpr int64_t kSpringDurationNanos = 250'000'000;
 
+/// 手势方向锁：一段拖动手势只滚一个轴（表格横竖互斥，避免斜向跟手）。
+enum class PanAxis {
+    None,
+    Horizontal,
+    Vertical,
+};
+
 /**
  * @brief 滚动视口：位置固定的容器，持有内容尺寸、跟手偏移与显示偏移。
  *
  * rawX/rawY 是未钳制的跟手值（手势直接累加），offsetX/offsetY 是经
  * 橡皮筋阻尼后的显示值；手势（handlePan）只改 raw*，渲染与 onScroll
  * 回调只看 offset*。松手时按是否越界、速度大小进入回弹或 fling。
+ * 双轴都可滚时按方向锁单轴响应（见 handlePan）。
  */
 class ScrollView final : public View {
 public:
@@ -51,6 +59,8 @@ public:
     float snappedH = -1.0f;
     std::function<void(float, float)> onScroll;
     bool animating = false;
+    /// 本段手势锁定的轴（Begin 时按主方向决定，End/Cancel/Down 复位）。
+    PanAxis panAxis = PanAxis::None;
 
     bool acceptsPointerInput() const override { return true; }
     bool acceptsPanInput() const override { return true; }
@@ -109,6 +119,7 @@ public:
     void handlePointer(const PointerEvent& event) override {
         if (event.action == PointerAction::Down) {
             animating = false;
+            panAxis = PanAxis::None;
             rawX = offsetX;
             rawY = offsetY;
         }
@@ -118,28 +129,46 @@ public:
         const bool canX = maxOffsetX() > 0.0f;
         const bool canY = maxOffsetY() > 0.0f;
         switch (event.state) {
-            case PanState::Begin:
+            case PanState::Begin: {
                 animating = false;
-                rawX = offsetX - (canX ? event.deltaX : 0.0f);
-                rawY = offsetY - (canY ? event.deltaY : 0.0f);
+                // 方向锁：Begin 的位移是按下以来的全程位移（已超 slop），
+                // 主方向即锁定方向；主方向不可滚时退到另一轴。
+                const float absX = std::fabs(event.deltaX);
+                const float absY = std::fabs(event.deltaY);
+                if (canX && (!canY || absX > absY)) {
+                    panAxis = PanAxis::Horizontal;
+                } else if (canY) {
+                    panAxis = PanAxis::Vertical;
+                }
+                rawX = offsetX -
+                       (panAxis == PanAxis::Horizontal ? event.deltaX : 0.0f);
+                rawY = offsetY -
+                       (panAxis == PanAxis::Vertical ? event.deltaY : 0.0f);
                 applyRawOffset(true);
                 break;
+            }
             case PanState::Update:
-                if (canX) {
+                // 只累加锁定轴的位移，另一轴的分量整段丢弃。
+                if (panAxis == PanAxis::Horizontal) {
                     rawX -= event.deltaX;
                 }
-                if (canY) {
+                if (panAxis == PanAxis::Vertical) {
                     rawY -= event.deltaY;
                 }
                 applyRawOffset(true);
                 break;
             case PanState::End: {
+                const PanAxis axis = panAxis;
+                panAxis = PanAxis::None;
                 if (rawOverscrolled()) {
                     startScrollAnimation(true, 0.0f, 0.0f);
                     break;
                 }
-                const float flingX = canX ? -event.velocityX : 0.0f;
-                const float flingY = canY ? -event.velocityY : 0.0f;
+                // fling 同样只取锁定轴的速度分量。
+                const float flingX =
+                    axis == PanAxis::Horizontal ? -event.velocityX : 0.0f;
+                const float flingY =
+                    axis == PanAxis::Vertical ? -event.velocityY : 0.0f;
                 if (std::fabs(flingX) >= kFlingMinVelocity ||
                     std::fabs(flingY) >= kFlingMinVelocity) {
                     startScrollAnimation(false, flingX, flingY);
@@ -147,6 +176,7 @@ public:
                 break;
             }
             case PanState::Cancel:
+                panAxis = PanAxis::None;
                 if (rawOverscrolled()) {
                     startScrollAnimation(true, 0.0f, 0.0f);
                 }
@@ -182,6 +212,33 @@ public:
             children.front()->setBounds(0.0f, 0.0f, rect.w, rect.h);
         }
     }
+};
+
+/**
+ * @brief 列表 content 层：固定行高纵向堆叠全部孩子（ListView 的布局）。
+ *
+ * 与 ScrollContentView 的差异：不是塞满唯一孩子，而是把第 i 个孩子放到
+ * (0, i × itemExtent, 内容宽, itemExtent)。随滚动整体平移的逻辑不变。
+ * 行数变化（孩子增删）或自身尺寸变化时全量重排——行高固定使重排是
+ * 纯算术 O(n)，差异比对避免无变化时的级联。
+ */
+class ListContentView final : public View {
+public:
+    float itemExtent = 0.0f;
+
+    void layoutRows() {
+        for (size_t i = 0; i < children.size(); ++i) {
+            View* child = children[i].get();
+            const float y = itemExtent * static_cast<float>(i);
+            if (child->rect.x != 0.0f || child->rect.y != y ||
+                child->rect.w != rect.w || child->rect.h != itemExtent) {
+                child->setBounds(0.0f, y, rect.w, itemExtent);
+            }
+        }
+    }
+
+    void handleBoundsChanged() override { layoutRows(); }
+    void handleChildRemoved(size_t) override { layoutRows(); }
 };
 
 /**
@@ -295,9 +352,9 @@ void ScrollView::startScrollAnimation(
     });
 }
 
-} // namespace
-
-std::unique_ptr<View> createScrollView(
+/// 创建公共路径：造 ScrollView 视口并挂入指定的 content 层。
+std::unique_ptr<View> makeScrollView(
+    std::unique_ptr<View> contentView,
     float contentWidth,
     float contentHeight,
     std::function<void(float, float)> onScroll) {
@@ -305,9 +362,52 @@ std::unique_ptr<View> createScrollView(
     scroll->contentWidth = std::max(0.0f, contentWidth);
     scroll->contentHeight = std::max(0.0f, contentHeight);
     scroll->onScroll = std::move(onScroll);
-    scroll->content = scroll->addChild(std::make_unique<ScrollContentView>());
+    scroll->content = scroll->addChild(std::move(contentView));
     scroll->setDisplayedOffset(0.0f, 0.0f, false);
     return scroll;
+}
+
+} // namespace
+
+std::unique_ptr<View> createScrollView(
+    float contentWidth,
+    float contentHeight,
+    std::function<void(float, float)> onScroll) {
+    return makeScrollView(
+        std::make_unique<ScrollContentView>(),
+        contentWidth,
+        contentHeight,
+        std::move(onScroll));
+}
+
+std::unique_ptr<View> createListView(
+    float itemExtent,
+    float contentWidth,
+    float contentHeight,
+    std::function<void(float, float)> onScroll) {
+    auto content = std::make_unique<ListContentView>();
+    content->itemExtent = std::max(0.0f, itemExtent);
+    return makeScrollView(
+        std::move(content), contentWidth, contentHeight, std::move(onScroll));
+}
+
+void updateListView(
+    View& listView,
+    float itemExtent,
+    float contentWidth,
+    float contentHeight,
+    std::function<void(float, float)> onScroll) {
+    updateScrollView(listView, contentWidth, contentHeight, std::move(onScroll));
+    View* content = scrollContent(listView);
+    auto* list = dynamic_cast<ListContentView*>(content);
+    if (!list) {
+        return;
+    }
+    const float extent = std::max(0.0f, itemExtent);
+    if (list->itemExtent != extent) {
+        list->itemExtent = extent;
+        list->layoutRows();
+    }
 }
 
 View* scrollContent(View& scrollView) {

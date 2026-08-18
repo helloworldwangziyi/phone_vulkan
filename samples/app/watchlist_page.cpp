@@ -38,8 +38,12 @@ constexpr uint32_t kColorDivider = 0xFFFFFF1A;  ///< 行间 0.5px 分隔线
 constexpr uint32_t kColorToastBg = 0xF7EAC8FF;  ///< Toast 米色气泡
 constexpr uint32_t kColorToastText = 0x232227FF;
 
-/// 数字列右边缘（图纸 x 右缘）：最新 / 涨跌 / 涨跌幅 / 成交。
-constexpr float kColumnRight[] = {158.0f, 228.0f, 298.0f, 368.0f};
+/// 数字列右边缘（图纸 x 右缘）：最新 / 涨跌 / 涨跌幅 / 成交 / 持仓 / 日增仓。
+/// 后两列超出 375 图纸宽——列表横向加宽后左右滑动查看（双轴列表演示）。
+constexpr float kColumnRight[] = {158.0f, 228.0f, 298.0f, 368.0f, 446.0f, 520.0f};
+
+/// 列表内容宽（图纸 px）：最后一列右缘 + 12 边距。大于视口才横向可滚。
+constexpr float kContentWidth = 532.0f;
 
 /// 底部 Tab 选中项的持久化 key（KeyValueStore），跨启动保持。
 constexpr const char* kKeyBottomNav = "watchlist.bottomNav";
@@ -54,12 +58,16 @@ struct QuoteRow {
     double change = 0.0;
     double pct = 0.0;
     double volume = 0.0;
+    double position = 0.0;       ///< 持仓量
+    double positionDelta = 0.0;  ///< 日增仓（可负）
     bool main = true;  ///< 是否带「M」主力徽章
     // ---- 展示串（syncTexts 刷新）----
     std::string priceText;
     std::string changeText;
     std::string pctText;
     std::string volumeText;
+    std::string positionText;
+    std::string deltaText;
     bool up = true;
 };
 
@@ -75,6 +83,13 @@ std::string format2(double v) {
     return buf;
 }
 
+/// 带符号整数（日增仓：+123 / -45）。
+std::string formatSigned(double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof(buf), "%+.0f", v);
+    return buf;
+}
+
 void syncTexts(QuoteRow& row) {
     row.change = row.price - row.preClose;
     row.pct = row.preClose > 0.0 ? row.change / row.preClose * 100.0 : 0.0;
@@ -83,6 +98,8 @@ void syncTexts(QuoteRow& row) {
     row.changeText = format2(row.change);
     row.pctText = format2(row.pct) + "%";
     row.volumeText = format0(row.volume);
+    row.positionText = format0(row.position);
+    row.deltaText = formatSigned(row.positionDelta);
 }
 
 /// 文本绘制小助手：measureText 量出行盒后按对齐方式落 drawText。
@@ -114,28 +131,31 @@ void drawTextCentered(evk::ui::PaintContext& paint, const char* s, float centerX
 class WatchlistPageState final : public evk::ui::State {
 public:
     WatchlistPageState() {
-        // 初始自选股：名称/代码/昨结/最新/成交量/主力。涨跌由昨结算出。
+        // 初始自选股：名称/代码/昨结/最新/成交量/持仓量/日增仓/主力。
+        // 涨跌由昨结算出。
         struct Seed {
             const char* name;
             const char* code;
             double preClose;
             double price;
             double volume;
+            double position;
+            double positionDelta;
             bool main;
         };
         const Seed seeds[] = {
-            {"花生201", "SV201", 8520.0, 8524.0, 36523.0, true},
-            {"豆粕405", "M405", 3048.0, 3052.0, 281130.0, true},
-            {"棕榈209", "P209", 7860.0, 7842.0, 152340.0, true},
-            {"豆油301", "Y301", 7978.0, 7996.0, 98450.0, false},
-            {"螺纹410", "RB410", 3538.0, 3542.0, 402110.0, true},
-            {"铁矿501", "I501", 780.0, 776.0, 210340.0, true},
-            {"白糖309", "SR309", 5688.0, 5698.0, 88720.0, false},
-            {"棉花501", "CF501", 13420.0, 13455.0, 45210.0, true},
-            {"橡胶307", "RU307", 14105.0, 14130.0, 62180.0, false},
-            {"甲醇505", "MA505", 2480.0, 2476.0, 150020.0, true},
-            {"纯碱601", "SA601", 1522.0, 1531.0, 198760.0, true},
-            {"玻璃505", "FG505", 1080.0, 1086.0, 234560.0, false},
+            {"花生201", "SV201", 8520.0, 8524.0, 36523.0, 98654.0, 1230.0, true},
+            {"豆粕405", "M405", 3048.0, 3052.0, 281130.0, 1250340.0, 18520.0, true},
+            {"棕榈209", "P209", 7860.0, 7842.0, 152340.0, 452310.0, -8320.0, true},
+            {"豆油301", "Y301", 7978.0, 7996.0, 98450.0, 385420.0, 5210.0, false},
+            {"螺纹410", "RB410", 3538.0, 3542.0, 402110.0, 1820450.0, 24310.0, true},
+            {"铁矿501", "I501", 780.0, 776.0, 210340.0, 965230.0, -12680.0, true},
+            {"白糖309", "SR309", 5688.0, 5698.0, 88720.0, 352140.0, 4320.0, false},
+            {"棉花501", "CF501", 13420.0, 13455.0, 45210.0, 218760.0, 2140.0, true},
+            {"橡胶307", "RU307", 14105.0, 14130.0, 62180.0, 198650.0, -1560.0, false},
+            {"甲醇505", "MA505", 2480.0, 2476.0, 150020.0, 685240.0, 9840.0, true},
+            {"纯碱601", "SA601", 1522.0, 1531.0, 198760.0, 756320.0, 15230.0, true},
+            {"玻璃505", "FG505", 1080.0, 1086.0, 234560.0, 524180.0, -6210.0, false},
         };
         rows_.reserve(sizeof(seeds) / sizeof(seeds[0]));
         for (const Seed& seed : seeds) {
@@ -145,6 +165,8 @@ public:
             row.preClose = seed.preClose;
             row.price = seed.price;
             row.volume = seed.volume;
+            row.position = seed.position;
+            row.positionDelta = seed.positionDelta;
             row.main = seed.main;
             syncTexts(row);
             rows_.push_back(std::move(row));
@@ -190,7 +212,6 @@ public:
         using namespace evk::ui;
         auto page = std::make_unique<Column>(widgetList(
             buildTabStrip(),
-            buildHeader(),
             expanded(buildList(), 1.0f),
             buildToastSlot(),
             buildBottomBar()));
@@ -235,103 +256,117 @@ private:
         return sizedBox(-1.0f, dp(40.5f), std::move(strip));
     }
 
-    // ---- 列表表头（高 30：名称 | 最新↓ | 涨跌 | 涨跌幅 | 成交）----
+    // ---- 表头行（名称 | 最新↓ | 涨跌 | 涨跌幅 | 成交 | 持仓 | 日增仓）----
+    // 作为列表第 0 行，随行内容一起横向滚动（行高由 ListView 的 itemExtent 给）。
     std::unique_ptr<evk::ui::Widget> buildHeader() {
         using namespace evk::ui;
-        return sizedBox(
-            -1.0f, dp(30.0f),
-            container(0, {}, [](PaintContext& paint) {
-                const Size size = paint.size();
-                const float centerY = size.height * 0.5f;
-                const float fs = dp(14.0f);
-                drawTextCenteredY(paint, "名称", dp(12.5f), centerY, fs,
-                                  kColorGray, appFonts::cjk());
-                // 「最新」带降序箭头：文字右缘让出箭头位，实心小三角朝下。
-                const float arrowHalf = dp(3.75f);
-                drawTextRight(paint, "最新", dp(kColumnRight[0]) - dp(11.0f),
-                              centerY, fs, kColorGray, appFonts::cjk());
-                const float ax = dp(kColumnRight[0]) - arrowHalf * 2.0f;
-                paint.drawTriangle(ax, centerY - arrowHalf * 0.7f,
-                                   ax + arrowHalf * 2.0f, centerY - arrowHalf * 0.7f,
-                                   ax + arrowHalf, centerY + arrowHalf * 0.9f,
-                                   kColorGray, kColorGray, kColorGray);
-                drawTextRight(paint, "涨跌", dp(kColumnRight[1]), centerY, fs,
+        return container(0, {}, [](PaintContext& paint) {
+            const Size size = paint.size();
+            const float centerY = size.height * 0.5f;
+            const float fs = dp(14.0f);
+            drawTextCenteredY(paint, "名称", dp(12.5f), centerY, fs,
                               kColorGray, appFonts::cjk());
-                drawTextRight(paint, "涨跌幅", dp(kColumnRight[2]), centerY, fs,
-                              kColorGray, appFonts::cjk());
-                drawTextRight(paint, "成交", dp(kColumnRight[3]), centerY, fs,
-                              kColorGray, appFonts::cjk());
-            }));
+            // 「最新」带降序箭头：文字右缘让出箭头位，实心小三角朝下。
+            const float arrowHalf = dp(3.75f);
+            drawTextRight(paint, "最新", dp(kColumnRight[0]) - dp(11.0f),
+                          centerY, fs, kColorGray, appFonts::cjk());
+            const float ax = dp(kColumnRight[0]) - arrowHalf * 2.0f;
+            paint.drawTriangle(ax, centerY - arrowHalf * 0.7f,
+                               ax + arrowHalf * 2.0f, centerY - arrowHalf * 0.7f,
+                               ax + arrowHalf, centerY + arrowHalf * 0.9f,
+                               kColorGray, kColorGray, kColorGray);
+            drawTextRight(paint, "涨跌", dp(kColumnRight[1]), centerY, fs,
+                          kColorGray, appFonts::cjk());
+            drawTextRight(paint, "涨跌幅", dp(kColumnRight[2]), centerY, fs,
+                          kColorGray, appFonts::cjk());
+            drawTextRight(paint, "成交", dp(kColumnRight[3]), centerY, fs,
+                          kColorGray, appFonts::cjk());
+            drawTextRight(paint, "持仓", dp(kColumnRight[4]), centerY, fs,
+                          kColorGray, appFonts::cjk());
+            drawTextRight(paint, "日增仓", dp(kColumnRight[5]), centerY, fs,
+                          kColorGray, appFonts::cjk());
+        });
     }
 
-    // ---- 行情行（高 50）：左 名称/代码+M，右四列数字右对齐，底部分隔线 ----
+    // ---- 行情行：左 名称/代码+M，右六列数字右对齐，底部分隔线 ----
+    // 行矩形由 ListView 按 itemExtent 直接写入（无需 sizedBox 包装）。
     std::unique_ptr<evk::ui::Widget> buildRow(const QuoteRow& row, int index) {
         using namespace evk::ui;
-        return sizedBox(
-            -1.0f, dp(50.0f),
-            container(
-                0,
-                [this, index] { removeRow(index); },
-                [row](PaintContext& paint) {
-                    const Size size = paint.size();
-                    const float centerY = size.height * 0.5f;
-                    const uint32_t numColor = row.up ? kColorUp : kColorDown;
-                    const float numFs = dp(15.0f);
+        return container(
+            0,
+            [this, index] { removeRow(index); },
+            [row](PaintContext& paint) {
+                const Size size = paint.size();
+                const float centerY = size.height * 0.5f;
+                const uint32_t numColor = row.up ? kColorUp : kColorDown;
+                const float numFs = dp(15.0f);
 
-                    // 左列：合约名（黄 15）在上，代码（灰 11）在下。
-                    drawTextCenteredY(paint, row.name.c_str(), dp(12.5f),
-                                      dp(15.0f), dp(15.0f), kColorName,
-                                      kFontAny);
-                    float codeW = 0.0f, codeH = 0.0f;
-                    FontEngine::instance().measureText(
-                        row.code.c_str(), dp(11.0f), appFonts::latin(), &codeW,
-                        &codeH);
-                    paint.drawText(row.code.c_str(), appFonts::latin(),
-                                   dp(12.5f), dp(31.0f) - codeH * 0.5f,
-                                   dp(11.0f), kColorGray);
-                    if (row.main) {
-                        // 主力徽章：红色圆角描边小方块 + 居中 M。
-                        const Rect badge{dp(12.5f) + codeW + dp(4.0f),
-                                         dp(31.0f) - dp(6.0f), dp(12.0f),
-                                         dp(12.0f)};
-                        paint.strokeRoundRect(badge, dp(2.0f),
-                                              std::max(1.0f, dp(0.8f)),
-                                              kColorAccent);
-                        drawTextCentered(paint, "M", badge.x + badge.w * 0.5f,
-                                         badge.y + badge.h * 0.5f, dp(9.0f),
-                                         kColorAccent, appFonts::latin());
-                    }
+                // 左列：合约名（黄 15）在上，代码（灰 11）在下。
+                drawTextCenteredY(paint, row.name.c_str(), dp(12.5f),
+                                  dp(15.0f), dp(15.0f), kColorName,
+                                  kFontAny);
+                float codeW = 0.0f, codeH = 0.0f;
+                FontEngine::instance().measureText(
+                    row.code.c_str(), dp(11.0f), appFonts::latin(), &codeW,
+                    &codeH);
+                paint.drawText(row.code.c_str(), appFonts::latin(),
+                               dp(12.5f), dp(31.0f) - codeH * 0.5f,
+                               dp(11.0f), kColorGray);
+                if (row.main) {
+                    // 主力徽章：红色圆角描边小方块 + 居中 M。
+                    const Rect badge{dp(12.5f) + codeW + dp(4.0f),
+                                     dp(31.0f) - dp(6.0f), dp(12.0f),
+                                     dp(12.0f)};
+                    paint.strokeRoundRect(badge, dp(2.0f),
+                                          std::max(1.0f, dp(0.8f)),
+                                          kColorAccent);
+                    drawTextCentered(paint, "M", badge.x + badge.w * 0.5f,
+                                     badge.y + badge.h * 0.5f, dp(9.0f),
+                                     kColorAccent, appFonts::latin());
+                }
 
-                    // 右四列：最新 / 涨跌 / 涨跌幅（红涨绿跌）、成交（白）。
-                    drawTextRight(paint, row.priceText.c_str(),
-                                  dp(kColumnRight[0]), centerY, numFs, numColor,
-                                  appFonts::latin());
-                    drawTextRight(paint, row.changeText.c_str(),
-                                  dp(kColumnRight[1]), centerY, numFs, numColor,
-                                  appFonts::latin());
-                    drawTextRight(paint, row.pctText.c_str(),
-                                  dp(kColumnRight[2]), centerY, numFs, numColor,
-                                  appFonts::latin());
-                    drawTextRight(paint, row.volumeText.c_str(),
-                                  dp(kColumnRight[3]), centerY, numFs,
-                                  kColorWhite, appFonts::latin());
+                // 右六列：最新 / 涨跌 / 涨跌幅（红涨绿跌）、成交与持仓（白）、
+                // 日增仓（正红负绿）。后两列宽出视口，左右滑动查看。
+                drawTextRight(paint, row.priceText.c_str(),
+                              dp(kColumnRight[0]), centerY, numFs, numColor,
+                              appFonts::latin());
+                drawTextRight(paint, row.changeText.c_str(),
+                              dp(kColumnRight[1]), centerY, numFs, numColor,
+                              appFonts::latin());
+                drawTextRight(paint, row.pctText.c_str(),
+                              dp(kColumnRight[2]), centerY, numFs, numColor,
+                              appFonts::latin());
+                drawTextRight(paint, row.volumeText.c_str(),
+                              dp(kColumnRight[3]), centerY, numFs,
+                              kColorWhite, appFonts::latin());
+                drawTextRight(paint, row.positionText.c_str(),
+                              dp(kColumnRight[4]), centerY, numFs,
+                              kColorWhite, appFonts::latin());
+                const uint32_t deltaColor =
+                    row.positionDelta >= 0.0 ? kColorUp : kColorDown;
+                drawTextRight(paint, row.deltaText.c_str(),
+                              dp(kColumnRight[5]), centerY, numFs,
+                              deltaColor, appFonts::latin());
 
-                    // 底部分隔线：图纸 x=8、宽 359、高 0.5。
-                    const float lh = std::max(1.0f, dp(0.5f));
-                    paint.drawRect({dp(8.0f), size.height - lh,
-                                    size.width - dp(16.0f), lh},
-                                   kColorDivider);
-                }));
+                // 底部分隔线：图纸 x=8、高 0.5，随内容宽贯穿整行。
+                const float lh = std::max(1.0f, dp(0.5f));
+                paint.drawRect({dp(8.0f), size.height - lh,
+                                size.width - dp(16.0f), lh},
+                               kColorDivider);
+            });
     }
 
     std::unique_ptr<evk::ui::Widget> buildList() {
         using namespace evk::ui;
+        // 表头作为第 0 行进入列表：列加宽后表头随行一起横向滚动。
+        // v1 不做固定表头（跨滚动区域的手势与联动 v1 不支持）。
         std::vector<std::unique_ptr<Widget>> rows;
-        rows.reserve(rows_.size());
+        rows.reserve(rows_.size() + 1);
+        rows.push_back(buildHeader());
         for (size_t i = 0; i < rows_.size(); ++i) {
             rows.push_back(buildRow(rows_[i], static_cast<int>(i)));
         }
-        return scrollView(column(std::move(rows)), dp(50.0f) * rows_.size());
+        return listView(dp(50.0f), std::move(rows), dp(kContentWidth));
     }
 
     // ---- Toast 槽（固定高 50）：有内容时画米色圆角气泡，不占位跳动 ----

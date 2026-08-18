@@ -207,6 +207,86 @@ void testScrollViewDragAndClamp() {
     evk::ui::setRootView(nullptr);
 }
 
+/// 列表控件：定高行落位、双轴滚动钳制、删行后自动重排。
+void testListViewLayoutAndScroll() {
+    resetRuntime();
+    evk::ui::setViewportSize(200.0f, 200.0f);
+
+    std::vector<std::unique_ptr<evk::ui::Widget>> rows;
+    for (int i = 0; i < 10; ++i) {
+        rows.push_back(evk::ui::container(0x111111FF));
+    }
+    // 行高 50 × 10 行，内容宽 400（视口 200：横向纵向都可滚）。
+    evk::ui::runApp(evk::ui::listView(50.0f, std::move(rows), 400.0f), {});
+
+    evk::ui::View* viewport = evk::ui::appNavigator()->topView();
+    evk::ui::View* content = evk::ui::scrollContent(*viewport);
+    assert(content && content->children.size() == 10);
+    // 定高行落位：第 i 行 = (0, i×50, 内容宽 400, 50)。
+    for (size_t i = 0; i < content->children.size(); ++i) {
+        const evk::ui::Rect r = content->children[i]->rect;
+        assert(r.x == 0.0f && r.y == 50.0f * static_cast<float>(i) &&
+               r.w == 400.0f && r.h == 50.0f);
+    }
+
+    // 双轴钳制：maxX = 400-200 = 200，maxY = 500-200 = 300。
+    evk::ui::setScrollOffset(*viewport, 1000.0f, 1000.0f);
+    float x = 0.0f;
+    float y = 0.0f;
+    evk::ui::getScrollOffset(*viewport, &x, &y);
+    assert(x == 200.0f && y == 300.0f);
+    // 滚动 = content 反向平移。
+    assert(content->rect.x == -200.0f && content->rect.y == -300.0f);
+
+    // 删行（View 层）：下方行自动上移补位。
+    content->removeChild(content->children[2].get());
+    assert(content->children.size() == 9);
+    for (size_t i = 0; i < content->children.size(); ++i) {
+        assert(content->children[i]->rect.y == 50.0f * static_cast<float>(i));
+    }
+
+    evk::ui::shutdownApp();
+}
+
+/// 方向锁：一段拖动手势只滚主方向轴，另一轴分量整段丢弃（横竖互斥）。
+void testScrollAxisLock() {
+    resetRuntime();
+    auto scroll = evk::ui::createScrollView(400.0f, 1000.0f);  // 双轴可滚
+    scroll->setBounds(0.0f, 0.0f, 200.0f, 200.0f);
+    evk::ui::setRootView(scroll.get());
+
+    float x = 0.0f;
+    float y = 0.0f;
+
+    // 主方向横向（|dx| > |dy|）：只横向滚。
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Down, 0, 100.0f, 100.0f, ms(1)});
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Move, 0, 60.0f, 95.0f, ms(20)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(x > 0.0f && y == 0.0f);
+    // 锁定后纵向分量再大也不响应。
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Move, 0, 55.0f, 40.0f, ms(40)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y == 0.0f);
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Up, 0, 55.0f, 40.0f, ms(60)});
+    const float lockedX = x;
+
+    // 新一段手势主方向纵向：只纵向滚，横向偏移保持。
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Down, 0, 100.0f, 100.0f, ms(80)});
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Move, 0, 95.0f, 60.0f, ms(100)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(x == lockedX && y > 0.0f);
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Up, 0, 95.0f, 60.0f, ms(120)});
+
+    evk::ui::setRootView(nullptr);
+}
+
 void testEventBusAndUiQueue() {
     resetRuntime();
     auto root = std::make_unique<evk::ui::View>();
@@ -637,6 +717,8 @@ int main(int argc, char** argv) {
     testButtonStateMachine();
     testFlexLayout();
     testScrollViewDragAndClamp();
+    testListViewLayoutAndScroll();
+    testScrollAxisLock();
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
     testAnimatedNavigationAndBackEvent();
