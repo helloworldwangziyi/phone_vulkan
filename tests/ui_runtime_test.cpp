@@ -183,6 +183,26 @@ void testScrollViewDragAndClamp() {
     evk::ui::setScrollOffset(*scroll, 0.0f, 5000.0f);
     evk::ui::getScrollOffset(*scroll, &x, &y);
     assert(y == 800.0f);
+
+    // 橡皮筋回归：手指按住拖出顶部越界后，同尺寸 rebuild（updateScrollView、
+    // 同值 setBounds 触发的 handleBoundsChanged）不得把越界状态钳回界内。
+    evk::ui::setScrollOffset(*scroll, 0.0f, 0.0f);
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Down, 0, 100.0f, 100.0f, ms(300)});
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Move, 0, 100.0f, 190.0f, ms(320)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y < 0.0f);  ///< 顶部越界，显示偏移走 0.45 阻尼
+
+    evk::ui::updateScrollView(*scroll, 0.0f, 1000.0f);  ///< 同尺寸重建
+    scroll->setBounds(0.0f, 0.0f, 200.0f, 200.0f);      ///< 同值重排
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y < 0.0f);  ///< 越界状态保留，拖拽不中断
+
+    // 几何尺寸真实变化时仍要收编：内容缩短后 maxOffset 变化，越界被钳回。
+    evk::ui::updateScrollView(*scroll, 0.0f, 500.0f);
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y == 0.0f);
     evk::ui::setRootView(nullptr);
 }
 

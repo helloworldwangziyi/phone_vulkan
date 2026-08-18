@@ -28,6 +28,9 @@ public:
     float rawY = 0.0f;
     float offsetX = 0.0f;
     float offsetY = 0.0f;
+    /// 最近一次收编越界时的视口尺寸，供 handleBoundsChanged 识别同尺寸回调。
+    float snappedW = -1.0f;
+    float snappedH = -1.0f;
     std::function<void(float, float)> onScroll;
     bool animating = false;
 
@@ -134,6 +137,14 @@ public:
     }
 
     void handleBoundsChanged() override {
+        // 仅视口尺寸真实变化时才收编越界。rebuild 链（updateChildren 收尾、
+        // 同值 setBounds）会无条件调到本钩子，原样 snap 会把拖动中的橡皮筋
+        // 越界直接钳回界内——「手没松开就复位」的成因。
+        if (rect.w == snappedW && rect.h == snappedH) {
+            return;
+        }
+        snappedW = rect.w;
+        snappedH = rect.h;
         snapOffset(false);
     }
 
@@ -285,10 +296,18 @@ void updateScrollView(
     if (!scroll) {
         return;
     }
-    scroll->contentWidth = std::max(0.0f, contentWidth);
-    scroll->contentHeight = std::max(0.0f, contentHeight);
+    const float width = std::max(0.0f, contentWidth);
+    const float height = std::max(0.0f, contentHeight);
+    // 内容尺寸没变就不动滚动状态：widget 重建每次都会走到这里，无条件
+    // snap 会打断进行中的橡皮筋越界和 fling（animating 被清、raw 被钳）。
+    const bool sizeChanged =
+        width != scroll->contentWidth || height != scroll->contentHeight;
+    scroll->contentWidth = width;
+    scroll->contentHeight = height;
     scroll->onScroll = std::move(onScroll);
-    scroll->snapOffset(false);
+    if (sizeChanged) {
+        scroll->snapOffset(false);
+    }
 }
 
 void setScrollOffset(View& scrollView, float x, float y) {
