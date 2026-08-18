@@ -6,7 +6,7 @@
  *
  * 对照 Flutter 的 ListView(itemExtent: ...)（Flutter 里 ListView 与
  * ScrollView 同文件，我们这里单列）。View 层复用滚动控件：
- * content 层按固定行高堆叠（见 controls/scroll_control.h）。
+ * content 层按固定行高堆叠（见 view/scroll_control.h）。
  */
 
 #include "evk/ui/widget_tree.h"

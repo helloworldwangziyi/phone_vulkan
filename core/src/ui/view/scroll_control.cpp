@@ -4,7 +4,7 @@
  *        （单子填充布局）、ScrollAnimation（fling 惯性 / 回弹状态机）。
  */
 
-#include "evk/ui/controls/scroll_control.h"
+#include "evk/ui/view/scroll_control.h"
 
 #include <algorithm>
 #include <cmath>

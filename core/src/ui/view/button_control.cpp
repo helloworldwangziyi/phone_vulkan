@@ -3,7 +3,7 @@
  * @brief ButtonView 的实现：按压状态机与配色切换。
  */
 
-#include "evk/ui/controls/button_control.h"
+#include "evk/ui/view/button_control.h"
 
 #include <utility>
 

@@ -5,7 +5,7 @@
  * @brief 按钮控件（View 层）：自带 pressed 按压状态机与禁用态。
  *
  * 本文件是 View 层实现（常驻节点，持有 pressed/enabled 运行时状态）；
- * Widget 层的 evk::ui::Button 只是它的配置描述（widget_tree.h）。
+ * Widget 层的 evk::ui::Button 只是它的配置描述（controls/button.h）。
  * create/update 走 RenderObject 协议：首次 mount 造 View，同类型重建时
  * 把新参数应用到已存在的 View 上（进行中的按压状态保留）。
  */

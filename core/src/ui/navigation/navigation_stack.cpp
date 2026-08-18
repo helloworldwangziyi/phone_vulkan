@@ -32,7 +32,7 @@
 #include "evk/log.h"
 #include "evk/frame_scheduler.h"
 #include "evk/ui/animation_scheduler.h"
-#include "evk/ui/controls/button_control.h"
+#include "evk/ui/view/button_control.h"
 #include "evk/ui/render_view.h"
 #include "evk/ui/widget_tree.h"
 

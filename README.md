@@ -48,15 +48,19 @@ public:
 core/
   include/evk/ui/
     ui_application.h   runApp, shutdownApp, viewport
-    widget_tree.h      Widget, Element, State and composition widgets
+    widget_tree.h      Widget, Element, State (framework core)
+    widgets.h          umbrella header: framework + all widgets
     render_view.h      internal retained render-object tree
     pointer_input.h    pointer dispatch and gesture ownership
     event_bus.h        C++ RAII subscriptions and UI-thread queue
     font_engine.h      TTF parsing, glyph atlas, and font fallback
     texture_store.h     unified RGBA texture registry (atlas + images)
-    controls/
+    controls/          widget layer (descriptions): container, text, image,
+      basic.h           button, flex (Column/Row), scroll_view, list_view,
+                        and basic.h for EdgeInsets/SizedBox/Padding/...
+    view/               view layer (retained render objects)
       button_control.h Button render object
-      scroll_control.h ScrollView render object
+      scroll_control.h ScrollView/ListView render object
     layout/
       flex_layout.h    Row and Column layout capability
     navigation/

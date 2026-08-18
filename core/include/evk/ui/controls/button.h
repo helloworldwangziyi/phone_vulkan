@@ -5,10 +5,10 @@
  * @brief 按钮组件（Button）：包 Button 控件（自带 pressed 状态机与禁用态）。
  *
  * 对照 Flutter 的 material/button 系列。View 层实现见
- * controls/button_control.h（createButtonView/updateButtonView）。
+ * view/button_control.h（createButtonView/updateButtonView）。
  */
 
-#include "evk/ui/controls/button_control.h"
+#include "evk/ui/view/button_control.h"
 #include "evk/ui/widget_tree.h"
 
 namespace evk::ui {

@@ -26,7 +26,7 @@ fi
     "$repo_root/core/src/ui/event_bus.cpp" \
     "$repo_root/core/src/ui/font_engine.cpp" \
     "$repo_root/core/src/ui/texture_store.cpp" \
-    "$repo_root/core/src/ui/controls/button_control.cpp" \
+    "$repo_root/core/src/ui/view/button_control.cpp" \
     "$repo_root/core/src/ui/layout/flex_layout.cpp" \
     "$repo_root/core/src/ui/widget_tree.cpp" \
     "$repo_root/core/src/ui/controls/basic.cpp" \
@@ -37,7 +37,7 @@ fi
     "$repo_root/core/src/ui/controls/list_view.cpp" \
     "$repo_root/core/src/ui/controls/scroll_view.cpp" \
     "$repo_root/core/src/ui/controls/text.cpp" \
-    "$repo_root/core/src/ui/controls/scroll_control.cpp" \
+    "$repo_root/core/src/ui/view/scroll_control.cpp" \
     "$repo_root/core/src/ui/navigation/navigation_stack.cpp" \
     -o "$test_binary"
 

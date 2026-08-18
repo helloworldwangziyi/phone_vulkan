@@ -5,7 +5,7 @@
  * @brief 可滚动容器组件（ScrollViewWidget）：拖动 / 惯性 / 回弹。
  *
  * 对照 Flutter 的 widgets/scroll_view.dart。View 层实现见
- * controls/scroll_control.h——视口内挂 content 层，滚动 = 平移 content。
+ * view/scroll_control.h——视口内挂 content 层，滚动 = 平移 content。
  */
 
 #include "evk/ui/widget_tree.h"

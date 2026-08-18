@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include "evk/ui/controls/scroll_control.h"
+#include "evk/ui/view/scroll_control.h"
 #include "evk/ui/render_view.h"
 
 namespace evk::ui {
