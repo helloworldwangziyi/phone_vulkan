@@ -16,6 +16,7 @@
 
 #include "app_fonts.h"
 #include "screen_metrics.h"
+#include "evk/kv_store.h"
 #include "evk/ui/event_bus.h"
 #include "evk/ui/font_engine.h"
 
@@ -39,6 +40,10 @@ constexpr uint32_t kColorToastText = 0x232227FF;
 
 /// 数字列右边缘（图纸 x 右缘）：最新 / 涨跌 / 涨跌幅 / 成交。
 constexpr float kColumnRight[] = {158.0f, 228.0f, 298.0f, 368.0f};
+
+/// 底部 Tab 选中项的持久化 key（KeyValueStore），跨启动保持。
+constexpr const char* kKeyBottomNav = "watchlist.bottomNav";
+constexpr int kBottomNavCount = 4;
 
 /// 行情行数据：数值字段供 tick 更新，文本字段是重建时排版好的展示串。
 struct QuoteRow {
@@ -144,6 +149,10 @@ public:
             syncTexts(row);
             rows_.push_back(std::move(row));
         }
+        // 读回上次的底部 Tab 选中项（如「交易」），未存过/越界回落到 0（自选）。
+        // 此时 KeyValueStore 已由平台壳在 EngineReady 前初始化完毕。
+        nav_ = std::clamp(evk::KeyValueStore::instance().getInt(kKeyBottomNav, 0),
+                          0, kBottomNavCount - 1);
     }
 
     ~WatchlistPageState() override { cancelThreads(); }
@@ -352,12 +361,17 @@ private:
         using namespace evk::ui;
         static const char* kLabels[] = {"自选", "行情", "交易", "资讯"};
         std::vector<std::unique_ptr<Widget>> tabs;
-        for (int i = 0; i < 4; ++i) {
+        for (int i = 0; i < kBottomNavCount; ++i) {
             const char* label = kLabels[i];
             const bool selected = nav_ == i;
             tabs.push_back(expanded(container(
                 0,
-                [this, i] { setState([this, i] { nav_ = i; }); },
+                // 点按即落盘：下次冷启动 State 构造时读回（对照
+                // Flutter shared_preferences 的设置项保持）。
+                [this, i] {
+                    evk::KeyValueStore::instance().putInt(kKeyBottomNav, i);
+                    setState([this, i] { nav_ = i; });
+                },
                 [i, label, selected](PaintContext& paint) {
                     const Size size = paint.size();
                     const uint32_t color =
@@ -487,7 +501,7 @@ private:
 
     std::vector<QuoteRow> rows_;
     int tab_ = 0;       ///< 板块 Tab 选中项
-    int nav_ = 0;       ///< 底部 Tab 选中项（本页是「自选」）
+    int nav_ = 0;       ///< 底部 Tab 选中项（KeyValueStore 持久化，跨启动保持）
     std::string toast_; ///< 空 = 隐藏
     uint32_t toastGen_ = 0;
     uint32_t rngState_ = 0x2F6E2B1u;
