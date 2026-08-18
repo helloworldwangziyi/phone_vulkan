@@ -129,6 +129,12 @@ int32_t evkIosBackPressed(void) {
     return evk::dispatchEvent(evk::EventId::BackPressed, nullptr) ? 1 : 0;
 }
 
+// 壳层 viewSafeAreaInsetsDidChange 触发；单位已换算成像素（点 × scale）。
+void evkIosSafeArea(float top, float bottom, float left, float right) {
+    evk::SafeAreaData data{top, bottom, left, right};
+    evk::dispatchEvent(evk::EventId::SafeAreaChanged, &data);
+}
+
 void evkIosDestroy(void) {
     evk::ui::cancelAllPointerEvents();
     evk::ui::stopAllAnimations();

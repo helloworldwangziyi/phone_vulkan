@@ -8,6 +8,7 @@
 //   NativeBridge.nativeBeginFrame(nanos)    → evkIosBeginFrame(nanos)
 //   NativeBridge.nativeOnTouch(...)         → evkIosTouch(...)
 //   NativeBridge.nativeOnBackPressed()      → evkIosBackPressed()
+//   NativeBridge.nativeSafeAreaChanged(...) → evkIosSafeArea(...)
 //   NativeBridge.nativeDestroy()            → evkIosDestroy()
 //
 // 约定与 JNI 层相同：本层只做"解包参数 → 转发 core"，不含业务逻辑；
@@ -31,6 +32,9 @@ void evkIosTouch(int32_t action, int32_t pointerId, float x, float y,
 // 系统返回入口：iOS 无系统返回键，壳层用左边缘手势识别器触发。
 // 返回是否被 App 消费（导航栈 pop 成功）；栈底时返回 0，壳层无需收尾。
 int32_t evkIosBackPressed(void);
+// 安全区内边距（像素，壳层已乘 contentsScale）：
+// viewSafeAreaInsetsDidChange 时上报，App 据此内缩布局避开刘海/手势条。
+void evkIosSafeArea(float top, float bottom, float left, float right);
 void evkIosDestroy(void);
 
 #ifdef __cplusplus

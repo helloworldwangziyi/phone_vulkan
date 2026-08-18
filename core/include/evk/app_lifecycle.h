@@ -4,9 +4,9 @@
  * @file app_lifecycle.h
  * @brief 平台薄壳 → 公共 App 的事件通道。
  *
- * 平台薄壳在生命周期变化或系统返回（Android 返回键/手势、iOS 边缘手势）
- * 时调 dispatchEvent；公共 App 用 setEventFunc 注册唯一入口。
- * View 输入（触摸）不经过此通道。
+ * 平台薄壳在生命周期变化、系统返回（Android 返回键/手势、iOS 边缘手势）
+ * 或安全区变化（刘海/状态栏/手势条）时调 dispatchEvent；公共 App 用
+ * setEventFunc 注册唯一入口。View 输入（触摸）不经过此通道。
  */
 #include <cstdint>
 #include <functional>
@@ -21,6 +21,7 @@ enum class EventId : int32_t {
     SurfaceChanged   = 2, ///< surface 尺寸/方向变化，data 为 SurfaceChangedData
     SurfaceDestroyed = 3, ///< surface 已销毁，渲染资源需释放
     BackPressed      = 4, ///< 系统返回：App 消费返回 true，否则平台壳自行收尾
+    SafeAreaChanged  = 5, ///< 安全区内边距变化，data 为 SafeAreaData（像素）
 };
 
 /**
@@ -32,9 +33,24 @@ struct SurfaceChangedData {
 };
 
 /**
+ * @brief SafeAreaChanged 事件携带的安全区内边距（真实像素）。
+ *
+ * 四边分别是状态栏/刘海（top）、手势条/Home 指示条（bottom）、
+ * 横屏刘海或圆角（left/right）占用的像素数；App 据此收缩布局，
+ * 避免内容被系统区域遮挡。
+ */
+struct SafeAreaData {
+    float top;
+    float bottom;
+    float left;
+    float right;
+};
+
+/**
  * @brief 事件回调。View 输入和绘制由 ui 子系统直接分发，不进入这个全局通道。
  * @param id 事件号
- * @param data 事件附带数据：SurfaceChanged 时为 SurfaceChangedData*，其余为 nullptr
+ * @param data 事件附带数据：SurfaceChanged 时为 SurfaceChangedData*，
+ *             SafeAreaChanged 时为 SafeAreaData*，其余为 nullptr
  * @return 是否消费了该事件；目前仅 BackPressed 需要该语义
  *         （false = 导航栈已在栈底，平台壳可自行 finish/退出）
  */

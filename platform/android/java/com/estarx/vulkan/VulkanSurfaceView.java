@@ -7,6 +7,10 @@ import android.view.Choreographer;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 /**
  * A SurfaceView that forwards surface lifecycle events to the native Vulkan renderer.
  *
@@ -49,6 +53,16 @@ public class VulkanSurfaceView extends SurfaceView implements SurfaceHolder.Call
         // addCallback(this) 向他登记："画板创建/变化/销毁时请通知我"，
         // 通知会送到下面三个 surfaceXxx 方法（this 就是本对象）。
         getHolder().addCallback(this);
+        // 安全区上报：主题是 windowFullscreen，视图延伸到状态栏/手势条之下，
+        // 必须把系统占用区（含刘海 cutout）通知 App 做布局内缩。
+        // inset 值单位是像素，与 surface 坐标系一致；不 consume，交还系统继续分发。
+        ViewCompat.setOnApplyWindowInsetsListener(this, (view, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(
+                    WindowInsetsCompat.Type.systemBars()
+                            | WindowInsetsCompat.Type.displayCutout());
+            NativeBridge.nativeSafeAreaChanged(bars.top, bars.bottom, bars.left, bars.right);
+            return windowInsets;
+        });
     }
 
     // 画板被系统创建好时回调（View 显示到屏幕、或退后台再回来时重建）。

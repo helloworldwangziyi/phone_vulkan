@@ -142,6 +142,17 @@ static const int32_t kActionCancel = 3;
     }
 }
 
+// 安全区（刘海/ Home 指示条）就绪或变化时系统回调（可能早于引擎就绪，
+// core 事件通道会把值存住，建视图树时生效）。点 × scale 换算成像素上报。
+- (void)viewSafeAreaInsetsDidChange {
+    [super viewSafeAreaInsetsDidChange];
+    const CGFloat scale = self.view.window.screen.nativeScale
+        ?: UIScreen.mainScreen.nativeScale;
+    const UIEdgeInsets insets = self.view.safeAreaInsets;
+    evkIosSafeArea((float)(insets.top * scale), (float)(insets.bottom * scale),
+                   (float)(insets.left * scale), (float)(insets.right * scale));
+}
+
 - (void)forwardTouch:(UITouch*)touch action:(int32_t)action {
     const CGFloat scale = self.view.layer.contentsScale;
     const CGPoint p = [touch locationInView:self.view];

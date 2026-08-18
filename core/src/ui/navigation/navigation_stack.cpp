@@ -597,10 +597,6 @@ void Navigator::setStyle(const NavigationStyle& style) {
     impl_->navigation->setStyle(style);
 }
 
-void Navigator::setBounds(float width, float height) {
-    impl_->root->setBounds(0.0f, 0.0f, width, height);
-}
-
 void Navigator::clear() {
     if (!impl_) {
         return;

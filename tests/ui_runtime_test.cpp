@@ -371,6 +371,28 @@ void testAnimatedNavigationAndBackEvent() {
     evk::ui::shutdownApp();
 }
 
+void testSafeAreaInsets() {
+    resetRuntime();
+    // 安全区可在建 UI 之前到达（壳层时序），值要先存住。
+    evk::ui::setViewportSize(400.0f, 800.0f);
+    evk::ui::setSafeAreaInsets(24.0f, 34.0f, 0.0f, 0.0f);
+    evk::ui::runApp(evk::ui::makeWidget<CounterPage>(), {60.0f, {}});
+
+    // 根视图 = 视口扣除安全区：top 24 / bottom 34。
+    evk::ui::View& root = evk::ui::appNavigator()->view();
+    assert(root.rect.x == 0.0f && root.rect.y == 24.0f);
+    assert(root.rect.w == 400.0f && root.rect.h == 800.0f - 24.0f - 34.0f);
+
+    // 视口变化（旋转）后仍保持内缩；横屏左右 inset 生效。
+    evk::ui::setViewportSize(800.0f, 400.0f);
+    evk::ui::setSafeAreaInsets(0.0f, 21.0f, 44.0f, 44.0f);
+    assert(root.rect.x == 44.0f && root.rect.y == 0.0f);
+    assert(root.rect.w == 800.0f - 88.0f && root.rect.h == 400.0f - 21.0f);
+
+    evk::ui::setSafeAreaInsets(0.0f, 0.0f, 0.0f, 0.0f);
+    evk::ui::shutdownApp();
+}
+
 /// 读整个文件到内存（字体资产用）。
 std::vector<unsigned char> readFile(const char* path) {
     std::FILE* f = std::fopen(path, "rb");
@@ -618,6 +640,7 @@ int main(int argc, char** argv) {
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
     testAnimatedNavigationAndBackEvent();
+    testSafeAreaInsets();
 
     testCanvas2dPrimitives();
 

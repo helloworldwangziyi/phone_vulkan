@@ -47,7 +47,6 @@ public:
     View* topView() const;
     View& view() const;
     void setStyle(const NavigationStyle& style);
-    void setBounds(float width, float height);
     void clear();
 
 private:

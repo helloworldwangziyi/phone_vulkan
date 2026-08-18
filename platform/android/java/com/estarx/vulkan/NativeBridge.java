@@ -25,4 +25,7 @@ public final class NativeBridge {
     // 系统返回（返回键/手势导航侧滑）：true = App 已消费（导航栈 pop），
     // false = 栈已在根，调用方应交还系统默认行为（finish Activity）。
     public static native boolean nativeOnBackPressed();
+
+    // 安全区内边距（像素）：系统窗口 inset 变化时由 WindowInsets 监听回调上报。
+    public static native void nativeSafeAreaChanged(int top, int bottom, int left, int right);
 }

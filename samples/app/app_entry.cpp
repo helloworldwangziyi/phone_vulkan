@@ -56,6 +56,15 @@ bool appEvent(evk::EventId id, const void* data) {
         case evk::EventId::SurfaceDestroyed:
             evk::ui::shutdownApp();
             break;
+        case evk::EventId::SafeAreaChanged: {
+            // 平台壳上报安全区（状态栏/刘海/手势条）：根视图整体内缩避障。
+            const auto* insets = static_cast<const evk::SafeAreaData*>(data);
+            evk::ui::setSafeAreaInsets(
+                insets->top, insets->bottom, insets->left, insets->right);
+            EVK_LOGI("safe area insets: {:.0f},{:.0f},{:.0f},{:.0f}",
+                     insets->top, insets->bottom, insets->left, insets->right);
+            break;
+        }
         case evk::EventId::BackPressed: {
             // 平台壳上报的系统返回：导航栈能 pop 就消费；
             // 已在栈底返回 false，平台壳自行收尾（Android finish Activity）。

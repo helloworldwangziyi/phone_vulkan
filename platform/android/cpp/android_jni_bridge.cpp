@@ -196,6 +196,17 @@ Java_com_estarx_vulkan_NativeBridge_nativeOnBackPressed(JNIEnv* /*env*/, jclass 
     return evk::dispatchEvent(evk::EventId::BackPressed, nullptr) ? JNI_TRUE : JNI_FALSE;
 }
 
+// Java: NativeBridge.nativeSafeAreaChanged(int, int, int, int)
+// 系统窗口 inset（状态栏/刘海/手势条）变化，单位像素，与 surface 坐标系一致。
+extern "C" JNIEXPORT void JNICALL
+Java_com_estarx_vulkan_NativeBridge_nativeSafeAreaChanged(JNIEnv* /*env*/, jclass /*clazz*/,
+                                                          jint top, jint bottom,
+                                                          jint left, jint right) {
+    evk::SafeAreaData data{static_cast<float>(top), static_cast<float>(bottom),
+                           static_cast<float>(left), static_cast<float>(right)};
+    evk::dispatchEvent(evk::EventId::SafeAreaChanged, &data);
+}
+
 // Java: NativeBridge.nativeDestroy()
 extern "C" JNIEXPORT void JNICALL
 Java_com_estarx_vulkan_NativeBridge_nativeDestroy(JNIEnv* /*env*/, jclass /*clazz*/) {
