@@ -46,6 +46,7 @@
 #include <spdlog/sinks/android_sink.h>
 
 #include "evk/app_lifecycle.h"
+#include "evk/kv_store.h"
 #include "evk/log.h"
 #include "evk/frame_scheduler.h"
 #include "evk/vulkan_renderer.h"
@@ -78,6 +79,22 @@ static void renderFrame(int64_t /*frameTimeNanos*/) {
     if (g_renderer) {
         g_renderer->render(canvas);
     }
+}
+
+// Java: NativeBridge.nativeSetStoragePath(String)
+// 引擎启动最早时刻注入私有存储目录（filesDir），core 的 KeyValueStore
+// 由此完成 MMKV 初始化；幂等，surface 重建重复调用安全。
+extern "C" JNIEXPORT void JNICALL
+Java_com_estarx_vulkan_NativeBridge_nativeSetStoragePath(JNIEnv* env, jclass /*clazz*/, jstring path) {
+    if (!path) {
+        return;
+    }
+    const char* chars = env->GetStringUTFChars(path, nullptr);
+    if (!chars) {
+        return; // OOM，JVM 已抛异常
+    }
+    evk::KeyValueStore::initialize(chars);
+    env->ReleaseStringUTFChars(path, chars);
 }
 
 // Java: NativeBridge.nativeInit(Surface)

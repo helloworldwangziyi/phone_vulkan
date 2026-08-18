@@ -54,6 +54,10 @@ public class VulkanSurfaceView extends SurfaceView implements SurfaceHolder.Call
     // 画板被系统创建好时回调（View 显示到屏幕、或退后台再回来时重建）。
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
+        // 先于 nativeInit 注入私有存储目录：core 的 KeyValueStore 初始化
+        // 需要平台路径，引擎就绪（EngineReady 建视图树）前必须完成。
+        // filesDir 是 App 沙盒私有目录，卸载即清、无需权限。
+        NativeBridge.nativeSetStoragePath(getContext().getFilesDir().getAbsolutePath());
         // holder.getSurface() 就是 Java 层的画板句柄，
         // 传给 native，C++ 用它创建 Vulkan 渲染表面。
         NativeBridge.nativeInit(holder.getSurface());

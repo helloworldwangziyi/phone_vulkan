@@ -43,6 +43,27 @@
 		E57A11000000000000000135 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000034 /* QuartzCore.framework */; };
 		E57A11000000000000000136 /* IOSurface.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000035 /* IOSurface.framework */; };
 		E57A11000000000000000137 /* CoreGraphics.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000036 /* CoreGraphics.framework */; };
+		E57A11000000000000000301 /* MMKV.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000201 /* MMKV.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000302 /* MMKV_IO.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000202 /* MMKV_IO.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000303 /* MMKVLog.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000203 /* MMKVLog.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000304 /* CodedInputData.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000204 /* CodedInputData.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000305 /* CodedInputDataCrypt.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000205 /* CodedInputDataCrypt.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000306 /* CodedOutputData.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000206 /* CodedOutputData.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000307 /* KeyValueHolder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000207 /* KeyValueHolder.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000308 /* PBUtility.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000208 /* PBUtility.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000309 /* MiniPBCoder.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000209 /* MiniPBCoder.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A1100000000000000030A /* MMBuffer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000020A /* MMBuffer.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A1100000000000000030B /* InterProcessLock.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000020B /* InterProcessLock.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A1100000000000000030C /* MemoryFile.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000020C /* MemoryFile.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A1100000000000000030D /* ThreadLock.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000020D /* ThreadLock.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A1100000000000000030E /* AESCrypt.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000020E /* AESCrypt.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A1100000000000000030F /* openssl_aes_core.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000020F /* openssl_aes_core.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000310 /* openssl_cfb128.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000210 /* openssl_cfb128.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000311 /* openssl_md5_dgst.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000211 /* openssl_md5_dgst.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000312 /* openssl_md5_one.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000212 /* openssl_md5_one.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000313 /* crc32.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000213 /* crc32.cpp */; settings = {COMPILER_FLAGS = "-std=c++20 -w"; }; };
+		E57A11000000000000000314 /* openssl_aesv8-armx.S in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000214 /* openssl_aesv8-armx.S */; };
+		E57A11000000000000000315 /* kv_store.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000215 /* kv_store.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -87,6 +108,27 @@
 		E57A11000000000000000035 /* IOSurface.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOSurface.framework; path = System/Library/Frameworks/IOSurface.framework; sourceTree = SDKROOT; };
 		E57A11000000000000000036 /* CoreGraphics.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = System/Library/Frameworks/CoreGraphics.framework; sourceTree = SDKROOT; };
 		E57A110000000000000000F8 /* EstarxVulkanSample.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EstarxVulkanSample.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E57A11000000000000000201 /* MMKV.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MMKV.cpp; path = ../../../third_party/mmkv/Core/MMKV.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000202 /* MMKV_IO.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MMKV_IO.cpp; path = ../../../third_party/mmkv/Core/MMKV_IO.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000203 /* MMKVLog.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MMKVLog.cpp; path = ../../../third_party/mmkv/Core/MMKVLog.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000204 /* CodedInputData.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CodedInputData.cpp; path = ../../../third_party/mmkv/Core/CodedInputData.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000205 /* CodedInputDataCrypt.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CodedInputDataCrypt.cpp; path = ../../../third_party/mmkv/Core/CodedInputDataCrypt.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000206 /* CodedOutputData.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = CodedOutputData.cpp; path = ../../../third_party/mmkv/Core/CodedOutputData.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000207 /* KeyValueHolder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = KeyValueHolder.cpp; path = ../../../third_party/mmkv/Core/KeyValueHolder.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000208 /* PBUtility.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PBUtility.cpp; path = ../../../third_party/mmkv/Core/PBUtility.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000209 /* MiniPBCoder.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MiniPBCoder.cpp; path = ../../../third_party/mmkv/Core/MiniPBCoder.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000020A /* MMBuffer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MMBuffer.cpp; path = ../../../third_party/mmkv/Core/MMBuffer.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000020B /* InterProcessLock.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = InterProcessLock.cpp; path = ../../../third_party/mmkv/Core/InterProcessLock.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000020C /* MemoryFile.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MemoryFile.cpp; path = ../../../third_party/mmkv/Core/MemoryFile.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000020D /* ThreadLock.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ThreadLock.cpp; path = ../../../third_party/mmkv/Core/ThreadLock.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000020E /* AESCrypt.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AESCrypt.cpp; path = ../../../third_party/mmkv/Core/aes/AESCrypt.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000020F /* openssl_aes_core.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = openssl_aes_core.cpp; path = ../../../third_party/mmkv/Core/aes/openssl/openssl_aes_core.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000210 /* openssl_cfb128.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = openssl_cfb128.cpp; path = ../../../third_party/mmkv/Core/aes/openssl/openssl_cfb128.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000211 /* openssl_md5_dgst.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = openssl_md5_dgst.cpp; path = ../../../third_party/mmkv/Core/aes/openssl/openssl_md5_dgst.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000212 /* openssl_md5_one.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = openssl_md5_one.cpp; path = ../../../third_party/mmkv/Core/aes/openssl/openssl_md5_one.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000213 /* crc32.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = crc32.cpp; path = ../../../third_party/mmkv/Core/crc32/zlib/crc32.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000214 /* openssl_aesv8-armx.S */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.asm; name = openssl_aesv8-armx.S; path = ../../../third_party/mmkv/Core/aes/openssl/openssl_aesv8-armx.S; sourceTree = "<group>"; };
+		E57A11000000000000000215 /* kv_store.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = kv_store.cpp; path = ../../../core/src/kv_store.cpp; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -139,6 +181,7 @@
 				E57A1100000000000000001B /* flex_layout.cpp */,
 				E57A1100000000000000001C /* scroll_control.cpp */,
 				E57A1100000000000000001D /* navigation_stack.cpp */,
+				E57A11000000000000000215 /* kv_store.cpp */,
 			);
 			name = core;
 			sourceTree = "<group>";
@@ -189,6 +232,7 @@
 				E57A11000000000000000061 /* core */,
 				E57A11000000000000000062 /* samples-app */,
 				E57A11000000000000000063 /* platform-ios */,
+				E57A11000000000000000200 /* mmkv */,
 				E57A11000000000000000064 /* Frameworks */,
 				E57A110000000000000000F7 /* Products */,
 			);
@@ -200,6 +244,33 @@
 				E57A110000000000000000F8 /* EstarxVulkanSample.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E57A11000000000000000200 /* mmkv */ = {
+			isa = PBXGroup;
+			children = (
+				E57A11000000000000000201 /* MMKV.cpp */,
+				E57A11000000000000000202 /* MMKV_IO.cpp */,
+				E57A11000000000000000203 /* MMKVLog.cpp */,
+				E57A11000000000000000204 /* CodedInputData.cpp */,
+				E57A11000000000000000205 /* CodedInputDataCrypt.cpp */,
+				E57A11000000000000000206 /* CodedOutputData.cpp */,
+				E57A11000000000000000207 /* KeyValueHolder.cpp */,
+				E57A11000000000000000208 /* PBUtility.cpp */,
+				E57A11000000000000000209 /* MiniPBCoder.cpp */,
+				E57A1100000000000000020A /* MMBuffer.cpp */,
+				E57A1100000000000000020B /* InterProcessLock.cpp */,
+				E57A1100000000000000020C /* MemoryFile.cpp */,
+				E57A1100000000000000020D /* ThreadLock.cpp */,
+				E57A1100000000000000020E /* AESCrypt.cpp */,
+				E57A1100000000000000020F /* openssl_aes_core.cpp */,
+				E57A11000000000000000210 /* openssl_cfb128.cpp */,
+				E57A11000000000000000211 /* openssl_md5_dgst.cpp */,
+				E57A11000000000000000212 /* openssl_md5_one.cpp */,
+				E57A11000000000000000213 /* crc32.cpp */,
+				E57A11000000000000000214 /* openssl_aesv8-armx.S */,
+			);
+			name = mmkv;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -315,6 +386,27 @@
 				E57A11000000000000000126 /* watchlist_page.cpp in Sources */,
 				E57A11000000000000000120 /* ios_shell_bridge.mm in Sources */,
 				E57A11000000000000000121 /* ios_vulkan_platform.mm in Sources */,
+				E57A11000000000000000301 /* MMKV.cpp in Sources */,
+				E57A11000000000000000302 /* MMKV_IO.cpp in Sources */,
+				E57A11000000000000000303 /* MMKVLog.cpp in Sources */,
+				E57A11000000000000000304 /* CodedInputData.cpp in Sources */,
+				E57A11000000000000000305 /* CodedInputDataCrypt.cpp in Sources */,
+				E57A11000000000000000306 /* CodedOutputData.cpp in Sources */,
+				E57A11000000000000000307 /* KeyValueHolder.cpp in Sources */,
+				E57A11000000000000000308 /* PBUtility.cpp in Sources */,
+				E57A11000000000000000309 /* MiniPBCoder.cpp in Sources */,
+				E57A1100000000000000030A /* MMBuffer.cpp in Sources */,
+				E57A1100000000000000030B /* InterProcessLock.cpp in Sources */,
+				E57A1100000000000000030C /* MemoryFile.cpp in Sources */,
+				E57A1100000000000000030D /* ThreadLock.cpp in Sources */,
+				E57A1100000000000000030E /* AESCrypt.cpp in Sources */,
+				E57A1100000000000000030F /* openssl_aes_core.cpp in Sources */,
+				E57A11000000000000000310 /* openssl_cfb128.cpp in Sources */,
+				E57A11000000000000000311 /* openssl_md5_dgst.cpp in Sources */,
+				E57A11000000000000000312 /* openssl_md5_one.cpp in Sources */,
+				E57A11000000000000000313 /* crc32.cpp in Sources */,
+				E57A11000000000000000314 /* openssl_aesv8-armx.S in Sources */,
+				E57A11000000000000000315 /* kv_store.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -324,6 +416,11 @@
 		E57A110000000000000000FB /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"FORCE_POSIX=1",
+					"MMKV_EMBED_ZLIB=1",
+				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -338,6 +435,7 @@
 					"$(SRCROOT)/../../../third_party/stb",
 					"$(SRCROOT)/../../../third_party/glm",
 					"$(SRCROOT)/../../../third_party/moltenvk/include",
+					"$(SRCROOT)/../../../third_party/mmkv/Core",
 					"$(DERIVED_FILE_DIR)",
 				);
 				INFOPLIST_FILE = EstarxSample/Info.plist;
@@ -360,6 +458,11 @@
 		E57A110000000000000000FC /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"FORCE_POSIX=1",
+					"MMKV_EMBED_ZLIB=1",
+				);
 				ASSETCATALOG_COMPILER_APPICON_NAME = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -374,6 +477,7 @@
 					"$(SRCROOT)/../../../third_party/stb",
 					"$(SRCROOT)/../../../third_party/glm",
 					"$(SRCROOT)/../../../third_party/moltenvk/include",
+					"$(SRCROOT)/../../../third_party/mmkv/Core",
 					"$(DERIVED_FILE_DIR)",
 				);
 				INFOPLIST_FILE = EstarxSample/Info.plist;

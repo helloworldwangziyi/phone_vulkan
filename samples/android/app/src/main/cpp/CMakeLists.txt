@@ -63,6 +63,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/platform/android/cpp/android_vulkan_platform.cpp
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
     ${EVK_ROOT}/core/src/frame_scheduler.cpp
+    ${EVK_ROOT}/core/src/kv_store.cpp
     ${EVK_ROOT}/core/src/vulkan_renderer.cpp
     ${EVK_ROOT}/core/src/ui/ui_application.cpp
     ${EVK_ROOT}/core/src/ui/render_view.cpp
@@ -79,6 +80,10 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/widget_tree.cpp
 )
 
+# MMKV Core（键值持久化，KeyValueStore 的实现）：静态库 target `core`，
+# 其 CMakeLists 自带 Android 分支（ashmem、armv8+crypto 汇编、链接 libz）。
+add_subdirectory(${EVK_ROOT}/third_party/mmkv/Core ${CMAKE_CURRENT_BINARY_DIR}/mmkv_core)
+
 target_include_directories(estarx_vulkan
     PUBLIC
         ${EVK_ROOT}/core/include
@@ -88,6 +93,8 @@ target_include_directories(estarx_vulkan
     PRIVATE
         ${EVK_GENERATED_DIR}
         ${EVK_ROOT}/third_party/stb
+        # kv_store.cpp 直接 include "MMKV.h"（与 iOS 手编配置同款约定）。
+        ${EVK_ROOT}/third_party/mmkv/Core
 )
 
 if (ANDROID)
@@ -99,6 +106,7 @@ find_library(android-lib android)
 find_library(vulkan-lib vulkan)
 
 target_link_libraries(estarx_vulkan
+    core
     ${log-lib}
     ${android-lib}
     ${vulkan-lib}

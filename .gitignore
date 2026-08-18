@@ -28,3 +28,6 @@ third_party/moltenvk/MoltenVK.xcframework/
 
 # Shader build outputs
 core/shaders/*.spv
+
+# MMKV CMake configure 期拷出的公共头（third_party/mmkv/Core/CMakeLists.txt 的 copy_files）
+third_party/mmkv/Core/include/

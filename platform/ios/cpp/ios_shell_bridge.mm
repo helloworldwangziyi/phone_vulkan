@@ -10,7 +10,10 @@
 
 #include "ios_shell_bridge.h"
 
+#import <Foundation/Foundation.h>
+
 #include "evk/app_lifecycle.h"
+#include "evk/kv_store.h"
 #include "evk/log.h"
 #include "evk/frame_scheduler.h"
 #include "evk/vulkan_renderer.h"
@@ -42,6 +45,18 @@ static void renderFrame(int64_t /*frameTimeNanos*/) {
 void evkIosInit(const void* layer) {
     if (g_renderer) {
         return;
+    }
+    // 引擎就绪前先注入私有存储目录：core 的 KeyValueStore 初始化需要
+    // 平台路径。Documents 目录随 App 沙盒持久保存；initialize 幂等，
+    // 视图重建重复调用安全。
+    @autoreleasepool {
+        NSArray<NSString*>* paths = NSSearchPathForDirectoriesInDomains(
+            NSDocumentDirectory, NSUserDomainMask, YES);
+        if (paths.count > 0) {
+            evk::KeyValueStore::initialize(paths.firstObject.UTF8String);
+        } else {
+            EVK_LOGE("failed to locate Documents directory");
+        }
     }
     g_platform = evkCreateIosPlatform(layer);
     if (!g_platform) {
