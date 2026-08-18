@@ -16,6 +16,7 @@
 #include "evk/log.h"
 #include "evk/ui/font_engine.h"
 #include "evk/ui/navigation/navigation_stack.h"
+#include "evk/ui/widgets.h"
 
 namespace {
 

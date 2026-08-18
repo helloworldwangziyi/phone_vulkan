@@ -5,6 +5,7 @@
 #include "app_theme.h"
 #include "evk/log.h"
 #include "evk/ui/navigation/navigation_stack.h"
+#include "evk/ui/widgets.h"
 
 std::unique_ptr<evk::ui::Widget> DetailPage::build(
     evk::ui::BuildContext& context) const {

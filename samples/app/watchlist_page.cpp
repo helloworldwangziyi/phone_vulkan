@@ -19,6 +19,7 @@
 #include "evk/kv_store.h"
 #include "evk/ui/event_bus.h"
 #include "evk/ui/font_engine.h"
+#include "evk/ui/widgets.h"
 
 namespace {
 

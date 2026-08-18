@@ -24,6 +24,14 @@
 		E57A11000000000000000125 /* app_images.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000002A /* app_images.cpp */; };
 		E57A11000000000000000123 /* app_fonts.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000028 /* app_fonts.cpp */; };
 		E57A11000000000000000110 /* widget_tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000019 /* widget_tree.cpp */; };
+		E57A11000000000000000140 /* basic.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000040 /* basic.cpp */; };
+		E57A11000000000000000141 /* button.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000041 /* button.cpp */; };
+		E57A11000000000000000142 /* container.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000042 /* container.cpp */; };
+		E57A11000000000000000143 /* flex.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000043 /* flex.cpp */; };
+		E57A11000000000000000144 /* image.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000044 /* image.cpp */; };
+		E57A11000000000000000145 /* list_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000045 /* list_view.cpp */; };
+		E57A11000000000000000146 /* scroll_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000046 /* scroll_view.cpp */; };
+		E57A11000000000000000147 /* text.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000047 /* text.cpp */; };
 		E57A11000000000000000111 /* button_control.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001A /* button_control.cpp */; };
 		E57A11000000000000000112 /* flex_layout.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001B /* flex_layout.cpp */; };
 		E57A11000000000000000113 /* scroll_control.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000001C /* scroll_control.cpp */; };
@@ -87,6 +95,14 @@
 		E57A1100000000000000002A /* app_images.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_images.cpp; path = ../../../samples/app/app_images.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000028 /* app_fonts.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_fonts.cpp; path = ../../../samples/app/app_fonts.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000019 /* widget_tree.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = widget_tree.cpp; path = ../../../core/src/ui/widget_tree.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000040 /* basic.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = basic.cpp; path = ../../../core/src/ui/controls/basic.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000041 /* button.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button.cpp; path = ../../../core/src/ui/controls/button.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000042 /* container.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = container.cpp; path = ../../../core/src/ui/controls/container.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000043 /* flex.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = flex.cpp; path = ../../../core/src/ui/controls/flex.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000044 /* image.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = image.cpp; path = ../../../core/src/ui/controls/image.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000045 /* list_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = list_view.cpp; path = ../../../core/src/ui/controls/list_view.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000046 /* scroll_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = scroll_view.cpp; path = ../../../core/src/ui/controls/scroll_view.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000047 /* text.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = text.cpp; path = ../../../core/src/ui/controls/text.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001A /* button_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button_control.cpp; path = ../../../core/src/ui/controls/button_control.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001B /* flex_layout.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = flex_layout.cpp; path = ../../../core/src/ui/layout/flex_layout.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001C /* scroll_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = scroll_control.cpp; path = ../../../core/src/ui/controls/scroll_control.cpp; sourceTree = "<group>"; };
@@ -177,6 +193,14 @@
 				E57A11000000000000000027 /* font_engine.cpp */,
 				E57A11000000000000000029 /* texture_store.cpp */,
 				E57A11000000000000000019 /* widget_tree.cpp */,
+				E57A11000000000000000040 /* basic.cpp */,
+				E57A11000000000000000041 /* button.cpp */,
+				E57A11000000000000000042 /* container.cpp */,
+				E57A11000000000000000043 /* flex.cpp */,
+				E57A11000000000000000044 /* image.cpp */,
+				E57A11000000000000000045 /* list_view.cpp */,
+				E57A11000000000000000046 /* scroll_view.cpp */,
+				E57A11000000000000000047 /* text.cpp */,
 				E57A1100000000000000001A /* button_control.cpp */,
 				E57A1100000000000000001B /* flex_layout.cpp */,
 				E57A1100000000000000001C /* scroll_control.cpp */,
@@ -372,6 +396,14 @@
 				E57A11000000000000000122 /* font_engine.cpp in Sources */,
 				E57A11000000000000000124 /* texture_store.cpp in Sources */,
 				E57A11000000000000000110 /* widget_tree.cpp in Sources */,
+				E57A11000000000000000140 /* basic.cpp in Sources */,
+				E57A11000000000000000141 /* button.cpp in Sources */,
+				E57A11000000000000000142 /* container.cpp in Sources */,
+				E57A11000000000000000143 /* flex.cpp in Sources */,
+				E57A11000000000000000144 /* image.cpp in Sources */,
+				E57A11000000000000000145 /* list_view.cpp in Sources */,
+				E57A11000000000000000146 /* scroll_view.cpp in Sources */,
+				E57A11000000000000000147 /* text.cpp in Sources */,
 				E57A11000000000000000111 /* button_control.cpp in Sources */,
 				E57A11000000000000000112 /* flex_layout.cpp in Sources */,
 				E57A11000000000000000113 /* scroll_control.cpp in Sources */,

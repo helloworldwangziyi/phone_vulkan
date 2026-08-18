@@ -78,6 +78,14 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/controls/scroll_control.cpp
     ${EVK_ROOT}/core/src/ui/navigation/navigation_stack.cpp
     ${EVK_ROOT}/core/src/ui/widget_tree.cpp
+    ${EVK_ROOT}/core/src/ui/controls/basic.cpp
+    ${EVK_ROOT}/core/src/ui/controls/button.cpp
+    ${EVK_ROOT}/core/src/ui/controls/container.cpp
+    ${EVK_ROOT}/core/src/ui/controls/flex.cpp
+    ${EVK_ROOT}/core/src/ui/controls/image.cpp
+    ${EVK_ROOT}/core/src/ui/controls/list_view.cpp
+    ${EVK_ROOT}/core/src/ui/controls/scroll_view.cpp
+    ${EVK_ROOT}/core/src/ui/controls/text.cpp
 )
 
 # MMKV Core（键值持久化，KeyValueStore 的实现）：静态库 target `core`，

@@ -29,6 +29,14 @@ fi
     "$repo_root/core/src/ui/controls/button_control.cpp" \
     "$repo_root/core/src/ui/layout/flex_layout.cpp" \
     "$repo_root/core/src/ui/widget_tree.cpp" \
+    "$repo_root/core/src/ui/controls/basic.cpp" \
+    "$repo_root/core/src/ui/controls/button.cpp" \
+    "$repo_root/core/src/ui/controls/container.cpp" \
+    "$repo_root/core/src/ui/controls/flex.cpp" \
+    "$repo_root/core/src/ui/controls/image.cpp" \
+    "$repo_root/core/src/ui/controls/list_view.cpp" \
+    "$repo_root/core/src/ui/controls/scroll_view.cpp" \
+    "$repo_root/core/src/ui/controls/text.cpp" \
     "$repo_root/core/src/ui/controls/scroll_control.cpp" \
     "$repo_root/core/src/ui/navigation/navigation_stack.cpp" \
     -o "$test_binary"

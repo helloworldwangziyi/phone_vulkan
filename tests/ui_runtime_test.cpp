@@ -20,6 +20,7 @@
 #include "evk/ui/navigation/navigation_stack.h"
 #include "evk/ui/render_view.h"
 #include "evk/ui/widget_tree.h"
+#include "evk/ui/widgets.h"
 
 namespace {
 
