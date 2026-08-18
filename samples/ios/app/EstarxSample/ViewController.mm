@@ -53,12 +53,20 @@ static const int32_t kActionCancel = 3;
 - (void)loadView {
     self.view = [[EVKMetalView alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.view.backgroundColor = UIColor.blackColor;
-    // 单指即可满足 core 当前的单指手势模型（滚动/点击/边缘返回）。
+    // 单指即可满足 core 当前的单指手势模型（滚动/点击）；
+    // 边缘返回由壳层手势识别器转成 BackPressed 事件，不占用触摸通道。
     self.view.multipleTouchEnabled = NO;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    // iOS 没有系统返回键：壳层用左边缘手势识别器模拟"系统返回"，
+    // 一次性上报 BackPressed 事件（不做跟手动画，与 Android 语义对齐）。
+    UIScreenEdgePanGestureRecognizer* edgeBack =
+        [[UIScreenEdgePanGestureRecognizer alloc]
+            initWithTarget:self action:@selector(onEdgeBack:)];
+    edgeBack.edges = UIRectEdgeLeft;
+    [self.view addGestureRecognizer:edgeBack];
     // 前后台切换 ≈ Android 的 surfaceDestroyed/surfaceCreated：
     // iOS 后台不允许碰 GPU，必须暂停 VSync 并释放渲染资源。
     [NSNotificationCenter.defaultCenter
@@ -125,6 +133,14 @@ static const int32_t kActionCancel = 3;
 }
 
 // ---- 触摸转发（点 → 像素换算在壳层完成，core 只认像素） ----
+
+// 左边缘手势一旦识别（开始拖动）就上报一次系统返回；
+// 识别成功会取消在屏触摸（touchesCancelled），页面不会同时吃到这次拖动。
+- (void)onEdgeBack:(UIScreenEdgePanGestureRecognizer*)recognizer {
+    if (recognizer.state == UIGestureRecognizerStateBegan) {
+        evkIosBackPressed();
+    }
+}
 
 - (void)forwardTouch:(UITouch*)touch action:(int32_t)action {
     const CGFloat scale = self.view.layer.contentsScale;

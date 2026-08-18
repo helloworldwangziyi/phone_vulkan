@@ -60,11 +60,12 @@ void testAppLifecycleCallback() {
         assert(id == evk::EventId::EngineReady);
         assert(data == nullptr);
         ++calls;
+        return true;
     });
-    evk::dispatchEvent(evk::EventId::EngineReady, nullptr);
+    assert(evk::dispatchEvent(evk::EventId::EngineReady, nullptr));
     assert(calls == 1);
     evk::setEventFunc({});
-    evk::dispatchEvent(evk::EventId::EngineReady, nullptr);
+    assert(!evk::dispatchEvent(evk::EventId::EngineReady, nullptr));
     assert(calls == 1);
 }
 
@@ -336,19 +337,27 @@ void testStateAndNavigatorLifecycle() {
     assert(CounterState::alive == 0);
 }
 
-void testAnimatedNavigationAndEdgeSwipe() {
+void testAnimatedNavigationAndBackEvent() {
     resetRuntime();
     evk::ui::setViewportSize(400.0f, 800.0f);
     evk::ui::runApp(evk::ui::makeWidget<CounterPage>(), {60.0f, {}});
     evk::ui::Navigator& navigator = *evk::ui::appNavigator();
     assert(navigator.push(evk::ui::makeWidget<CounterPage>(), false));
 
-    evk::ui::dispatchPointerEvent(
-        {evk::ui::PointerAction::Down, 0, 10.0f, 300.0f, ms(1000)});
-    evk::ui::dispatchPointerEvent(
-        {evk::ui::PointerAction::Move, 0, 260.0f, 300.0f, ms(1050)});
-    evk::ui::dispatchPointerEvent(
-        {evk::ui::PointerAction::Up, 0, 260.0f, 300.0f, ms(1060)});
+    // 平台壳上报系统返回 → App 入口（此处用测试替身模拟 app_entry 的
+    // BackPressed 分支）pop 导航栈；栈底不消费，交还平台壳。
+    evk::setEventFunc([](evk::EventId id, const void*) {
+        if (id != evk::EventId::BackPressed) {
+            return true;
+        }
+        evk::ui::Navigator* nav = evk::ui::appNavigator();
+        if (nav && nav->depth() > 1) {
+            nav->pop(true);
+            return true;
+        }
+        return false;
+    });
+    assert(evk::dispatchEvent(evk::EventId::BackPressed, nullptr));
 
     int64_t time = ms(1100);
     for (int i = 0; i < 30; ++i) {
@@ -356,6 +365,9 @@ void testAnimatedNavigationAndEdgeSwipe() {
         evk::beginFrame(time);
     }
     assert(navigator.depth() == 1);
+    // 栈底再按返回：不消费，由平台壳收尾。
+    assert(!evk::dispatchEvent(evk::EventId::BackPressed, nullptr));
+    evk::setEventFunc({});
     evk::ui::shutdownApp();
 }
 
@@ -605,7 +617,7 @@ int main(int argc, char** argv) {
     testScrollViewDragAndClamp();
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
-    testAnimatedNavigationAndEdgeSwipe();
+    testAnimatedNavigationAndBackEvent();
 
     testCanvas2dPrimitives();
 

@@ -1,6 +1,6 @@
 /**
  * @file app_lifecycle.cpp
- * @brief 生命周期事件通道实现：唯一入口回调的注册与转发。
+ * @brief 事件通道实现：唯一入口回调的注册与转发。
  */
 #include "evk/app_lifecycle.h"
 
@@ -21,11 +21,9 @@ void setEventFunc(EventFunc func) {
     eventFunc() = std::move(func);
 }
 
-void dispatchEvent(EventId id, const void* data) {
+bool dispatchEvent(EventId id, const void* data) {
     EventFunc& func = eventFunc();
-    if (func) {
-        func(id, data);
-    }
+    return func ? func(id, data) : false;
 }
 
 } // namespace evk

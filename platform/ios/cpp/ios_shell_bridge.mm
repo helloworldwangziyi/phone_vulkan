@@ -123,6 +123,12 @@ void evkIosTouch(int32_t action, int32_t pointerId, float x, float y,
     evk::ui::dispatchPointerEvent(event);
 }
 
+// 壳层左边缘手势识别器触发。与 Android nativeOnBackPressed 同语义：
+// 消费结果仅作回报，iOS 栈底没有"退出 App"的收尾动作。
+int32_t evkIosBackPressed(void) {
+    return evk::dispatchEvent(evk::EventId::BackPressed, nullptr) ? 1 : 0;
+}
+
 void evkIosDestroy(void) {
     evk::ui::cancelAllPointerEvents();
     evk::ui::stopAllAnimations();

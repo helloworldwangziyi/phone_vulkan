@@ -37,7 +37,7 @@ void createUi() {
         });
 }
 
-void appEvent(evk::EventId id, const void* data) {
+bool appEvent(evk::EventId id, const void* data) {
     switch (id) {
         case evk::EventId::SurfaceChanged: {
             const auto* size = static_cast<const evk::SurfaceChangedData*>(data);
@@ -56,7 +56,18 @@ void appEvent(evk::EventId id, const void* data) {
         case evk::EventId::SurfaceDestroyed:
             evk::ui::shutdownApp();
             break;
+        case evk::EventId::BackPressed: {
+            // 平台壳上报的系统返回：导航栈能 pop 就消费；
+            // 已在栈底返回 false，平台壳自行收尾（Android finish Activity）。
+            evk::ui::Navigator* navigator = evk::ui::appNavigator();
+            if (navigator && navigator->depth() > 1) {
+                navigator->pop(true);
+                return true;
+            }
+            return false;
+        }
     }
+    return true;
 }
 
 struct AppBootstrap {

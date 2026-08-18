@@ -188,6 +188,14 @@ Java_com_estarx_vulkan_NativeBridge_nativeOnTouch(JNIEnv* /*env*/, jclass /*claz
     evk::ui::dispatchPointerEvent(event);
 }
 
+// Java: NativeBridge.nativeOnBackPressed()
+// 系统返回统一经事件通道交给 App 决定：消费（导航栈 pop）返回 true；
+// 未消费（栈底/无 UI）返回 false，Java 侧据此交还系统默认行为。
+extern "C" JNIEXPORT jboolean JNICALL
+Java_com_estarx_vulkan_NativeBridge_nativeOnBackPressed(JNIEnv* /*env*/, jclass /*clazz*/) {
+    return evk::dispatchEvent(evk::EventId::BackPressed, nullptr) ? JNI_TRUE : JNI_FALSE;
+}
+
 // Java: NativeBridge.nativeDestroy()
 extern "C" JNIEXPORT void JNICALL
 Java_com_estarx_vulkan_NativeBridge_nativeDestroy(JNIEnv* /*env*/, jclass /*clazz*/) {
