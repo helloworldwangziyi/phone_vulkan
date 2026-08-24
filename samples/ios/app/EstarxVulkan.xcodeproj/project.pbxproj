@@ -13,6 +13,11 @@
 		E57A11000000000000000101 /* app_lifecycle.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000010 /* app_lifecycle.cpp */; };
 		E57A11000000000000000102 /* frame_scheduler.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000011 /* frame_scheduler.cpp */; };
 		E57A11000000000000000103 /* vulkan_renderer.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000012 /* vulkan_renderer.cpp */; };
+		E57A11000000000000000148 /* compositor.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000048 /* compositor.cpp */; };
+		E57A11000000000000000149 /* vulkan_context.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000049 /* vulkan_context.cpp */; };
+		E57A1100000000000000014A /* swapchain.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004A /* swapchain.cpp */; };
+		E57A1100000000000000014B /* ui_pipeline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004B /* ui_pipeline.cpp */; };
+		E57A1100000000000000014C /* texture_cache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004C /* texture_cache.cpp */; };
 		E57A11000000000000000104 /* ui_application.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000013 /* ui_application.cpp */; };
 		E57A11000000000000000105 /* render_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000014 /* render_view.cpp */; };
 		E57A11000000000000000106 /* pointer_input.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000015 /* pointer_input.cpp */; };
@@ -84,6 +89,11 @@
 		E57A11000000000000000010 /* app_lifecycle.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_lifecycle.cpp; path = ../../../core/src/app_lifecycle.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000011 /* frame_scheduler.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = frame_scheduler.cpp; path = ../../../core/src/frame_scheduler.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000012 /* vulkan_renderer.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = vulkan_renderer.cpp; path = ../../../core/src/vulkan_renderer.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000048 /* compositor.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = compositor.cpp; path = ../../../core/src/compositor.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000049 /* vulkan_context.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = vulkan_context.cpp; path = ../../../core/src/gpu/vulkan_context.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000004A /* swapchain.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = swapchain.cpp; path = ../../../core/src/gpu/swapchain.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000004B /* ui_pipeline.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ui_pipeline.cpp; path = ../../../core/src/gpu/ui_pipeline.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000004C /* texture_cache.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = texture_cache.cpp; path = ../../../core/src/gpu/texture_cache.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000013 /* ui_application.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ui_application.cpp; path = ../../../core/src/ui/ui_application.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000014 /* render_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = render_view.cpp; path = ../../../core/src/ui/render_view.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000015 /* pointer_input.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = pointer_input.cpp; path = ../../../core/src/ui/pointer_input.cpp; sourceTree = "<group>"; };
@@ -184,6 +194,11 @@
 				E57A11000000000000000010 /* app_lifecycle.cpp */,
 				E57A11000000000000000011 /* frame_scheduler.cpp */,
 				E57A11000000000000000012 /* vulkan_renderer.cpp */,
+				E57A11000000000000000048 /* compositor.cpp */,
+				E57A11000000000000000049 /* vulkan_context.cpp */,
+				E57A1100000000000000004A /* swapchain.cpp */,
+				E57A1100000000000000004B /* ui_pipeline.cpp */,
+				E57A1100000000000000004C /* texture_cache.cpp */,
 				E57A11000000000000000013 /* ui_application.cpp */,
 				E57A11000000000000000014 /* render_view.cpp */,
 				E57A11000000000000000015 /* pointer_input.cpp */,
@@ -387,6 +402,11 @@
 				E57A11000000000000000101 /* app_lifecycle.cpp in Sources */,
 				E57A11000000000000000102 /* frame_scheduler.cpp in Sources */,
 				E57A11000000000000000103 /* vulkan_renderer.cpp in Sources */,
+				E57A11000000000000000148 /* compositor.cpp in Sources */,
+				E57A11000000000000000149 /* vulkan_context.cpp in Sources */,
+				E57A1100000000000000014A /* swapchain.cpp in Sources */,
+				E57A1100000000000000014B /* ui_pipeline.cpp in Sources */,
+				E57A1100000000000000014C /* texture_cache.cpp in Sources */,
 				E57A11000000000000000104 /* ui_application.cpp in Sources */,
 				E57A11000000000000000105 /* render_view.cpp in Sources */,
 				E57A11000000000000000106 /* pointer_input.cpp in Sources */,

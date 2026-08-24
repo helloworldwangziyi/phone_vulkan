@@ -16,34 +16,27 @@
 #include "evk/kv_store.h"
 #include "evk/log.h"
 #include "evk/frame_scheduler.h"
+#include "evk/compositor.h"
+// 完整类型：g_platform->getSurfaceSize 与 compositor->renderer()->setSize 要用。
+#include "evk/render_platform.h"
 #include "evk/vulkan_renderer.h"
 #include "evk/ui/animation_scheduler.h"
 #include "evk/ui/ui_application.h"
-#include "evk/ui/paint_canvas.h"
 #include "evk/ui/pointer_input.h"
 
 // ios_vulkan_platform.mm 以 C 链接导出的工厂函数。
 extern "C" evk::IPlatform* evkCreateIosPlatform(const void* layer);
 extern "C" void evkDestroyIosPlatform(evk::IPlatform* platform);
 
-// 全局渲染器与平台适配器，生命周期与壳层视图一致。
-static evk::Renderer* g_renderer = nullptr;
+// 全局 Compositor（帧编排器，内部持有渲染器）与平台适配器，
+// 生命周期与壳层视图一致。
+static evk::Compositor* g_compositor = nullptr;
 static evk::IPlatform* g_platform = nullptr;
 static bool g_appStarted = false;
 
-// 画一帧：构建视图树内容（内部执行 View draw callback）后交给渲染器。
-// 同时注册为 core 的 FrameFunc，App 调 evk::requestRender() 会走到这里。
-static void renderFrame(int64_t /*frameTimeNanos*/) {
-    static evk::ui::Canvas canvas;
-    evk::ui::buildFrame(canvas);
-    if (g_renderer) {
-        g_renderer->render(canvas);
-    }
-}
-
 // 壳层：视图与 Metal 层就绪（可能多次：退后台重建）。幂等。
 void evkIosInit(const void* layer) {
-    if (g_renderer) {
+    if (g_compositor) {
         return;
     }
     // 引擎就绪前先注入私有存储目录：core 的 KeyValueStore 初始化需要
@@ -63,19 +56,20 @@ void evkIosInit(const void* layer) {
         EVK_LOGE("failed to create iOS platform");
         return;
     }
-    g_renderer = new evk::Renderer(g_platform);
-    if (!g_renderer->initialize()) {
+    g_compositor = new evk::Compositor(g_platform);
+    if (!g_compositor->initialize()) {
         // 失败时按创建的反序清理干净，保证下次能干净重试。
         EVK_LOGE("failed to initialize Vulkan renderer");
-        delete g_renderer;
-        g_renderer = nullptr;
+        delete g_compositor;
+        g_compositor = nullptr;
         evkDestroyIosPlatform(g_platform);
         g_platform = nullptr;
         return;
     }
 
     EVK_LOGI("Vulkan renderer initialized (MoltenVK)");
-    evk::setFrameFunc(&renderFrame);
+    // 帧编排（buildFrame + 首帧日志 + render）内聚在 evk::Compositor。
+    evk::setFrameFunc([](int64_t) { if (g_compositor) g_compositor->renderFrame(); });
     // 渲染器初始化完成：core 进入就绪状态，之后 App 才能安全创建视图。
     evk::setEngineReady(true);
     // EngineReady 之前先报一次 SurfaceChanged：此时 drawableSize 已是真实像素，
@@ -96,9 +90,9 @@ void evkIosInit(const void* layer) {
 void evkIosResize(int32_t width, int32_t height) {
     evk::SurfaceChangedData data{width, height};
     evk::dispatchEvent(evk::EventId::SurfaceChanged, &data);
-    if (g_renderer) {
-        g_renderer->setSize(static_cast<uint32_t>(width),
-                            static_cast<uint32_t>(height));
+    if (g_compositor) {
+        g_compositor->renderer()->setSize(static_cast<uint32_t>(width),
+                                          static_cast<uint32_t>(height));
     }
     evk::requestRender();
 }
@@ -143,9 +137,9 @@ void evkIosDestroy(void) {
     evk::setFrameFunc(nullptr);
     evk::setEngineReady(false);
     g_appStarted = false; // 下次 evkIosInit 走完整 EngineReady 重建流程
-    if (g_renderer) {
-        delete g_renderer;
-        g_renderer = nullptr;
+    if (g_compositor) {
+        delete g_compositor;
+        g_compositor = nullptr;
     }
     if (g_platform) {
         evkDestroyIosPlatform(g_platform);

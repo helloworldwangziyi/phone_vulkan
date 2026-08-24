@@ -52,7 +52,12 @@ execute_process(
 add_library(estarx_vulkan_core STATIC
     core/src/app_lifecycle.cpp
     core/src/frame_scheduler.cpp
+    core/src/compositor.cpp
     core/src/vulkan_renderer.cpp
+    core/src/gpu/vulkan_context.cpp
+    core/src/gpu/swapchain.cpp
+    core/src/gpu/ui_pipeline.cpp
+    core/src/gpu/texture_cache.cpp
     core/src/ui/ui_application.cpp
     core/src/ui/render_view.cpp
     core/src/ui/pointer_input.cpp

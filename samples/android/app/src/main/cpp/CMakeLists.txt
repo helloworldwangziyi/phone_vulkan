@@ -64,7 +64,12 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
     ${EVK_ROOT}/core/src/frame_scheduler.cpp
     ${EVK_ROOT}/core/src/kv_store.cpp
+    ${EVK_ROOT}/core/src/compositor.cpp
     ${EVK_ROOT}/core/src/vulkan_renderer.cpp
+    ${EVK_ROOT}/core/src/gpu/vulkan_context.cpp
+    ${EVK_ROOT}/core/src/gpu/swapchain.cpp
+    ${EVK_ROOT}/core/src/gpu/ui_pipeline.cpp
+    ${EVK_ROOT}/core/src/gpu/texture_cache.cpp
     ${EVK_ROOT}/core/src/ui/ui_application.cpp
     ${EVK_ROOT}/core/src/ui/render_view.cpp
     ${EVK_ROOT}/core/src/ui/pointer_input.cpp
