@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "evk/app_lifecycle.h"
@@ -10,6 +11,7 @@
 #include "evk/ui/ui_application.h"
 #include "evk/ui/animation_scheduler.h"
 #include "evk/ui/font_engine.h"
+#include "evk/ui/text_layout.h"
 #include "evk/ui/texture_store.h"
 #include "evk/ui/paint_canvas.h"
 #include "evk/ui/view/button_control.h"
@@ -566,7 +568,127 @@ void testFontEngine(const char* latinPath, const char* cjkPath) {
     fonts.reset();
 }
 
-/// 2D 图元：顶点数公式、合批、图像登记与子区域贴图。
+/// 多行排版：CJK 任意断、英文按词断、硬断、\n、缓存、clip 裁剪与
+/// 换行 Text 控件的高度回灌。
+void testTextLayout(const char* latinPath, const char* cjkPath) {
+    auto& fonts = evk::ui::FontEngine::instance();
+    fonts.reset();
+    const auto latinData = readFile(latinPath);
+    const auto cjkData = readFile(cjkPath);
+    assert(!latinData.empty() && !cjkData.empty());
+    const evk::ui::FontId latin = fonts.addFont(latinData.data(), latinData.size());
+    fonts.addFont(cjkData.data(), cjkData.size());
+
+    // 行高与单行测量一致；CJK 单字宽（Roboto 缺字，回退到 CJK 字体）。
+    float lineHeight = 0.0f;
+    fonts.measureText("", 32.0f, latin, nullptr, &lineHeight);
+    assert(lineHeight > 0.0f);
+    float cjkW = 0.0f;
+    fonts.measureText("行", 32.0f, latin, &cjkW, nullptr);
+    assert(cjkW > 0.0f);
+
+    // CJK 任意断：4 字按 2.5 字宽排 → 2 行，每行 2 字。
+    evk::ui::TextLayout layout;
+    layout.layout("行情速览", 32.0f, latin, cjkW * 2.5f);
+    assert(layout.lineCount() == 2);
+    assert(layout.lineText(0) == "行情");
+    assert(layout.lineText(1) == "速览");
+    assert(layout.lineHeight() == lineHeight);
+    assert(layout.totalHeight() == lineHeight * 2.0f);
+
+    // 相同输入复用缓存（revision 不增）；宽度变了才重排。
+    const int rev = layout.revision();
+    layout.layout("行情速览", 32.0f, latin, cjkW * 2.5f);
+    assert(layout.revision() == rev);
+    layout.layout("行情速览", 32.0f, latin, cjkW * 3.5f);
+    assert(layout.revision() == rev + 1);
+    assert(layout.lineCount() == 2);
+    assert(layout.lineText(0) == "行情速");
+    assert(layout.lineText(1) == "览");
+
+    // 英文按词断：行宽刚好放下两个词，第三个词回退到最近空格断行，
+    // 断点处的空格丢弃（行尾不留、下行不带）。
+    float spaceW = 0.0f;
+    float aW = 0.0f;
+    fonts.measureText(" ", 32.0f, latin, &spaceW, nullptr);
+    fonts.measureText("a", 32.0f, latin, &aW, nullptr);
+    assert(spaceW > 0.0f && aW > 0.0f);
+    const float twoWords = 2.0f * aW + spaceW + 2.0f * aW; // "aa bb"
+    layout.layout("aa bb cc", 32.0f, latin, twoWords + aW * 0.5f);
+    assert(layout.lineCount() == 2);
+    assert(layout.lineText(0) == "aa bb");
+    assert(layout.lineText(1) == "cc");
+
+    // 超长单词硬断：10 个 a 按 3.x 字宽 → "aaa" × 3 + "a"。
+    float aaaW = 0.0f;
+    fonts.measureText("aaa", 32.0f, latin, &aaaW, nullptr);
+    layout.layout("aaaaaaaaaa", 32.0f, latin, aaaW + aW * 0.5f);
+    assert(layout.lineCount() == 4);
+    assert(layout.lineText(0) == "aaa");
+    assert(layout.lineText(3) == "a");
+
+    // '\n' 强制断行：尾部空行保留，连续 '\n' 产生空行；行首空白跳过。
+    layout.layout("ab\ncd\n", 32.0f, latin, 1000.0f);
+    assert(layout.lineCount() == 3);
+    assert(layout.lineText(0) == "ab");
+    assert(layout.lineText(1) == "cd");
+    assert(layout.lineText(2).empty());
+    layout.layout("a\n\nb", 32.0f, latin, 1000.0f);
+    assert(layout.lineCount() == 3);
+    assert(layout.lineText(1).empty());
+    layout.layout("  ab", 32.0f, latin, 1000.0f);
+    assert(layout.lineCount() == 1 && layout.lineText(0) == "ab");
+    layout.layout("", 32.0f, latin, 1000.0f);
+    assert(layout.lineCount() == 0 && layout.totalHeight() == 0.0f);
+
+    // clip 裁剪：只画与裁剪区相交的行，视口外的行不生成顶点。
+    layout.layout("ab\ncd\nef", 32.0f, latin, 1000.0f);
+    assert(layout.lineCount() == 3);
+    evk::ui::Canvas canvas;
+    const evk::ui::Color white = evk::ui::Color::rgba(0xFFFFFFFF);
+    canvas.clear();
+    layout.paint(canvas, 0.0f, 0.0f, white, {0.0f, 0.0f, 500.0f, lineHeight});
+    assert(canvas.vertices().size() == 2 * 6);        ///< 只画第 0 行（2 字形）
+    canvas.clear();
+    layout.paint(canvas, 0.0f, 0.0f, white,
+                 {0.0f, lineHeight, 500.0f, lineHeight});
+    assert(canvas.vertices().size() == 2 * 6);        ///< 只画第 1 行
+    canvas.clear();
+    layout.paint(canvas, 0.0f, 0.0f, white,
+                 {0.0f, lineHeight * 10.0f, 500.0f, lineHeight});
+    assert(canvas.vertices().empty());                ///< 全部在视口外
+
+    // 换行 Text 控件：挂进 Column 后高度 = 行数 × 行高（视图拿到宽度后
+    // 经 setFlexChild 回灌），绘制只出可见行的字形批次。
+    resetRuntime();
+    evk::ui::setViewportSize(400.0f, 800.0f);
+    // 构造一段 2.x 屏宽的中文长文本。
+    std::string longText;
+    for (int i = 0; i < 20; ++i) {
+        longText += "行情速览";
+    }
+    evk::ui::TextLayout expect;
+    expect.layout(longText.c_str(), 32.0f, latin, 400.0f);
+    assert(expect.lineCount() > 1);
+    evk::ui::runApp(
+        evk::ui::column(evk::ui::text(longText, 32.0f, 0xFFFFFFFF,
+                                      evk::ui::kFontAny, /*softWrap=*/true)),
+        {});
+    evk::ui::View* page = evk::ui::appNavigator()->topView();
+    assert(page && page->children.size() == 1);
+    const evk::ui::View* textView = page->children[0].get();
+    assert(textView->rect.w == 400.0f);
+    assert(textView->rect.h == expect.totalHeight());
+    assert(evk::beginFrame(ms(10)));
+    bool hasTextBatch = false;
+    for (const auto& batch : g_canvas.batches()) {
+        hasTextBatch = hasTextBatch || batch.textureId != 0;
+    }
+    assert(hasTextBatch);
+    evk::ui::shutdownApp();
+
+    fonts.reset();
+}
 void testCanvas2dPrimitives() {
     auto& store = evk::ui::TextureStore::instance();
     store.reset();
@@ -730,6 +852,7 @@ int main(int argc, char** argv) {
     // 字体测试需要两个字体文件路径（拉丁 + 中文）。
     if (argc >= 3) {
         testFontEngine(argv[1], argv[2]);
+        testTextLayout(argv[1], argv[2]);
     } else {
         std::printf("font tests skipped (pass latin.ttf cjk.ttf as args)\n");
     }

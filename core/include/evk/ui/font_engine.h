@@ -42,6 +42,19 @@ struct PlacedGlyph {
 };
 
 /**
+ * @brief 逐码点推进宽度（纯测量结果，不触发光栅化）。
+ *
+ * 由 measureGlyphs 按原文顺序吐出；携带字节区间，调用方据此把
+ * 码点流映射回原文 UTF-8 切片（逐行绘制、断行回退都要用）。
+ */
+struct GlyphAdvance {
+    uint32_t codepoint; ///< 码点（非法 UTF-8 段解码为 U+FFFD）
+    size_t byteOffset;  ///< 在输入串中的字节起点
+    size_t byteLength;  ///< UTF-8 编码字节数
+    float advance;      ///< 推进宽度（像素）；与前一字形的 kern 已折算在内
+};
+
+/**
  * @brief 字体引擎单例：字体注册 → 文本排版 → 字形 atlas。
  *
  * 排版按"首选字体优先，缺字沿注册顺序回退"的规则逐码点解析：
@@ -80,6 +93,20 @@ public:
      */
     float measureText(const char* utf8, float sizePx, FontId preferred,
                       float* outWidth = nullptr, float* outHeight = nullptr) const;
+
+    /**
+     * @brief 逐码点测量推进宽度（不绘制，不触发光栅化）。
+     *
+     * 与 measureText 共用同一条排布逻辑（layoutRun），只是把"每个码点
+     * 多宽"逐字吐出来——多行排版（TextLayout）按它累加行宽定断点。
+     * 行高走 measureText 的 outHeight（不依赖文本内容）。
+     * @param utf8 UTF-8 文本
+     * @param sizePx 字号（em 像素大小）
+     * @param preferred 首选字体；kFontAny = 无偏好（纯回退链）
+     * @return 逐码点测量结果，顺序与原文一致
+     */
+    std::vector<GlyphAdvance> measureGlyphs(const char* utf8, float sizePx,
+                                            FontId preferred) const;
 
     /**
      * @brief 单行排版并逐字形回调（测量与绘制共用同一条排布逻辑）。
@@ -127,12 +154,15 @@ private:
         int rowHeight = 0; ///< 当前行已用高度（同行按最高字形对齐）
     };
 
-    /// 排版用的解析结果（measureText 与 forEachGlyph 共用）。
+    /// 排版用的解析结果（measureText / measureGlyphs / forEachGlyph 共用）。
     struct GlyphRunItem {
         int fontIndex;   ///< 实际选中的字体（注册表下标）
         int glyphIndex;  ///< 字形索引（stbtt 的 gid）
         float advance;   ///< 本字形推进（像素）
         float kern;      ///< 与前一个字形的字距调整（像素）
+        uint32_t codepoint; ///< 码点（measureGlyphs 用）
+        size_t byteOffset;  ///< 在输入串中的字节起点（measureGlyphs 用）
+        size_t byteLength;  ///< UTF-8 编码字节数（measureGlyphs 用）
     };
 
     /// (字体, 字形, 整数像素高) → 缓存条目。

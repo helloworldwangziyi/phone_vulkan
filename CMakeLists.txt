@@ -65,6 +65,7 @@ add_library(estarx_vulkan_core STATIC
     core/src/ui/paint_canvas.cpp
     core/src/ui/event_bus.cpp
     core/src/ui/font_engine.cpp
+    core/src/ui/text_layout.cpp
     core/src/ui/texture_store.cpp
     core/src/ui/view/button_control.cpp
     core/src/ui/layout/flex_layout.cpp

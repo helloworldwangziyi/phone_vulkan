@@ -156,6 +156,7 @@ std::vector<FontEngine::GlyphRunItem> FontEngine::layoutRun(const char* utf8,
     int prevGlyph = -1;
     size_t i = 0;
     while (utf8[i] != '\0') {
+        const size_t byteOffset = i;
         const uint32_t cp = decodeUtf8(utf8, i);
         const int fontIndex = resolveFont(cp, preferred);
         if (fontIndex < 0) {
@@ -169,6 +170,9 @@ std::vector<FontEngine::GlyphRunItem> FontEngine::layoutRun(const char* utf8,
         item.fontIndex = fontIndex;
         item.glyphIndex = gid;
         item.kern = 0.0f;
+        item.codepoint = cp;
+        item.byteOffset = byteOffset;
+        item.byteLength = i - byteOffset;
         int advance = 0, leftBearing = 0;
         stbtt_GetGlyphHMetrics(info, gid, &advance, &leftBearing);
         item.advance = advance * scale;
@@ -299,6 +303,20 @@ float FontEngine::measureText(const char* utf8, float sizePx, FontId preferred,
         *outHeight = ascent + descent;
     }
     return width;
+}
+
+std::vector<GlyphAdvance> FontEngine::measureGlyphs(const char* utf8,
+                                                    float sizePx,
+                                                    FontId preferred) const {
+    std::vector<GlyphAdvance> result;
+    for (const GlyphRunItem& item : layoutRun(utf8, sizePx, preferred)) {
+        // kern 折算进后一个字形的推进：累加总和与 measureText 一致，
+        // 逐字形右缘只差一个 kern 量级，对断行判断无影响。
+        result.push_back(
+            {item.codepoint, item.byteOffset, item.byteLength,
+             item.advance + item.kern});
+    }
+    return result;
 }
 
 void FontEngine::forEachGlyph(const char* utf8, float sizePx, FontId preferred,

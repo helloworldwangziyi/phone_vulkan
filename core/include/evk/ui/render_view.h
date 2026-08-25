@@ -70,6 +70,11 @@ public:
     PaintContext(Canvas& canvas, const Rect& bounds, const Rect& clip);
 
     Size size() const { return {bounds_.w, bounds_.h}; }
+    /// 裁剪矩形（视图局部坐标）：逐行/逐块自裁剪的 painter（如多行文本）
+    /// 用它判断可见性。
+    Rect clip() const {
+        return {clip_.x - bounds_.x, clip_.y - bounds_.y, clip_.w, clip_.h};
+    }
     void drawRect(const Rect& rect, uint32_t rgba);
     void drawTriangle(float x1, float y1, float x2, float y2,
                       float x3, float y3,

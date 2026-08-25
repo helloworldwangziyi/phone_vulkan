@@ -77,6 +77,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/paint_canvas.cpp
     ${EVK_ROOT}/core/src/ui/event_bus.cpp
     ${EVK_ROOT}/core/src/ui/font_engine.cpp
+    ${EVK_ROOT}/core/src/ui/text_layout.cpp
     ${EVK_ROOT}/core/src/ui/texture_store.cpp
     ${EVK_ROOT}/core/src/ui/view/button_control.cpp
     ${EVK_ROOT}/core/src/ui/layout/flex_layout.cpp
