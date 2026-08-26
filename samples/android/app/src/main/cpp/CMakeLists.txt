@@ -59,6 +59,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/samples/app/home_page.cpp
     ${EVK_ROOT}/samples/app/detail_page.cpp
     ${EVK_ROOT}/samples/app/watchlist_page.cpp
+    ${EVK_ROOT}/samples/app/path_demo_page.cpp
     ${EVK_ROOT}/platform/android/cpp/android_jni_bridge.cpp
     ${EVK_ROOT}/platform/android/cpp/android_vulkan_platform.cpp
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
@@ -79,6 +80,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/font_engine.cpp
     ${EVK_ROOT}/core/src/ui/text_layout.cpp
     ${EVK_ROOT}/core/src/ui/texture_store.cpp
+    ${EVK_ROOT}/core/src/ui/path.cpp
     ${EVK_ROOT}/core/src/ui/view/button_control.cpp
     ${EVK_ROOT}/core/src/ui/layout/flex_layout.cpp
     ${EVK_ROOT}/core/src/ui/view/scroll_control.cpp

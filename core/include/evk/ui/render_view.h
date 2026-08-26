@@ -1,5 +1,6 @@
 #pragma once
 
+#include "evk/ui/path.h"
 #include "evk/ui/texture_store.h"
 
 #include <cstddef>
@@ -92,6 +93,11 @@ public:
                   uint32_t rgba);
     /// 画线段（视图局部坐标，宽度按像素展开成四边形）。
     void drawLine(float x1, float y1, float x2, float y2, float width, uint32_t rgba);
+    /// 填充矢量路径（路径坐标为视图局部坐标，贝塞尔自适应细分后三角化）。
+    void drawPath(const Path& path, uint32_t rgba, float tolerance = 0.5f);
+    /// 描边矢量路径（视图局部坐标，平端头线段拼接）。
+    void strokePath(const Path& path, float width, uint32_t rgba,
+                    float tolerance = 0.5f);
     /// 画实心圆（圆心为视图局部坐标）。
     void drawCircle(float cx, float cy, float radius, uint32_t rgba, int segments = 0);
     /// 画实心椭圆。

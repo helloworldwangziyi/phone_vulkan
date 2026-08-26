@@ -99,6 +99,39 @@ void Canvas::drawLine(float x1, float y1, float x2, float y2, float width,
     append(clip, 0, v, 6);
 }
 
+void Canvas::drawPath(const Path& path, const Rect& clip, Color c, float tolerance) {
+    // Path::fill 输出的是屏幕绝对坐标的三角形顶点（每 3 个 Point 一个三角形），
+    // 直接转成 UiVertex 追加；白纹理批次，和矩形/圆走同一条管线。
+    std::vector<Point> triangles;
+    path.fill(tolerance, triangles);
+    if (triangles.empty()) {
+        return;
+    }
+    std::vector<UiVertex> verts;
+    verts.reserve(triangles.size());
+    for (const Point& p : triangles) {
+        verts.push_back({p.x, p.y, c.r, c.g, c.b, c.a, 0.0f, 0.0f});
+    }
+    append(clip, 0, verts.data(), verts.size());
+}
+
+void Canvas::strokePath(const Path& path, float width, const Rect& clip, Color c,
+                        float tolerance) {
+    // Path::stroke 输出的是四边形顶点（每 6 个 Point 一个四边形），
+    // 同样转成 UiVertex 追加。
+    std::vector<Point> triangles;
+    path.stroke(tolerance, width, triangles);
+    if (triangles.empty()) {
+        return;
+    }
+    std::vector<UiVertex> verts;
+    verts.reserve(triangles.size());
+    for (const Point& p : triangles) {
+        verts.push_back({p.x, p.y, c.r, c.g, c.b, c.a, 0.0f, 0.0f});
+    }
+    append(clip, 0, verts.data(), verts.size());
+}
+
 void Canvas::drawCircle(float cx, float cy, float radius, const Rect& clip, Color c,
                         int segments) {
     if (radius <= 0.0f) {

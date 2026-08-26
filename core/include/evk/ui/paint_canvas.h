@@ -10,6 +10,7 @@
  * 弧/圆类图元用扇形/条带逼近（分段数可调），不做反走样几何——
  * 文字边缘的抗锯齿来自覆盖率采样，几何边缘目前直出（后续可拓展）。
  */
+#include "evk/ui/path.h"
 #include "evk/ui/render_view.h"
 #include "evk/ui/texture_store.h"
 
@@ -93,6 +94,27 @@ public:
      */
     void drawLine(float x1, float y1, float x2, float y2, float width,
                   const Rect& clip, Color c);
+
+    /**
+     * @brief 填充矢量路径（自适应细分 + ear clipping 三角化）。
+     * @param path 路径（坐标已是屏幕绝对坐标）
+     * @param clip 裁剪矩形
+     * @param c 填充色
+     * @param tolerance 细分容差（像素），0.5 左右即可
+     */
+    void drawPath(const Path& path, const Rect& clip, Color c,
+                  float tolerance = 0.5f);
+
+    /**
+     * @brief 描边矢量路径（细分成线段，每段展开成四边形，平端头）。
+     * @param path 路径（坐标已是屏幕绝对坐标）
+     * @param width 线宽（像素）
+     * @param clip 裁剪矩形
+     * @param c 描边色
+     * @param tolerance 细分容差（像素）
+     */
+    void strokePath(const Path& path, float width, const Rect& clip, Color c,
+                    float tolerance = 0.5f);
 
     // ---- 圆弧类 ----
 

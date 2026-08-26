@@ -75,6 +75,18 @@ void PaintContext::drawLine(float x1, float y1, float x2, float y2, float width,
                      bounds_.y + y2, width, clip_, Color::rgba(rgba));
 }
 
+void PaintContext::drawPath(const Path& path, uint32_t rgba, float tolerance) {
+    // 路径坐标是视图局部坐标，平移到屏幕绝对坐标后交给 Canvas。
+    canvas_.drawPath(path.translated(bounds_.x, bounds_.y), clip_,
+                     Color::rgba(rgba), tolerance);
+}
+
+void PaintContext::strokePath(const Path& path, float width, uint32_t rgba,
+                              float tolerance) {
+    canvas_.strokePath(path.translated(bounds_.x, bounds_.y), width, clip_,
+                       Color::rgba(rgba), tolerance);
+}
+
 void PaintContext::drawCircle(float cx, float cy, float radius, uint32_t rgba,
                               int segments) {
     canvas_.drawCircle(bounds_.x + cx, bounds_.y + cy, radius, clip_,
