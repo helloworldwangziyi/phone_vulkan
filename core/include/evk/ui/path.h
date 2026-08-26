@@ -57,15 +57,18 @@ public:
      * @brief 填充路径：自适应细分 + ear clipping 三角化。
      * @param tolerance 细分容差（像素）；控制点到弦的距离小于此值时停止细分。
      *                  0.5 左右即可得到平滑曲线，越小顶点越多。
+     *                  内部会钳制到 0.01 下限，传 0/负值是安全的。
      * @param outTriangles 输出三角形顶点（每 3 个 Point 一个三角形，已展开）。
+     *                     结果为追加写入，调用前如需清空请自行 clear()。
      */
     void fill(float tolerance, std::vector<Point>& outTriangles) const;
 
     /**
-     * @brief 描边路径：细分成线段，每段展开成四边形（平端头）。
-     * @param tolerance 细分容差（像素）。
+     * @brief 描边路径：细分成线段，每段展开成四边形（平端头）；
+     *        close() 闭合的轮廓会补画末点回到起点的闭合段。
+     * @param tolerance 细分容差（像素），同 fill()。
      * @param width 线宽（像素）。
-     * @param outTriangles 输出三角形顶点（每 6 个 Point 一个四边形）。
+     * @param outTriangles 输出三角形顶点（每 6 个 Point 一个四边形），追加写入。
      */
     void stroke(float tolerance, float width, std::vector<Point>& outTriangles) const;
 
@@ -89,8 +92,14 @@ private:
 
     std::vector<VerbPoint> verbs_;
 
-    /// 把所有命令细分成多个子轮廓（每个轮廓是闭合的点序列）。
-    void flatten(float tolerance, std::vector<std::vector<Point>>& contours) const;
+    /// 细分后的子轮廓：点序列 + 是否以 close() 显式闭合。
+    struct Contour {
+        std::vector<Point> points;
+        bool closed = false;
+    };
+
+    /// 把所有命令细分成多个子轮廓（fill 按多边形三角化，stroke 按线段展开）。
+    void flatten(float tolerance, std::vector<Contour>& contours) const;
 };
 
 } // namespace evk::ui

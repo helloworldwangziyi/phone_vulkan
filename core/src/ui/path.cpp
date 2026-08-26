@@ -38,25 +38,30 @@ Point midpoint(Point a, Point b) {
 
 // ---- 贝塞尔自适应细分（de Casteljau）----
 
+/// 细分递归深度上限：防止退化输入（NaN 坐标、零距离等）无限递归。
+/// 2^24 段远超任何屏幕分辨率的平滑需求。
+constexpr int kMaxFlattenDepth = 24;
+
 /// 二次贝塞尔递归细分：控制点到弦的距离 < tolerance 时停止。
-void flattenQuad(Point p0, Point p1, Point p2, float tolerance,
+void flattenQuad(Point p0, Point p1, Point p2, float tolerance, int depth,
                  std::vector<Point>& out) {
-    if (distanceToSegment(p1, p0, p2) < tolerance) {
+    if (depth <= 0 || distanceToSegment(p1, p0, p2) < tolerance) {
         out.push_back(p2);
         return;
     }
     const Point p01 = midpoint(p0, p1);
     const Point p12 = midpoint(p1, p2);
     const Point p012 = midpoint(p01, p12);
-    flattenQuad(p0, p01, p012, tolerance, out);
-    flattenQuad(p012, p12, p2, tolerance, out);
+    flattenQuad(p0, p01, p012, tolerance, depth - 1, out);
+    flattenQuad(p012, p12, p2, tolerance, depth - 1, out);
 }
 
 /// 三次贝塞尔递归细分：两个控制点到弦的距离都 < tolerance 时停止。
 void flattenCubic(Point p0, Point p1, Point p2, Point p3, float tolerance,
-                  std::vector<Point>& out) {
-    if (distanceToSegment(p1, p0, p3) < tolerance &&
-        distanceToSegment(p2, p0, p3) < tolerance) {
+                  int depth, std::vector<Point>& out) {
+    if (depth <= 0 ||
+        (distanceToSegment(p1, p0, p3) < tolerance &&
+         distanceToSegment(p2, p0, p3) < tolerance)) {
         out.push_back(p3);
         return;
     }
@@ -66,8 +71,8 @@ void flattenCubic(Point p0, Point p1, Point p2, Point p3, float tolerance,
     const Point p012 = midpoint(p01, p12);
     const Point p123 = midpoint(p12, p23);
     const Point p0123 = midpoint(p012, p123);
-    flattenCubic(p0, p01, p012, p0123, tolerance, out);
-    flattenCubic(p0123, p123, p23, p3, tolerance, out);
+    flattenCubic(p0, p01, p012, p0123, tolerance, depth - 1, out);
+    flattenCubic(p0123, p123, p23, p3, tolerance, depth - 1, out);
 }
 
 // ---- Ear clipping 三角化 ----
@@ -227,53 +232,58 @@ Path Path::scaled(float sx, float sy) const {
 
 // ---- 细分：命令 → 多个子轮廓 ----
 
-void Path::flatten(float tolerance,
-                   std::vector<std::vector<Point>>& contours) const {
+void Path::flatten(float tolerance, std::vector<Contour>& contours) const {
     contours.clear();
-    std::vector<Point> current;
+    // 钳制容差下限：0/负值/NaN 会让递归细分的停止条件永不成立。
+    tolerance = std::max(0.01f, tolerance);
+    Contour current;
     Point cur{0.0f, 0.0f};
     Point subStart{0.0f, 0.0f};
 
+    // 轮廓最少 2 点：fill 需要 3 点会自行跳过，stroke 两点成线仍有效。
     for (const VerbPoint& v : verbs_) {
         switch (v.verb) {
             case Verb::Move:
-                if (current.size() >= 3) {
+                if (current.points.size() >= 2) {
                     contours.push_back(std::move(current));
+                    current = Contour{};
                 }
-                current.clear();
                 cur = {v.x, v.y};
                 subStart = cur;
-                current.push_back(cur);
+                current.points.push_back(cur);
                 break;
 
             case Verb::Line:
                 cur = {v.x, v.y};
-                current.push_back(cur);
+                current.points.push_back(cur);
                 break;
 
             case Verb::Quad:
-                flattenQuad(cur, {v.cx, v.cy}, {v.x, v.y}, tolerance, current);
+                flattenQuad(cur, {v.cx, v.cy}, {v.x, v.y}, tolerance,
+                            kMaxFlattenDepth, current.points);
                 cur = {v.x, v.y};
                 break;
 
             case Verb::Cubic:
                 flattenCubic(cur, {v.cx, v.cy}, {v.c2x, v.c2y},
-                             {v.x, v.y}, tolerance, current);
+                             {v.x, v.y}, tolerance, kMaxFlattenDepth,
+                             current.points);
                 cur = {v.x, v.y};
                 break;
 
             case Verb::Close:
-                if (current.size() >= 3) {
-                    // close 不追加起点（轮廓已隐含闭合），直接收存。
+                if (current.points.size() >= 2) {
+                    // close 不追加起点（轮廓已隐含闭合），标记闭合后收存。
+                    current.closed = true;
                     contours.push_back(std::move(current));
+                    current = Contour{};
                 }
-                current.clear();
                 cur = subStart;
-                current.push_back(cur);
+                current.points.push_back(cur);
                 break;
         }
     }
-    if (current.size() >= 3) {
+    if (current.points.size() >= 2) {
         contours.push_back(std::move(current));
     }
 }
@@ -281,11 +291,11 @@ void Path::flatten(float tolerance,
 // ---- 填充：细分 + ear clipping ----
 
 void Path::fill(float tolerance, std::vector<Point>& outTriangles) const {
-    std::vector<std::vector<Point>> contours;
+    std::vector<Contour> contours;
     flatten(tolerance, contours);
     for (auto& contour : contours) {
-        if (contour.size() >= 3) {
-            triangulateEarClipping(contour, outTriangles);
+        if (contour.points.size() >= 3) {
+            triangulateEarClipping(contour.points, outTriangles);
         }
     }
 }
@@ -294,15 +304,18 @@ void Path::fill(float tolerance, std::vector<Point>& outTriangles) const {
 
 void Path::stroke(float tolerance, float width,
                   std::vector<Point>& outTriangles) const {
-    std::vector<std::vector<Point>> contours;
+    std::vector<Contour> contours;
     flatten(tolerance, contours);
     const float hw = width * 0.5f;
 
     for (const auto& contour : contours) {
-        if (contour.size() < 2) continue;
-        for (size_t i = 0; i + 1 < contour.size(); ++i) {
-            const Point p1 = contour[i];
-            const Point p2 = contour[i + 1];
+        const std::vector<Point>& pts = contour.points;
+        if (pts.size() < 2) continue;
+        // 闭合轮廓多画一段：末点回到起点，不留缺口。
+        const size_t segCount = contour.closed ? pts.size() : pts.size() - 1;
+        for (size_t i = 0; i < segCount; ++i) {
+            const Point p1 = pts[i];
+            const Point p2 = pts[(i + 1) % pts.size()];
             const float dx = p2.x - p1.x;
             const float dy = p2.y - p1.y;
             const float len = std::sqrt(dx * dx + dy * dy);

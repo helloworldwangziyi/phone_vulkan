@@ -107,32 +107,35 @@ std::unique_ptr<evk::ui::Widget> PathDemoPage::build(
             }
 
             // --- 下半部分：两条贝塞尔曲线描边 ---
-            const float curveTop = s.height * 0.62f;
-            const float curveH = s.height * 0.28f;
+            // 纵向预算：topH(0.52H) 到画布底共 0.48H，放两条曲线 + 一个标签；
+            // 各曲线振幅收在基线附近，避免越出画布或压到文字。
 
-            // 二次贝塞尔（绿色）
+            // 二次贝塞尔（绿色）：基线 0.68H，控制点抬 0.18H，
+            // 曲线实际峰顶 = 基线 - 控制点偏移的一半 ≈ 0.59H，不碰上方标签。
             {
                 const float x0 = padX;
                 const float x1 = s.width - padX;
-                const float yBase = curveTop;
+                const float yBase = s.height * 0.68f;
                 Path q;
                 q.moveTo(x0, yBase)
-                    .quadTo((x0 + x1) * 0.5f, yBase - curveH, x1, yBase);
+                    .quadTo((x0 + x1) * 0.5f, yBase - s.height * 0.18f, x1, yBase);
                 paint.strokePath(q, appCalcHeight(6), 0xFF2ECC71);
                 drawCenteredText(paint, "quadTo 描边", s.width * 0.5f,
-                                 curveTop + curveH + appCalcHeight(40),
-                                 labelFont, t.textSecondary, appFonts::cjk());
+                                 s.height * 0.76f, labelFont, t.textSecondary,
+                                 appFonts::cjk());
             }
 
-            // 三次贝塞尔（蓝色，S 形）
+            // 三次贝塞尔（蓝色，S 形）：基线 0.87H，控制点偏移 ±0.08H，
+            // 曲线实际摆幅约为控制点偏移的六成（≈0.05H），底部留余量不出画布。
             {
                 const float x0 = padX;
                 const float x1 = s.width - padX;
-                const float yBase = curveTop + curveH + appCalcHeight(80);
+                const float yBase = s.height * 0.87f;
+                const float amp = s.height * 0.08f;
                 Path c;
                 c.moveTo(x0, yBase)
-                    .cubicTo(x0 + (x1 - x0) * 0.25f, yBase - curveH * 0.8f,
-                             x0 + (x1 - x0) * 0.75f, yBase + curveH * 0.8f,
+                    .cubicTo(x0 + (x1 - x0) * 0.25f, yBase - amp,
+                             x0 + (x1 - x0) * 0.75f, yBase + amp,
                              x1, yBase);
                 paint.strokePath(c, appCalcHeight(6), 0xFF3498DB);
             }
@@ -143,12 +146,17 @@ std::unique_ptr<evk::ui::Widget> PathDemoPage::build(
         std::move(canvas));
 
     // ---- 底部说明 ----
-    auto note = padding(
-        EdgeInsets::only(appCalcWidth(100), appCalcHeight(30), appCalcWidth(100),
-                         appCalcHeight(60)),
-        text("心形由 4 段三次贝塞尔组成；五角星是凹多边形，由 ear clipping "
-             "算法三角化；曲线按曲率自适应细分，平直段少分、弯曲段多分。",
-             appCalcHeight(26), theme.textSecondary, appFonts::cjk()));
+    // 注意：换行 Text 不能直接被 Padding/Center 套住（高度回灌只对 Flex
+    // 父容器生效），这里走"显式尺寸"路径——sizedBox 给足两行高度，
+    // Padding 在内部做边距。字号/宽度都是定值，换行结果确定为两行。
+    auto note = sizedBox(
+        -1.0f, appCalcHeight(170),
+        padding(
+            EdgeInsets::only(appCalcWidth(100), appCalcHeight(30),
+                             appCalcWidth(100), appCalcHeight(60)),
+            text("心形由 4 段三次贝塞尔组成；五角星是凹多边形，由 ear clipping "
+                 "算法三角化；曲线按曲率自适应细分，平直段少分、弯曲段多分。",
+                 appCalcHeight(26), theme.textSecondary, appFonts::cjk(), true)));
 
     auto page = std::make_unique<Column>(widgetList(
         std::move(title), std::move(subtitle), std::move(canvasCard),
