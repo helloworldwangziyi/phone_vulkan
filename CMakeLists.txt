@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.22.1)
 
-project(estarx_vulkan LANGUAGES CXX)
+# C：third_party/libunibreak（UAX #14 断行）为纯 C 源码。
+project(estarx_vulkan LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -81,6 +82,14 @@ add_library(estarx_vulkan_core STATIC
     core/src/ui/controls/list_view.cpp
     core/src/ui/controls/scroll_view.cpp
     core/src/ui/controls/text.cpp
+    # libunibreak：UAX #14 断行（text_layout.cpp 用），纯 C。
+    third_party/libunibreak/linebreak.c
+    third_party/libunibreak/linebreakdata.c
+    third_party/libunibreak/linebreakdef.c
+    third_party/libunibreak/unibreakbase.c
+    third_party/libunibreak/unibreakdef.c
+    third_party/libunibreak/eastasianwidthdata.c
+    third_party/libunibreak/eastasianwidthdef.c
 )
 
 target_include_directories(estarx_vulkan_core
@@ -91,6 +100,7 @@ target_include_directories(estarx_vulkan_core
     PRIVATE
         ${EVK_GENERATED_DIR}
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
+        ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libunibreak
 )
 
 if (ANDROID)

@@ -606,13 +606,40 @@ void testTextLayout(const char* latinPath, const char* cjkPath) {
     assert(layout.lineText(0) == "行情速");
     assert(layout.lineText(1) == "览");
 
-    // 英文按词断：行宽刚好放下两个词，第三个词回退到最近空格断行，
-    // 断点处的空格丢弃（行尾不留、下行不带）。
     float spaceW = 0.0f;
     float aW = 0.0f;
     fonts.measureText(" ", 32.0f, latin, &spaceW, nullptr);
     fonts.measureText("a", 32.0f, latin, &aW, nullptr);
     assert(spaceW > 0.0f && aW > 0.0f);
+
+    // 避头尾（libunibreak / UAX #14，lang=zh）：闭标点（，）不落行首，
+    // 开标点（“）不留行尾；英文与 CJK 交界允许断行。
+    float commaW = 0.0f;
+    float openQuoteW = 0.0f;
+    fonts.measureText("，", 32.0f, latin, &commaW, nullptr);
+    fonts.measureText("“", 32.0f, latin, &openQuoteW, nullptr);
+    assert(commaW > 0.0f && openQuoteW > 0.0f);
+    // "行情"恰好放下、连逗号超宽：情 与 ，之间不可断，只能从 行 后断；
+    // 逗号跟着"情"留在行尾，不会成为下一行行首。
+    layout.layout("行情，速览", 32.0f, latin, cjkW * 2.0f + commaW * 0.5f);
+    assert(layout.lineCount() == 3);
+    assert(layout.lineText(0) == "行");
+    assert(layout.lineText(1) == "情，");
+    assert(layout.lineText(2) == "速览");
+    // 开引号“之后不可断：宁可"说"独占一行，也不把“留在行尾。
+    layout.layout("说“你好”", 32.0f, latin, cjkW + openQuoteW + cjkW * 0.5f);
+    assert(layout.lineCount() == 3);
+    assert(layout.lineText(0) == "说");
+    assert(layout.lineText(1) == "“你");
+    assert(layout.lineText(2) == "好”");
+    // 拉丁字母与 CJK 交界处允许断行（AL × ID）。
+    layout.layout("abc行情", 32.0f, latin, aW * 3.0f + cjkW * 1.5f);
+    assert(layout.lineCount() == 2);
+    assert(layout.lineText(0) == "abc行");
+    assert(layout.lineText(1) == "情");
+
+    // 英文按词断：行宽刚好放下两个词，第三个词回退到最近空格断行，
+    // 断点处的空格丢弃（行尾不留、下行不带）。
     const float twoWords = 2.0f * aW + spaceW + 2.0f * aW; // "aa bb"
     layout.layout("aa bb cc", 32.0f, latin, twoWords + aW * 0.5f);
     assert(layout.lineCount() == 2);

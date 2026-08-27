@@ -26,6 +26,13 @@
 		E57A11000000000000000109 /* event_bus.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000018 /* event_bus.cpp */; };
 		E57A11000000000000000122 /* font_engine.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000027 /* font_engine.cpp */; };
 		E57A11000000000000000316 /* text_layout.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000216 /* text_layout.cpp */; };
+		E57A11000000000000000600 /* linebreak.c in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000500 /* linebreak.c */; };
+		E57A11000000000000000601 /* linebreakdata.c in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000501 /* linebreakdata.c */; };
+		E57A11000000000000000602 /* linebreakdef.c in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000502 /* linebreakdef.c */; };
+		E57A11000000000000000603 /* unibreakbase.c in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000503 /* unibreakbase.c */; };
+		E57A11000000000000000604 /* unibreakdef.c in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000504 /* unibreakdef.c */; };
+		E57A11000000000000000605 /* eastasianwidthdata.c in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000505 /* eastasianwidthdata.c */; };
+		E57A11000000000000000606 /* eastasianwidthdef.c in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000506 /* eastasianwidthdef.c */; };
 		E57A11000000000000000124 /* texture_store.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000029 /* texture_store.cpp */; };
 		E57A11000000000000000125 /* app_images.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000002A /* app_images.cpp */; };
 		E57A11000000000000000123 /* app_fonts.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000028 /* app_fonts.cpp */; };
@@ -103,6 +110,13 @@
 		E57A11000000000000000018 /* event_bus.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = event_bus.cpp; path = ../../../core/src/ui/event_bus.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000027 /* font_engine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = font_engine.cpp; path = ../../../core/src/ui/font_engine.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000216 /* text_layout.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = text_layout.cpp; path = ../../../core/src/ui/text_layout.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000500 /* linebreak.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = linebreak.c; path = ../../../third_party/libunibreak/linebreak.c; sourceTree = "<group>"; };
+		E57A11000000000000000501 /* linebreakdata.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = linebreakdata.c; path = ../../../third_party/libunibreak/linebreakdata.c; sourceTree = "<group>"; };
+		E57A11000000000000000502 /* linebreakdef.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = linebreakdef.c; path = ../../../third_party/libunibreak/linebreakdef.c; sourceTree = "<group>"; };
+		E57A11000000000000000503 /* unibreakbase.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = unibreakbase.c; path = ../../../third_party/libunibreak/unibreakbase.c; sourceTree = "<group>"; };
+		E57A11000000000000000504 /* unibreakdef.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = unibreakdef.c; path = ../../../third_party/libunibreak/unibreakdef.c; sourceTree = "<group>"; };
+		E57A11000000000000000505 /* eastasianwidthdata.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = eastasianwidthdata.c; path = ../../../third_party/libunibreak/eastasianwidthdata.c; sourceTree = "<group>"; };
+		E57A11000000000000000506 /* eastasianwidthdef.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = eastasianwidthdef.c; path = ../../../third_party/libunibreak/eastasianwidthdef.c; sourceTree = "<group>"; };
 		E57A11000000000000000029 /* texture_store.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = texture_store.cpp; path = ../../../core/src/ui/texture_store.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000002A /* app_images.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_images.cpp; path = ../../../samples/app/app_images.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000028 /* app_fonts.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_fonts.cpp; path = ../../../samples/app/app_fonts.cpp; sourceTree = "<group>"; };
@@ -209,6 +223,13 @@
 				E57A11000000000000000018 /* event_bus.cpp */,
 				E57A11000000000000000027 /* font_engine.cpp */,
 				E57A11000000000000000216 /* text_layout.cpp */,
+				E57A11000000000000000500 /* linebreak.c */,
+				E57A11000000000000000501 /* linebreakdata.c */,
+				E57A11000000000000000502 /* linebreakdef.c */,
+				E57A11000000000000000503 /* unibreakbase.c */,
+				E57A11000000000000000504 /* unibreakdef.c */,
+				E57A11000000000000000505 /* eastasianwidthdata.c */,
+				E57A11000000000000000506 /* eastasianwidthdef.c */,
 				E57A11000000000000000029 /* texture_store.cpp */,
 				E57A11000000000000000019 /* widget_tree.cpp */,
 				E57A11000000000000000040 /* basic.cpp */,
@@ -418,6 +439,13 @@
 				E57A11000000000000000109 /* event_bus.cpp in Sources */,
 				E57A11000000000000000122 /* font_engine.cpp in Sources */,
 				E57A11000000000000000316 /* text_layout.cpp in Sources */,
+				E57A11000000000000000600 /* linebreak.c in Sources */,
+				E57A11000000000000000601 /* linebreakdata.c in Sources */,
+				E57A11000000000000000602 /* linebreakdef.c in Sources */,
+				E57A11000000000000000603 /* unibreakbase.c in Sources */,
+				E57A11000000000000000604 /* unibreakdef.c in Sources */,
+				E57A11000000000000000605 /* eastasianwidthdata.c in Sources */,
+				E57A11000000000000000606 /* eastasianwidthdef.c in Sources */,
 				E57A11000000000000000124 /* texture_store.cpp in Sources */,
 				E57A11000000000000000110 /* widget_tree.cpp in Sources */,
 				E57A11000000000000000140 /* basic.cpp in Sources */,
@@ -489,6 +517,7 @@
 					"$(SRCROOT)/../../../platform/ios/cpp",
 					"$(SRCROOT)/../../../third_party/spdlog/include",
 					"$(SRCROOT)/../../../third_party/stb",
+					"$(SRCROOT)/../../../third_party/libunibreak",
 					"$(SRCROOT)/../../../third_party/glm",
 					"$(SRCROOT)/../../../third_party/moltenvk/include",
 					"$(SRCROOT)/../../../third_party/mmkv/Core",
@@ -531,6 +560,7 @@
 					"$(SRCROOT)/../../../platform/ios/cpp",
 					"$(SRCROOT)/../../../third_party/spdlog/include",
 					"$(SRCROOT)/../../../third_party/stb",
+					"$(SRCROOT)/../../../third_party/libunibreak",
 					"$(SRCROOT)/../../../third_party/glm",
 					"$(SRCROOT)/../../../third_party/moltenvk/include",
 					"$(SRCROOT)/../../../third_party/mmkv/Core",

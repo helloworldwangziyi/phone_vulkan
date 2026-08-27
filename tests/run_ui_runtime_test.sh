@@ -3,18 +3,33 @@ set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 test_binary="${TMPDIR:-/tmp}/ui_runtime_test"
+obj_dir="${TMPDIR:-/tmp}/ui_runtime_test_obj"
 cxx=${CXX:-c++}
+cc=${CC:-cc}
 sdk_flags=
 
 if [ "$(uname -s)" = "Darwin" ]; then
     cxx=$(xcrun --find clang++)
+    cc=$(xcrun --find clang)
     sdk_flags="-isysroot $(xcrun --show-sdk-path)"
 fi
+
+# libunibreak 是纯 C：先用 C 编译器编成目标文件，再交给 C++ 链接。
+mkdir -p "$obj_dir"
+unibreak_objs=
+for src in linebreak linebreakdata linebreakdef unibreakbase unibreakdef \
+           eastasianwidthdata eastasianwidthdef; do
+    obj="$obj_dir/$src.o"
+    "$cc" $sdk_flags -O2 -c "$repo_root/third_party/libunibreak/$src.c" -o "$obj"
+    unibreak_objs="$unibreak_objs $obj"
+done
 
 "$cxx" $sdk_flags -std=c++17 -Wall -Wextra -Werror \
     -I"$repo_root/core/include" \
     -I"$repo_root/third_party/spdlog/include" \
     -I"$repo_root/third_party/stb" \
+    -I"$repo_root/third_party/libunibreak" \
+    $unibreak_objs \
     "$repo_root/tests/ui_runtime_test.cpp" \
     "$repo_root/core/src/app_lifecycle.cpp" \
     "$repo_root/core/src/frame_scheduler.cpp" \

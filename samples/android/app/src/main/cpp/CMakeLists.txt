@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 
+# 隐式启用 C 与 CXX：third_party/libunibreak（UAX #14 断行）为纯 C 源码。
 project(estarx_vulkan_sample)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -94,6 +95,14 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/controls/list_view.cpp
     ${EVK_ROOT}/core/src/ui/controls/scroll_view.cpp
     ${EVK_ROOT}/core/src/ui/controls/text.cpp
+    # libunibreak：UAX #14 断行（text_layout.cpp 用），纯 C。
+    ${EVK_ROOT}/third_party/libunibreak/linebreak.c
+    ${EVK_ROOT}/third_party/libunibreak/linebreakdata.c
+    ${EVK_ROOT}/third_party/libunibreak/linebreakdef.c
+    ${EVK_ROOT}/third_party/libunibreak/unibreakbase.c
+    ${EVK_ROOT}/third_party/libunibreak/unibreakdef.c
+    ${EVK_ROOT}/third_party/libunibreak/eastasianwidthdata.c
+    ${EVK_ROOT}/third_party/libunibreak/eastasianwidthdef.c
 )
 
 # MMKV Core（键值持久化，KeyValueStore 的实现）：静态库 target `core`，
@@ -109,6 +118,7 @@ target_include_directories(estarx_vulkan
     PRIVATE
         ${EVK_GENERATED_DIR}
         ${EVK_ROOT}/third_party/stb
+        ${EVK_ROOT}/third_party/libunibreak
         # kv_store.cpp 直接 include "MMKV.h"（与 iOS 手编配置同款约定）。
         ${EVK_ROOT}/third_party/mmkv/Core
 )

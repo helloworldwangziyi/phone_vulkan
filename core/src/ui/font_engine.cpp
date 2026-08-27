@@ -63,6 +63,7 @@ uint32_t decodeUtf8(const char* s, size_t& i) {
 } // namespace
 
 FontEngine& FontEngine::instance() {
+    // 函数内静态局部变量：首次调用时构造，线程安全由编译器保证（C++11）。
     static FontEngine engine;
     return engine;
 }
@@ -72,10 +73,12 @@ FontId FontEngine::addFont(const void* ttfData, size_t size) {
         return kInvalidFont;
     }
     FontRecord record;
+    // 拷贝一份自持：调用方的缓冲（如资产读取的临时内存）随后即可释放。
     record.data.resize(size);
     std::copy(static_cast<const unsigned char*>(ttfData),
               static_cast<const unsigned char*>(ttfData) + size, record.data.begin());
     auto* info = new stbtt_fontinfo();
+    // TTC 合集取第 0 个字体；普通 TTF 此调用返回 0。
     const int offset = stbtt_GetFontOffsetForIndex(record.data.data(), 0);
     if (offset < 0 || !stbtt_InitFont(info, record.data.data(), offset)) {
         EVK_LOGW("addFont: not a parsable TrueType font ({} bytes)", size);
@@ -83,6 +86,7 @@ FontId FontEngine::addFont(const void* ttfData, size_t size) {
         return kInvalidFont;
     }
     record.info = info;
+    // 注册表下标即 FontId：顺序同时是回退优先级，追加后不再变动。
     fonts_.push_back(std::move(record));
     return static_cast<FontId>(fonts_.size() - 1);
 }
@@ -101,6 +105,8 @@ void FontEngine::reset() {
 }
 
 uint64_t FontEngine::makeKey(int fontIndex, int glyphIndex, int pxSize) {
+    // 位打包：[63..48] 字体下标 | [47..16] 字形索引 | [15..0] 整数像素高。
+    // 三者都在各自位宽内（字形索引用 32 位段是余量，TTF 实际 16 位）。
     return (static_cast<uint64_t>(static_cast<uint32_t>(fontIndex)) << 48) |
            (static_cast<uint64_t>(static_cast<uint32_t>(glyphIndex)) << 16) |
            static_cast<uint64_t>(static_cast<uint16_t>(pxSize));
@@ -129,6 +135,8 @@ int FontEngine::resolveFont(uint32_t codepoint, FontId preferred) const {
 
 void FontEngine::lineMetrics(float sizePx, FontId preferred, float* ascent,
                              float* descent) const {
+    // 行度量只取首选字体（非法时退到第 0 个）：回退字体不参与，
+    // 行高不随内容里有没有中文/emoji 而跳动（与 CSS 行高策略一致）。
     const int index = (preferred >= 0 && preferred < static_cast<int>(fonts_.size()))
                           ? preferred : 0;
     if (fonts_.empty()) {
@@ -137,6 +145,7 @@ void FontEngine::lineMetrics(float sizePx, FontId preferred, float* ascent,
         return;
     }
     const auto* info = static_cast<const stbtt_fontinfo*>(fonts_[index].info);
+    // em → 像素的换算系数：字体内所有度量都按它缩放。
     const float scale = stbtt_ScaleForMappingEmToPixels(info, sizePx);
     int a = 0, d = 0, lineGap = 0;
     stbtt_GetFontVMetrics(info, &a, &d, &lineGap);
@@ -148,6 +157,8 @@ void FontEngine::lineMetrics(float sizePx, FontId preferred, float* ascent,
 std::vector<FontEngine::GlyphRunItem> FontEngine::layoutRun(const char* utf8,
                                                             float sizePx,
                                                             FontId preferred) const {
+    // 排布核心：逐码点选字体、查字形索引、取推进宽度与字距。
+    // 不做双向/整形（无 HarfBuzz），复杂文字（阿拉伯语等）暂不支持。
     std::vector<GlyphRunItem> run;
     if (!utf8 || fonts_.empty()) {
         return run;
@@ -160,10 +171,11 @@ std::vector<FontEngine::GlyphRunItem> FontEngine::layoutRun(const char* utf8,
         const uint32_t cp = decodeUtf8(utf8, i);
         const int fontIndex = resolveFont(cp, preferred);
         if (fontIndex < 0) {
-            break;
+            break; // 无可用字体（fonts_ 为空已在上面拦住，这里仅防御）
         }
         const auto* info = static_cast<const stbtt_fontinfo*>(fonts_[fontIndex].info);
         const int gid = stbtt_FindGlyphIndex(info, cp);
+        // 每个字体各自缩放到同一 sizePx：混排时名义 em 尺寸一致。
         const float scale = stbtt_ScaleForMappingEmToPixels(info, sizePx);
 
         GlyphRunItem item;
@@ -289,6 +301,8 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
 
 float FontEngine::measureText(const char* utf8, float sizePx, FontId preferred,
                               float* outWidth, float* outHeight) const {
+    // 宽度 = 逐字形推进累加；高度取行盒（ascent+descent），
+    // 与具体文本内容无关——同一字号的"Ag"和"oo"测出同样的高。
     float width = 0.0f;
     for (const GlyphRunItem& item : layoutRun(utf8, sizePx, preferred)) {
         width += item.advance + item.kern;
@@ -327,10 +341,13 @@ void FontEngine::forEachGlyph(const char* utf8, float sizePx, FontId preferred,
     float ascent = 0.0f;
     float descent = 0.0f;
     lineMetrics(sizePx, preferred, &ascent, &descent);
+    // pen 是笔尖的 x 坐标（基线上的当前位置）；kern 先作用于前一字形
+    // 与本字形之间，再算本字形摆放，最后推进 advance。
     float pen = 0.0f;
     for (const GlyphRunItem& item : layoutRun(utf8, sizePx, preferred)) {
         pen += item.kern;
         const CachedGlyph* glyph = rasterizeGlyph(item.fontIndex, item.glyphIndex, sizePx);
+        // 空白字形（空格等）没有位图可画：跳过回调，但 pen 照常推进。
         if (glyph && glyph->w > 0 && glyph->h > 0) {
             PlacedGlyph placed;
             placed.texture = glyph->texture;

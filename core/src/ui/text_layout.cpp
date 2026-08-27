@@ -1,22 +1,18 @@
 /**
  * @file text_layout.cpp
- * @brief 多行文本排版实现：逐码点宽度累加 + 从简断行规则。
+ * @brief 多行文本排版实现：逐码点宽度累加 + libunibreak（UAX #14）断行。
  */
 #include "evk/ui/text_layout.h"
 
 #include <utility>
 
+#include "linebreak.h"
+
 namespace evk::ui {
 
 namespace {
 
-/// 换行规则覆盖的 CJK 区块（简繁同在这些区间；含全角标点与表意扩展 B）。
-bool isCjk(uint32_t cp) {
-    return (cp >= 0x2E80 && cp <= 0x9FFF) || (cp >= 0x3000 && cp <= 0x303F) ||
-           (cp >= 0xFF00 && cp <= 0xFFEF) || (cp >= 0x20000 && cp <= 0x2A6DF);
-}
-
-/// 词内不断、词间断行里的"词间空白"：只认 ASCII 空格（规则从简）。
+/// 词间断行/修剪用的"空白"：只认 ASCII 空格（规则从简；可断点由 UAX #14 定）。
 bool isSpace(uint32_t cp) { return cp == 0x20; }
 
 } // namespace
@@ -52,16 +48,29 @@ void TextLayout::layout(const char* utf8, float sizePx, FontId preferred,
         prefix[i + 1] = prefix[i] + glyphs[i].advance;
     }
 
+    // 可断点由 libunibreak 按 UAX #14 算出（lang=zh：中文标点避头尾等
+    // 规则生效）。输出是逐字节标记：有效值写在一个码点的**最后一个字节**
+    // 上（前面的字节一律 INSIDEACHAR），折算成逐字形的 canBreakAfter。
+    // '\n' 的 MUSTBREAK 由下面扫描里的显式分支处理，这里只认 ALLOWBREAK。
+    std::vector<char> brks(text_.size(), LINEBREAK_NOBREAK);
+    set_linebreaks_utf8(reinterpret_cast<const utf8_t*>(text_.c_str()),
+                        text_.size(), "zh", brks.data());
+    std::vector<bool> canBreakAfter(n, false);
+    for (size_t i = 0; i < n; ++i) {
+        const size_t lastByte = glyphs[i].byteOffset + glyphs[i].byteLength - 1;
+        canBreakAfter[i] = brks[lastByte] == LINEBREAK_ALLOWBREAK;
+    }
+
     const bool softWrap = maxWidth > 0.0f;
     size_t lineStart = 0;               // 当前行首（字形下标）
-    size_t lastSpace = n;               // 行内最近一个空格（n = 无）
+    size_t lastBreak = n;               // 行内最近一个"字后可断"（n = 无）
     size_t i = 0;
     while (i < n) {
         const uint32_t cp = glyphs[i].codepoint;
         if (cp == '\n') { // 强制断行：'\n' 本身不进任何一行。
             pushLine(glyphs, prefix, lineStart, i);
             lineStart = i + 1;
-            lastSpace = n;
+            lastBreak = n;
             ++i;
             continue;
         }
@@ -70,33 +79,49 @@ void TextLayout::layout(const char* utf8, float sizePx, FontId preferred,
             ++i;
             continue;
         }
-        if (isSpace(cp)) {
-            lastSpace = i;
-        }
         if (softWrap && i > lineStart &&
             prefix[i + 1] - prefix[lineStart] > maxWidth) {
-            // 超宽选断点：CJK 前后任意断 > 回退到行内最近空格 > 硬断。
-            // 断在空格时空格丢弃（成行时统一修剪行尾空白）。
+            // 超宽选断点（优先级从高到低）：
+            // 1. 当前字形自身是可断空白：断在它之后。行尾空白成行时修剪、
+            //    不占视觉宽度，所以"连空格一起超宽"时仍可收下前面的内容；
+            //    前提是去掉它之后行宽合规（prefix[i] 即不含本字形的宽）。
+            // 2. 回退到行内最近可断点（断在空格时空格同样修剪丢弃）。
+            // 3. 行内无可断点（超长单词）则硬断。
+            if (isSpace(cp) && canBreakAfter[i] &&
+                prefix[i] - prefix[lineStart] <= maxWidth) {
+                pushLine(glyphs, prefix, lineStart, i + 1);
+                lineStart = i + 1;
+                while (lineStart < n && isSpace(glyphs[lineStart].codepoint)) {
+                    ++lineStart; // 断点后连续空白同样跳过。
+                }
+                lastBreak = n;
+                ++i; // 本字形已归入上一行，直接前进。
+                continue;
+            }
             size_t breakAt = i;
             size_t lineEnd = i;
-            const bool cjkBreak = isCjk(cp) || isCjk(glyphs[i - 1].codepoint);
-            if (!cjkBreak && lastSpace != n && lastSpace > lineStart) {
-                lineEnd = lastSpace;
-                breakAt = lastSpace + 1;
+            if (lastBreak != n) { // lastBreak 恒在 [lineStart, i) 内
+                lineEnd = lastBreak + 1;
+                breakAt = lastBreak + 1;
             }
             pushLine(glyphs, prefix, lineStart, lineEnd);
             lineStart = breakAt;
             while (lineStart < n && isSpace(glyphs[lineStart].codepoint)) {
                 ++lineStart; // 断点后连续空白同样跳过。
             }
-            // 重扫新行已越过的部分，重建"最近空格"候选。
-            lastSpace = n;
+            // 重扫新行已越过的部分，重建"最近可断点"候选。
+            lastBreak = n;
             for (size_t j = lineStart; j < i; ++j) {
-                if (isSpace(glyphs[j].codepoint)) {
-                    lastSpace = j;
+                if (canBreakAfter[j]) {
+                    lastBreak = j;
                 }
             }
             continue; // 不推进 i：让溢出字形在新行重新评估。
+        }
+        // 断点记录在溢出判断之后：当前字形若为可断点，已在上方分支
+        // 单独裁决；记录到这里的是留给后续字形的候选。
+        if (canBreakAfter[i]) {
+            lastBreak = i;
         }
         ++i;
     }
