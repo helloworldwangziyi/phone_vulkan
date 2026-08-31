@@ -685,6 +685,53 @@ void testTextLayout(const char* latinPath, const char* cjkPath) {
                  {0.0f, lineHeight * 10.0f, 500.0f, lineHeight});
     assert(canvas.vertices().empty());                ///< 全部在视口外
 
+    // 行距倍数：行高 = 自然行高 × 倍数；总高随行数线性缩放。
+    layout.layout("行情速览", 32.0f, latin, cjkW * 2.5f, 1.5f);
+    assert(layout.lineHeight() == lineHeight * 1.5f);
+    assert(layout.totalHeight() == lineHeight * 1.5f * 2.0f);
+
+    // 水平对齐：两行都以 'a' 开头（xoff 相同），首顶点 x 差即对齐偏移差。
+    // "abbbb" 与 "ac" 右对齐时右缘齐平：dx1 - dx0 = w0 - w1；居中减半。
+    const float bigW = 1000.0f;
+    layout.layout("abbbb\nac", 32.0f, latin, bigW, 1.0f, evk::ui::TextAlign::kLeft);
+    canvas.clear();
+    layout.paint(canvas, 0.0f, 0.0f, white, {0.0f, 0.0f, bigW, 500.0f});
+    assert(canvas.vertices().size() == (5 + 2) * 6);
+    const float leftDx = canvas.vertices()[6 * 5].x - canvas.vertices()[0].x;
+    assert(leftDx == 0.0f);
+    const float wDiff = layout.lines()[0].width - layout.lines()[1].width;
+    assert(wDiff > 0.0f);
+    layout.layout("abbbb\nac", 32.0f, latin, bigW, 1.0f, evk::ui::TextAlign::kRight);
+    canvas.clear();
+    layout.paint(canvas, 0.0f, 0.0f, white, {0.0f, 0.0f, bigW, 500.0f});
+    const float rightDx = canvas.vertices()[6 * 5].x - canvas.vertices()[0].x;
+    assert(rightDx > wDiff - 0.01f && rightDx < wDiff + 0.01f);
+    layout.layout("abbbb\nac", 32.0f, latin, bigW, 1.0f,
+                  evk::ui::TextAlign::kCenter);
+    canvas.clear();
+    layout.paint(canvas, 0.0f, 0.0f, white, {0.0f, 0.0f, bigW, 500.0f});
+    const float centerDx = canvas.vertices()[6 * 5].x - canvas.vertices()[0].x;
+    assert(centerDx > wDiff * 0.5f - 0.01f && centerDx < wDiff * 0.5f + 0.01f);
+
+    // maxLines + 省略号：超出行丢弃，末行削尾补"…"且总宽不越界。
+    layout.layout("行情速览行情速览", 32.0f, latin, cjkW * 2.5f, 1.0f,
+                  evk::ui::TextAlign::kLeft, 1);
+    assert(layout.lineCount() == 1);
+    assert(layout.lines()[0].ellipsized);
+    assert(layout.lines()[0].width <= cjkW * 2.5f + 0.01f);
+    assert(layout.lines()[0].width > layout.lines()[0].textWidth); // 含省略号
+    assert(layout.lineText(0).size() < std::string("行情速览行情速览").size());
+    // 不限宽时只截行不削尾：第二行保留全文，宽度 = 正文 + 省略号。
+    layout.layout("ab\ncd\nef", 32.0f, latin, 0.0f, 1.0f,
+                  evk::ui::TextAlign::kLeft, 2);
+    assert(layout.lineCount() == 2);
+    assert(layout.lineText(1) == "cd");
+    assert(layout.lines()[1].ellipsized);
+    // 行数未超上限时不截断。
+    layout.layout("ab\ncd", 32.0f, latin, 0.0f, 1.0f,
+                  evk::ui::TextAlign::kLeft, 2);
+    assert(layout.lineCount() == 2 && !layout.lines()[1].ellipsized);
+
     // 换行 Text 控件：挂进 Column 后高度 = 行数 × 行高（视图拿到宽度后
     // 经 setFlexChild 回灌），绘制只出可见行的字形批次。
     resetRuntime();

@@ -18,23 +18,34 @@ bool isSpace(uint32_t cp) { return cp == 0x20; }
 } // namespace
 
 void TextLayout::layout(const char* utf8, float sizePx, FontId preferred,
-                        float maxWidth) {
+                        float maxWidth, float lineHeightScale, TextAlign align,
+                        int maxLines) {
     const char* safe = utf8 ? utf8 : "";
     if (valid_ && text_ == safe && sizePx_ == sizePx && font_ == preferred &&
-        maxWidth_ == maxWidth) {
+        maxWidth_ == maxWidth && lineHeightScale_ == lineHeightScale &&
+        align_ == align && maxLines_ == maxLines) {
         return; // 输入未变：复用缓存，不重排。
     }
     text_ = safe;
     sizePx_ = sizePx;
     font_ = preferred;
     maxWidth_ = maxWidth;
+    lineHeightScale_ = lineHeightScale;
+    align_ = align;
+    maxLines_ = maxLines;
     lines_.clear();
     valid_ = true;
     ++revision_;
 
     FontEngine& fonts = FontEngine::instance();
-    // 行高不依赖文本内容：空串测量拿到的就是 ascent+descent。
-    fonts.measureText("", sizePx, preferred, nullptr, &lineHeight_);
+    // 自然行高不依赖文本内容：空串测量拿到的就是 ascent+descent。
+    // 行距倍数在其上缩放，多出的空间上下均分（half-leading，CSS 风格）。
+    float natural = 0.0f;
+    fonts.measureText("", sizePx, preferred, nullptr, &natural);
+    lineHeight_ = natural * lineHeightScale;
+    leadingHalf_ = (lineHeight_ - natural) * 0.5f;
+    // 省略号宽度只依赖字号/字体，排版时量好（测量不触发光栅化）。
+    fonts.measureText("…", sizePx, preferred, &ellipsisWidth_, nullptr);
     if (text_.empty()) {
         return;
     }
@@ -131,6 +142,7 @@ void TextLayout::layout(const char* utf8, float sizePx, FontId preferred,
         // 文本以 '\n' 结尾：尾部还有一个空行。
         pushLine(glyphs, prefix, n, n);
     }
+    applyMaxLines(glyphs, prefix);
 }
 
 std::string TextLayout::lineText(int index) const {
@@ -150,12 +162,19 @@ void TextLayout::paint(Canvas& canvas, float x, float y, Color color,
             continue;
         }
         const Line& line = lines_[i];
-        if (line.begin == line.end) {
-            continue; // 空行无字形可画。
+        // half-leading：行距多出的空间上下均分，正文从行盒中线下移半份。
+        const float textTop = top + leadingHalf_;
+        const float left = x + alignOffset(line.width);
+        if (line.begin != line.end) {
+            const std::string slice =
+                text_.substr(line.begin, line.end - line.begin);
+            canvas.drawText(slice.c_str(), font_, left, textTop, sizePx_, clip,
+                            color);
         }
-        const std::string slice =
-            text_.substr(line.begin, line.end - line.begin);
-        canvas.drawText(slice.c_str(), font_, x, top, sizePx_, clip, color);
+        if (line.ellipsized) { // 截断行：省略号紧跟削尾后的正文。
+            canvas.drawText("…", font_, left + line.textWidth, textTop, sizePx_,
+                            clip, color);
+        }
     }
 }
 
@@ -168,12 +187,17 @@ void TextLayout::paint(PaintContext& paint, float x, float y,
             continue;
         }
         const Line& line = lines_[i];
-        if (line.begin == line.end) {
-            continue;
+        const float textTop = top + leadingHalf_;
+        const float left = x + alignOffset(line.width);
+        if (line.begin != line.end) {
+            const std::string slice =
+                text_.substr(line.begin, line.end - line.begin);
+            paint.drawText(slice.c_str(), font_, left, textTop, sizePx_, rgba);
         }
-        const std::string slice =
-            text_.substr(line.begin, line.end - line.begin);
-        paint.drawText(slice.c_str(), font_, x, top, sizePx_, rgba);
+        if (line.ellipsized) {
+            paint.drawText("…", font_, left + line.textWidth, textTop, sizePx_,
+                           rgba);
+        }
     }
 }
 
@@ -188,7 +212,58 @@ void TextLayout::pushLine(const std::vector<GlyphAdvance>& glyphs,
     line.begin = begin < glyphs.size() ? glyphs[begin].byteOffset : text_.size();
     line.end = end < glyphs.size() ? glyphs[end].byteOffset : text_.size();
     line.width = prefix[end] - prefix[begin];
+    line.textWidth = line.width;
     lines_.push_back(line);
+}
+
+void TextLayout::applyMaxLines(const std::vector<GlyphAdvance>& glyphs,
+                               const std::vector<float>& prefix) {
+    if (maxLines_ <= 0 || static_cast<int>(lines_.size()) <= maxLines_) {
+        return;
+    }
+    lines_.resize(static_cast<size_t>(maxLines_));
+    if (lines_.empty()) {
+        return;
+    }
+    Line& last = lines_.back();
+    last.ellipsized = true;
+    if (maxWidth_ <= 0.0f) {
+        // 不限宽时没有截断基准：只丢行，行尾直接补省略号。
+        last.width += ellipsisWidth_;
+        return;
+    }
+    // 行字节区间 → 字形下标区间（glyphs 按 byteOffset 升序）。
+    const size_t n = glyphs.size();
+    size_t gb = 0;
+    while (gb < n && glyphs[gb].byteOffset < last.begin) {
+        ++gb;
+    }
+    size_t ge = gb;
+    while (ge < n && glyphs[ge].byteOffset < last.end) {
+        ++ge;
+    }
+    // 从行尾向前削，直到"削后正文宽 + 省略号宽"收进 maxWidth。
+    while (ge > gb && prefix[ge] - prefix[gb] + ellipsisWidth_ > maxWidth_) {
+        --ge;
+    }
+    // 削尾落点若贴着空格，连同空格一起去掉，不留"abc …"式的悬空。
+    while (ge > gb && isSpace(glyphs[ge - 1].codepoint)) {
+        --ge;
+    }
+    last.end = ge < n ? glyphs[ge].byteOffset : text_.size();
+    last.textWidth = prefix[ge] - prefix[gb];
+    last.width = last.textWidth + ellipsisWidth_;
+}
+
+float TextLayout::alignOffset(float lineWidth) const {
+    if (maxWidth_ <= 0.0f || align_ == TextAlign::kLeft) {
+        return 0.0f;
+    }
+    const float slack = maxWidth_ - lineWidth;
+    if (slack <= 0.0f) {
+        return 0.0f; // 行比容器宽（硬断/省略号兜底场景）：不反向偏移。
+    }
+    return align_ == TextAlign::kCenter ? slack * 0.5f : slack;
 }
 
 } // namespace evk::ui

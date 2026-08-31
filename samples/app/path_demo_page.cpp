@@ -155,12 +155,41 @@ std::unique_ptr<evk::ui::Widget> PathDemoPage::build(
             EdgeInsets::only(appCalcWidth(100), appCalcHeight(30),
                              appCalcWidth(100), appCalcHeight(60)),
             text("心形由 4 段三次贝塞尔组成；五角星是凹多边形，由 ear clipping "
-                 "算法三角化；曲线按曲率自适应细分，平直段少分、弯曲段多分。",
-                 appCalcHeight(26), theme.textSecondary, appFonts::cjk(), true)));
+                 "算法三角化；曲线按曲率自适应细分，平直段少分、弯曲段多分 是的发生的发烧地方撒旦法水电费阿斯蒂芬是的发生的发烧地方。",
+                 appCalcHeight(26), theme.textSecondary, appFonts::cjk(), true, 1.5f)));
+
+    // ---- 排版能力示例：行距 1.5 沿用，下面对齐与截断各演示一例 ----
+    // 同样走"显式尺寸"路径（换行 Text 不能直接被 Padding/Center 套住）。
+
+    // 居中对齐：逐行余量均分到两侧，短行在容器内居中。
+    auto alignCenter = sizedBox(
+        -1.0f, appCalcHeight(170),
+        padding(
+            EdgeInsets::only(appCalcWidth(100), appCalcHeight(10),
+                             appCalcWidth(100), appCalcHeight(10)),
+            text("居中对齐 TextAlign::kCenter：每一行独立按容器宽度居中，"
+                 "短的一行会明显收在中间。",
+                 appCalcHeight(26), theme.textSecondary, appFonts::cjk(), true,
+                 1.5f, TextAlign::kCenter)));
+
+    // 右对齐 + maxLines 截断：最多两行，超出的内容削尾补"…"。
+    // 文本要足够长（这个页面一行约 33 个汉字），写满三行以上截断才生效。
+    auto alignRightEllipsis = sizedBox(
+        -1.0f, appCalcHeight(170),
+        padding(
+            EdgeInsets::only(appCalcWidth(100), appCalcHeight(10),
+                             appCalcWidth(100), appCalcHeight(10)),
+            text("右对齐 TextAlign::kRight 且 maxLines = 2：这一段说明文字"
+                 "故意写得非常非常长，长到无论多宽的屏幕都肯定要折成三行"
+                 "以上——超过两行的部分会被整体丢弃，第二行的末尾按剩余宽"
+                 "度削掉几个字、自动补上省略号，列表摘要、卡片简介这类"
+                 "场景就是这么用的，再也不用担心文本把布局撑爆。",
+                 appCalcHeight(26), theme.textSecondary, appFonts::cjk(), true,
+                 1.5f, TextAlign::kRight, 2)));
 
     auto page = std::make_unique<Column>(widgetList(
         std::move(title), std::move(subtitle), std::move(canvasCard),
-        std::move(note)));
+        std::move(note), std::move(alignCenter), std::move(alignRightEllipsis)));
     page->color = theme.windowBackground;
     return page;
 }

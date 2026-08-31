@@ -28,13 +28,17 @@ public:
     float sizePx = 0.0f;  ///< 字号
     uint32_t color = 0;   ///< 文字颜色（RGBA）
     FontId font = kFontAny; ///< 首选字体
-    TextLayout layout;    ///< 排版缓存（键：文本/字号/字体/宽度）
+    float lineHeightScale = 1.0f;         ///< 行距倍数
+    TextAlign align = TextAlign::kLeft;   ///< 水平对齐
+    int maxLines = 0;                     ///< 行数上限（0 = 不限）
+    TextLayout layout;    ///< 排版缓存（键：文本/字号/字体/宽度/行距/对齐/行数）
 
     void handleBoundsChanged() override {
         if (rect.w <= 0.0f || !parent) {
             return;
         }
-        layout.layout(content.c_str(), sizePx, font, rect.w);
+        layout.layout(content.c_str(), sizePx, font, rect.w, lineHeightScale,
+                      align, maxLines);
         const float need = layout.totalHeight();
         if (need == rect.h) {
             return; // 父布局分给的高度已吻合内容高度。
@@ -50,12 +54,16 @@ public:
 } // namespace
 
 TextWidget::TextWidget(std::string content, float fontSize, uint32_t color,
-                       FontId font, bool softWrap)
+                       FontId font, bool softWrap, float lineHeightScale,
+                       TextAlign align, int maxLines)
     : content_(std::move(content)),
       fontSize_(fontSize),
       color_(color),
       font_(font),
-      softWrap_(softWrap) {}
+      softWrap_(softWrap),
+      lineHeightScale_(lineHeightScale),
+      align_(align),
+      maxLines_(maxLines) {}
 
 std::unique_ptr<View> TextWidget::createRenderObject() const {
     if (softWrap_) {
@@ -77,10 +85,14 @@ void TextWidget::updateRenderObject(View& view) const {
         self->sizePx = fontSize_;
         self->color = color_;
         self->font = font_;
+        self->lineHeightScale = lineHeightScale_;
+        self->align = align_;
+        self->maxLines = maxLines_;
         view.painter = [self](PaintContext& paint) {
             // 宽度以视图实际宽度为准（父布局写入）；相同输入命中排版缓存。
             self->layout.layout(self->content.c_str(), self->sizePx, self->font,
-                                paint.size().width);
+                                paint.size().width, self->lineHeightScale,
+                                self->align, self->maxLines);
             self->layout.paint(paint, 0.0f, 0.0f, self->color);
         };
         return;
@@ -103,8 +115,10 @@ FlexParentData TextWidget::flexParentData(Axis axis) const {
     if (softWrap_ && axis == Axis::Vertical) {
         // 换行模式在 build 期拿不到视图宽度：先按"不软换行"（仅 \n 断行）
         // 估一个高度上报；视图拿到真实宽度后会把正确高度回灌给父容器。
+        // maxLines 截断在不限宽时同样生效，估算高度与最终一致。
         TextLayout scratch;
-        scratch.layout(content_.c_str(), fontSize_, font_, 0.0f);
+        scratch.layout(content_.c_str(), fontSize_, font_, 0.0f,
+                       lineHeightScale_, align_, maxLines_);
         data.mainSize = scratch.totalHeight();
         return data;
     }
@@ -117,9 +131,10 @@ FlexParentData TextWidget::flexParentData(Axis axis) const {
 }
 
 std::unique_ptr<Widget> text(std::string content, float fontSize, uint32_t color,
-                             FontId font, bool softWrap) {
+                             FontId font, bool softWrap, float lineHeightScale,
+                             TextAlign align, int maxLines) {
     return makeWidget<TextWidget>(std::move(content), fontSize, color, font,
-                                  softWrap);
+                                  softWrap, lineHeightScale, align, maxLines);
 }
 
 } // namespace evk::ui
