@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "estarx_vulkan sample module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "estarx_vulkan sample ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "EstarxVulkan"
+    }
+  ]
+}

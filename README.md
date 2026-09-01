@@ -71,6 +71,7 @@ core/
 platform/
   android/                JNI and Vulkan surface shell
   ios/                    Objective-C++ and MoltenVK shell
+  hongmeng/               NAPI and XComponent (VK_OHOS_surface) shell
 samples/app/              shared Flutter-style C++ application
 tests/                    runtime contract tests
 ~~~
@@ -95,6 +96,20 @@ samples/android/app/build/outputs/apk/debug/app-debug.apk.
 Compile the sources listed by the root CMakeLists.txt, add core/include,
 third_party/spdlog/include, and third_party/glm to the include path, then link
 android, log, and vulkan. Reuse platform/android as the thin JNI shell.
+
+## Build the HarmonyOS sample
+
+Open `samples/hongmeng` in DevEco Studio 5.0+ and Run, or use the hvigor
+wrapper bundled with DevEco from the `samples/hongmeng` directory:
+
+~~~bash
+export NODE_HOME="/Applications/DevEco-Studio.app/Contents/tools/node"
+export DEVECO_SDK_HOME="/Applications/DevEco-Studio.app/Contents/sdk"
+/Applications/DevEco-Studio.app/Contents/tools/hvigor/bin/hvigorw \
+    assembleHap --mode module -p product=default --no-daemon
+~~~
+
+See 文档/构建指南.md (Chinese) for signing and debugging details.
 
 ## Other platforms
 

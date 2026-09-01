@@ -1,0 +1,56 @@
+{
+  "app": {
+    // 签名留空：在 DevEco 里用 File > Project Structure > Signing Configs 自动签名。
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "/Users/wangziyi/.ohos/config/default_hongmeng_pZWpjNWm6nRyUh6ySnC5yrDlYx-aqvzcijDVF9dLSgE=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B48F7FDF1DCA95F5AAB74A32AC2BE3E4A1A1BA2AF9BEC7D3FAA513E6F293CDF6FCF8067515D217C",
+          "profile": "/Users/wangziyi/.ohos/config/default_hongmeng_pZWpjNWm6nRyUh6ySnC5yrDlYx-aqvzcijDVF9dLSgE=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "/Users/wangziyi/.ohos/config/default_hongmeng_pZWpjNWm6nRyUh6ySnC5yrDlYx-aqvzcijDVF9dLSgE=.p12",
+          "storePassword": "0000001B5F82BD9A0626A58FA4BD75DA84D7F337CF4F810BBC32963803186E1B71F56B9F275C4A31611734"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "compatibleSdkVersion": "5.0.5(17)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

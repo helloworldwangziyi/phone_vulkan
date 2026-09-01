@@ -110,6 +110,11 @@ if (ANDROID)
     add_compile_definitions(VK_USE_PLATFORM_ANDROID_KHR)
     find_library(vulkan-lib vulkan)
     target_link_libraries(estarx_vulkan_core PUBLIC ${vulkan-lib})
+elseif (OHOS)
+    # 同上：hongmeng_vulkan_platform.cpp 用到 VK_OHOS_surface 的 vkCreateSurfaceOHOS。
+    add_compile_definitions(VK_USE_PLATFORM_OHOS=1)
+    find_library(vulkan-lib vulkan)
+    target_link_libraries(estarx_vulkan_core PUBLIC ${vulkan-lib})
 else()
     find_package(Vulkan REQUIRED)
     target_link_libraries(estarx_vulkan_core PUBLIC Vulkan::Vulkan)
@@ -132,5 +137,23 @@ if (ANDROID)
         estarx_vulkan_core
         ${android-lib}
         ${log-lib}
+    )
+endif()
+
+# HarmonyOS platform layer.
+if (OHOS)
+    add_library(estarx_vulkan_hongmeng STATIC
+        platform/hongmeng/cpp/hongmeng_vulkan_platform.cpp
+    )
+
+    target_include_directories(estarx_vulkan_hongmeng PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/core/include
+    )
+
+    find_library(hilog-lib hilog_ndk.z)
+
+    target_link_libraries(estarx_vulkan_hongmeng PUBLIC
+        estarx_vulkan_core
+        ${hilog-lib}
     )
 endif()

@@ -20,6 +20,15 @@ Thumbs.db
 samples/ios/app/build/
 DerivedData/
 
+# HarmonyOS 构建产物（build/ 与 .cxx/ 已被上面全局规则覆盖）
+oh_modules/
+.hvigor/
+samples/hongmeng/entry/.preview/
+# DevEco sync 生成的本地 clang 配置（模板约定不入库）
+samples/hongmeng/.clangd
+samples/hongmeng/.clang-format
+samples/hongmeng/.clang-tidy
+
 # MoltenVK 二进制（体积大，由 third_party/moltenvk/fetch.sh 拉取）
 third_party/moltenvk/MoltenVK.xcframework/
 

@@ -1,0 +1,6 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "estarx_vulkan HarmonyOS sample (Vulkan-rendered declarative UI).",
+  "dependencies": {},
+  "devDependencies": {}
+}
