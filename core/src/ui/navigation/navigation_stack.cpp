@@ -104,8 +104,8 @@ public:
      *        偏移，转场照常继续，不打断、不误落地。
      *
      * 注意：正在跑的动画 tick 不会被取消，到点后还会再调一次 finish。
-     * finishPop 靠 popLifecycleActive 挡住重复执行；finishPush 没有
-     * 这个守卫，重复落地会重复下发 DidLeave/DidEnter——审查时注意这点。
+     * finishPop 靠 popLifecycleActive、finishPush 靠 transitionKind
+     * 挡住这种迟到的重复落地。
      */
     Size performLayout(const BoxConstraints& constraints) override {
         const Size size = constraints.biggest();
@@ -352,15 +352,20 @@ private:
 
     /**
      * @brief push 落地：两页归位、旧页隐藏，补发旧页 DidLeave +
-     *        新页 DidEnter，然后复位转场标志。
+     *        新页 DidEnter。
      *
-     * 无重入守卫：转场中尺寸变化被 performLayout 强制落地后，
-     * 动画 tick 到点会再调一次本函数，Did* 随之重复下发。
+     * transitionKind 守卫 + 标志先复位：尺寸变化被 performLayout 强制
+     * 落地后，迟到的动画 finish 会因 kind 已 None 直接返回，不重复下发
+     * Did*；落地过程中的生命周期回调若触发同步重建（flushLayout 回到
+     * performLayout），看到的也是「非转场」状态，不会拿
+     * transitionProgress_ 把已归位的页面再打回视差位置。
      */
     void finishPush() {
-        if (pages.empty()) {
+        if (pages.empty() || transitionKind != TransitionKind::Push) {
             return;
         }
+        transitioning = false;
+        transitionKind = TransitionKind::None;
         View* next = pages.back();
         next->setBounds(0.0f, 0.0f, content->rect.w, content->rect.h);
         if (pages.size() > 1) {
@@ -374,8 +379,6 @@ private:
         if (lifecycle) {
             lifecycle(next, RouteEvent::DidEnter, true);
         }
-        transitioning = false;
-        transitionKind = TransitionKind::None;
     }
 
     /**
@@ -386,6 +389,11 @@ private:
      *
      * popLifecycleActive 守卫：clearPages 或强制回滚之后，迟到的动画
      * finish 落到这里只复位标志并返回，不会重复下发事件。
+     *
+     * 转场标志必须先复位再回调：Did* 与 popped()（unmount →
+     * removeChild → flushLayout）都会同步回到 performLayout，若此时
+     * 仍标记转场中，同尺寸重放会拿 transitionProgress_=1 对弹出后的
+     * 新栈再跑一遍视差——新栈顶被停到屏外、下下层被置可见。
      */
     void finishPop(bool completed) {
         if (pages.size() < 2 || !popLifecycleActive) {
@@ -393,6 +401,8 @@ private:
             transitionKind = TransitionKind::None;
             return;
         }
+        transitioning = false;
+        transitionKind = TransitionKind::None;
         View* top = pages.back();
         View* below = pages[pages.size() - 2];
         if (!completed) {
@@ -417,8 +427,6 @@ private:
             }
         }
         popLifecycleActive = false;
-        transitioning = false;
-        transitionKind = TransitionKind::None;
     }
 
     // pop 转场统一入口：from 是当前进度，complete 决定走向 1
@@ -456,6 +464,10 @@ private:
             std::function<void(float)> apply;
             std::function<void()> finish;
         };
+        // 新转场先把进度对齐到 from：首个 tick 之前若有同尺寸重排
+        // 触发重放，重放的必须是本次转场的起点，而不是上一次转场
+        // 留下的终值。
+        transitionProgress_ = from;
         auto animation = std::make_shared<Animation>();
         animation->navigation = ref();
         animation->from = from;

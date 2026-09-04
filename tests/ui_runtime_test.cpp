@@ -568,6 +568,52 @@ void testRebuildDuringTransition() {
     evk::ui::shutdownApp();
 }
 
+/// 深度≥3 的动画 pop 回归：finishPop 里 popped() 销毁页会经
+/// removeChild → flushLayout 同步回到 performLayout；若此时转场标志
+/// 未复位，同尺寸重放会拿进度 1 对弹出后的新栈再跑一遍视差——
+/// 新栈顶被停到屏外、栈底被置可见（a16c83e 引入的回归）。
+void testPopAtDepthKeepsStackConsistent() {
+    resetRuntime();
+    evk::ui::setViewportSize(400.0f, 800.0f);
+    evk::ui::runApp(evk::ui::makeWidget<CounterPage>(), {60.0f, {}});
+    evk::ui::Navigator* navigator = evk::ui::appNavigator();
+    CounterState* first = CounterState::latest;
+    evk::ui::View* firstView = navigator->topView();
+
+    int64_t time = ms(2000);
+    assert(navigator->push(evk::ui::makeWidget<CounterPage>(), true));
+    CounterState* second = CounterState::latest;
+    for (int i = 0; i < 30; ++i) {
+        time += ms(16);
+        evk::beginFrame(time);
+    }
+    assert(navigator->depth() == 2);
+    assert(navigator->push(evk::ui::makeWidget<CounterPage>(), true));
+    for (int i = 0; i < 30; ++i) {
+        time += ms(16);
+        evk::beginFrame(time);
+    }
+    assert(navigator->depth() == 3);
+    assert(CounterState::alive == 3);
+
+    assert(navigator->pop(true));
+    for (int i = 0; i < 30; ++i) {
+        time += ms(16);
+        evk::beginFrame(time);
+    }
+
+    // 落地后：栈深 2、新栈顶归位 x=0 且可见、栈底保持隐藏，
+    // 生命周期恰好成对（Did* 不重复下发）；third 已销毁，不可再解引用。
+    assert(navigator->depth() == 2);
+    assert(CounterState::alive == 2);
+    evk::ui::View* top = navigator->topView();
+    assert(top->rect.x == 0.0f && top->visible);
+    assert(!firstView->visible);
+    assert(first->leaves == 1 && first->enters == 1);
+    assert(second->leaves == 1 && second->enters == 2);
+    evk::ui::shutdownApp();
+}
+
 void testAnimatedNavigationAndBackEvent() {
     resetRuntime();
     evk::ui::setViewportSize(400.0f, 800.0f);
@@ -1264,6 +1310,7 @@ int main(int argc, char** argv) {
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
     testRebuildDuringTransition();
+    testPopAtDepthKeepsStackConsistent();
     testAnimatedNavigationAndBackEvent();
     testSafeAreaInsets();
 
