@@ -5,7 +5,9 @@
  * @brief 统一纹理仓库：字形 atlas 页与业务位图共用一套 id / 像素 / 脏页管理。
  *
  * CPU 侧的纹理登记处（RGBA8888、行紧密排列），渲染器每帧把"新建或脏"
- * 的纹理整张上传 GPU 并按 id 建 descriptor。三类用户：
+ * 的纹理上传 GPU 并按 id 建 descriptor——新建纹理整张上传，动态改图
+ * 只传脏矩形并集（字形 atlas 页反复增写字形，整页 4MB 重传会把转场
+ * 动画打掉帧）。三类用户：
  *   - FontEngine：字形 atlas 页（rgb 恒白、a 为覆盖率）；
  *   - App：drawImage 用的任意位图（顶点色作染色）；
  *   - 渲染器：id 0 固定为 1x1 白纹理（纯色批次的占位），不经本仓库。
@@ -14,6 +16,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "evk/gpu/texture_source.h"
 
 namespace evk::ui {
 
@@ -63,6 +67,18 @@ public:
     bool copyRgbaBytes(TextureId id, uint8_t* destination,
                        size_t destinationSize) const;
 
+    /**
+     * @brief 按 R、G、B、A 字节顺序导出一个像素矩形（行紧密排列）。
+     *
+     * 脏区域局部上传用：与 copyRgbaBytes 相同的字节序转换，但只处理
+     * 指定矩形，逐行拷贝。
+     * @param destination 接收缓冲，容量至少为 w*h*4
+     * @return 矩形越界或容量不足时返回 false
+     */
+    bool copyRgbaRegion(TextureId id, uint32_t x, uint32_t y, uint32_t w,
+                        uint32_t h, uint8_t* destination,
+                        size_t destinationSize) const;
+
     /// 该纹理是否生成 mip 链（注册时指定；false 时以下两个接口按 1 级处理）。
     bool mipmapped(TextureId id) const;
 
@@ -87,11 +103,18 @@ public:
     bool copyMipChain(TextureId id, uint8_t* destination,
                       size_t destinationSize) const;
 
-    /// 读取并清除脏标记；true = 需要整张重新上传。
-    bool consumeDirty(TextureId id);
+    /// 读取并清除脏标记；true = 需要重新上传。
+    /// outRegion 非空时输出自上次上传以来修改区域的并集
+    ///（新建纹理/整图重改为整张纹理，可据此做局部上传）。
+    bool consumeDirty(TextureId id, gpu::TextureRegion* outRegion);
 
-    /// 标记脏（新增纹理初始即为脏；动态改图后调用）。
+    /// 标记整张脏（新增纹理初始即为整张脏；整图重绘后调用）。
     void markDirty(TextureId id);
+
+    /// 标记一个像素矩形脏（增量改图用，如字形写入 atlas 页）；
+    /// 与既有脏区域取并集，矩形会被钳制到纹理范围内。
+    void markDirtyRegion(TextureId id, uint32_t x, uint32_t y, uint32_t w,
+                         uint32_t h);
 
     /// 清空全部登记（测试用；运行中调用会让既有 id 失效）。
     void reset();
@@ -104,7 +127,9 @@ private:
         uint32_t height = 0;
         std::vector<uint32_t> data; ///< 每像素 0xRRGGBBAA，行紧密排列
         bool mipmapped = true; ///< 上传时是否生成 mip 链（业务位图开，atlas 页关）
-        bool dirty = true; ///< 新建/被改：待渲染器整张上传
+        bool dirty = true; ///< 新建/被改：待渲染器上传
+        /// 自上次上传以来修改区域的并集（新建 = 整张；仅 dirty 时有效）。
+        gpu::TextureRegion dirtyRegion;
     };
 
     /// 下标 = id - 1（id 0 是渲染器白纹理，不入表）。

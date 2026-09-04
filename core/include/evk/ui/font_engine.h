@@ -121,6 +121,20 @@ public:
     void forEachGlyph(const char* utf8, float sizePx, FontId preferred,
                       const std::function<void(const PlacedGlyph&)>& fn);
 
+    /**
+     * @brief 预热字形缓存：排版指定文本并光栅化全部字形，丢弃排布结果。
+     *
+     * 字形是懒光栅化的——某个 (字体, 字形, 字号) 组合首次上屏时才跑
+     * stb_truetype 光栅化并把 atlas 页打脏重传。页面首次进入的转场动画
+     * 正好撞上这波开销（逐字光栅化 + 整页 atlas 重传），表现为首帧卡顿。
+     * 启动时（或闲时）把已知文案预热一遍，之后的绘制全部命中缓存。
+     * @param utf8 UTF-8 文本
+     * @param sizePx 字号（em 像素大小）——必须与绘制时完全一致才命中缓存
+     * @param preferred 首选字体——必须与绘制时一致：首选字体不同，同一码点
+     *        可能解析到不同字体，缓存键就不同
+     */
+    void prewarm(const char* utf8, float sizePx, FontId preferred);
+
     // ---- atlas 访问（渲染层/测试消费，像素细节走 TextureStore） ----
 
     /// atlas 页数（随字形增多而增长，页满自动开新页）。

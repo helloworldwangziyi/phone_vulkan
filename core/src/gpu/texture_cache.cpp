@@ -290,19 +290,22 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
     const VkDevice device = context_.device();
 
     // 收集本帧要传的纹理。mipmapped 位图要带上整条 mip 链
-    // （各级 RGBA8 紧密排列，CPU 预生成），单级纹理 size 仍等于 w*h*4。
+    // （各级 RGBA8 紧密排列，CPU 预生成），单级纹理整传时 size = w*h*4；
+    // 已首传过的单级纹理（字形 atlas 页）只传脏矩形并集。
     struct PendingCopy {
         TextureObj* tex;
         uint32_t textureId; ///< 数据源纹理 id；0 = 白纹理占位
-        VkDeviceSize size;
-        uint32_t width, height;
+        VkDeviceSize size;      ///< 拷贝字节数（局部上传 = 脏区 w*h*4）
+        uint32_t width, height; ///< 拷贝区域尺寸
+        uint32_t x = 0, y = 0;  ///< 拷贝区域左上角（整传为 0）
         uint32_t mipLevels;
         bool white;
+        bool partial = false; ///< true = 单级纹理的脏矩形局部上传
     };
     std::vector<PendingCopy> copies;
     VkDeviceSize total = 0;
     if (whiteTexture_.pendingUpload) {
-        copies.push_back({&whiteTexture_, 0, 4, 1, 1, 1, true});
+        copies.push_back({&whiteTexture_, 0, 4, 1, 1, 0, 0, 1, true, false});
         total += 4;
     }
     if (source_) {
@@ -312,18 +315,37 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
                 continue;
             }
             const uint32_t textureId = static_cast<uint32_t>(id);
-            if (source_->consumeDirty(textureId)) {
+            TextureRegion region{};
+            if (source_->consumeDirty(textureId, &region)) {
                 tex.pendingUpload = true;
             }
-            if (tex.pendingUpload) {
-                const uint32_t w = source_->width(textureId);
-                const uint32_t h = source_->height(textureId);
+            if (!tex.pendingUpload) {
+                continue;
+            }
+            const uint32_t w = source_->width(textureId);
+            const uint32_t h = source_->height(textureId);
+            // 局部上传条件：已首传（布局已固定）+ 单级 + 脏区是本帧刚报的
+            // 真子矩形。新建纹理、mip 链位图、以及脏区信息缺失的上传重试
+            // （上次失败后脏标记已被取走）都维持整传。
+            const bool partial =
+                tex.uploaded && tex.mipLevels == 1 && region.w > 0 &&
+                region.h > 0 &&
+                (region.x > 0 || region.y > 0 || region.w < w || region.h < h);
+            if (partial) {
                 const VkDeviceSize size =
-                    static_cast<VkDeviceSize>(source_->mipChainBytes(textureId));
-                if (size > 0) {
-                    copies.push_back({&tex, textureId, size, w, h, tex.mipLevels, false});
-                    total += size;
-                }
+                    static_cast<VkDeviceSize>(region.w) * region.h * 4;
+                copies.push_back({&tex, textureId, size, region.w, region.h,
+                                  region.x, region.y, 1u, false, true});
+                total += size;
+                continue;
+            }
+            const VkDeviceSize size =
+                static_cast<VkDeviceSize>(source_->mipChainBytes(textureId));
+            if (size > 0) {
+                copies.push_back(
+                    {&tex, textureId, size, w, h, 0, 0, tex.mipLevels, false,
+                     false});
+                total += size;
             }
         }
     }
@@ -349,6 +371,15 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
         uint8_t* destination = static_cast<uint8_t*>(mapped) + offset;
         if (copy.white) {
             std::memset(destination, 0xFF, 4);
+        } else if (copy.partial) {
+            // 局部上传：只转换并拷出脏矩形（逐行）。
+            if (!source_->copyRegion(copy.textureId, copy.x, copy.y, copy.width,
+                                     copy.height, destination,
+                                     static_cast<size_t>(copy.size))) {
+                EVK_LOGE("texture {} region conversion failed", copy.textureId);
+                vkUnmapMemory(device, textureUploadMemorys_[frameSlot]);
+                return;
+            }
         } else if (!source_->copyMipChain(copy.textureId, destination,
                                           static_cast<size_t>(copy.size))) {
             EVK_LOGE("texture {} mip chain conversion failed", copy.textureId);
@@ -387,6 +418,8 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
 
         // mip 链在缓冲中级间紧密排列：逐级一个 copy region，
         // region 的 mipLevel 指层、extent 逐级缩半、bufferOffset 顺序前进。
+        // 局部上传（partial）是单级纹理：imageOffset 指向脏矩形左上角，
+        // 循环只走 level 0 一次。
         VkDeviceSize levelOffset = offset;
         uint32_t levelW = copy.width;
         uint32_t levelH = copy.height;
@@ -395,6 +428,8 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
             region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
             region.imageSubresource.mipLevel = level;
             region.imageSubresource.layerCount = 1;
+            region.imageOffset = {static_cast<int32_t>(copy.x),
+                                  static_cast<int32_t>(copy.y), 0};
             region.imageExtent = {levelW, levelH, 1};
             region.bufferOffset = levelOffset;
             // RGBA 紧密排列：行间距 = 宽度（纹素），无对齐填充。

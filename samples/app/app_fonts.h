@@ -22,4 +22,13 @@ evk::ui::FontId cjkBold();
 /// 注册全部内嵌字体；App 在 EngineReady 后调用一次（重复调用幂等跳过）。
 void registerFonts();
 
+/**
+ * @brief 预热字形缓存：把各页面已知文案按「绘制时的字号与首选字体」提前
+ *        光栅化，消除页面首次进入时转场动画里的逐字光栅化 + atlas 重传尖峰。
+ *
+ * 依赖屏幕尺寸（字号经 appCalc 换算），SurfaceChanged 未上报时跳过。
+ * 字形缓存键含 (字体, 字号)，新增文案/字号后需同步这里的清单。
+ */
+void prewarm();
+
 } // namespace appFonts

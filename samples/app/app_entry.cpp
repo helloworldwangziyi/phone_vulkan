@@ -35,6 +35,9 @@ void createUi() {
             appCalcHeight(150.0f),
             navigationStyle(appTheme()),
         });
+    // 预热字形缓存：各页面已知文案提前光栅化，转场动画不再撞上
+    // 「逐字光栅化 + atlas 整页重传」的尖峰（首次进入行情页卡顿的根因）。
+    appFonts::prewarm();
 }
 
 bool appEvent(evk::EventId id, const void* data) {

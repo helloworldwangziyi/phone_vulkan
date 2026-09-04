@@ -23,6 +23,8 @@ TextureId TextureStore::addTexture(uint32_t width, uint32_t height,
     entry.width = width;
     entry.height = height;
     entry.mipmapped = mipmapped;
+    // 新建纹理首张上传必为整张：脏区域初始化成全尺寸。
+    entry.dirtyRegion = {0, 0, width, height};
     entry.data.assign(static_cast<size_t>(width) * height, 0);
     if (rgbaPixels) {
         std::memcpy(entry.data.data(), rgbaPixels,
@@ -80,6 +82,35 @@ bool TextureStore::copyRgbaBytes(TextureId id, uint8_t* destination,
         destination[i * 4 + 1] = static_cast<uint8_t>(rgba >> 16);
         destination[i * 4 + 2] = static_cast<uint8_t>(rgba >> 8);
         destination[i * 4 + 3] = static_cast<uint8_t>(rgba);
+    }
+    return true;
+}
+
+bool TextureStore::copyRgbaRegion(TextureId id, uint32_t x, uint32_t y,
+                                  uint32_t w, uint32_t h, uint8_t* destination,
+                                  size_t destinationSize) const {
+    if (id == 0 || id > entries_.size() || !destination) {
+        return false;
+    }
+    const Entry& entry = entries_[id - 1];
+    if (x + w > entry.width || y + h > entry.height) {
+        return false;
+    }
+    if (destinationSize < static_cast<size_t>(w) * h * 4) {
+        return false;
+    }
+    // 与 copyRgbaBytes 相同的 0xRRGGBBAA → RGBA 字节序转换，逐行进行。
+    for (uint32_t row = 0; row < h; ++row) {
+        const uint32_t* src =
+            entry.data.data() + static_cast<size_t>(y + row) * entry.width + x;
+        uint8_t* dst = destination + static_cast<size_t>(row) * w * 4;
+        for (uint32_t col = 0; col < w; ++col) {
+            const uint32_t rgba = src[col];
+            dst[col * 4] = static_cast<uint8_t>(rgba >> 24);
+            dst[col * 4 + 1] = static_cast<uint8_t>(rgba >> 16);
+            dst[col * 4 + 2] = static_cast<uint8_t>(rgba >> 8);
+            dst[col * 4 + 3] = static_cast<uint8_t>(rgba);
+        }
     }
     return true;
 }
@@ -187,19 +218,53 @@ bool TextureStore::copyMipChain(TextureId id, uint8_t* destination,
     return true;
 }
 
-bool TextureStore::consumeDirty(TextureId id) {
+bool TextureStore::consumeDirty(TextureId id, gpu::TextureRegion* outRegion) {
     if (id == 0 || id > entries_.size()) {
         return false;
     }
-    const bool dirty = entries_[id - 1].dirty;
-    entries_[id - 1].dirty = false;
+    Entry& entry = entries_[id - 1];
+    const bool dirty = entry.dirty;
+    if (dirty && outRegion) {
+        *outRegion = entry.dirtyRegion;
+    }
+    entry.dirty = false;
+    entry.dirtyRegion = {};
     return dirty;
 }
 
 void TextureStore::markDirty(TextureId id) {
     if (id != 0 && id <= entries_.size()) {
-        entries_[id - 1].dirty = true;
+        Entry& entry = entries_[id - 1];
+        entry.dirty = true;
+        entry.dirtyRegion = {0, 0, entry.width, entry.height};
     }
+}
+
+void TextureStore::markDirtyRegion(TextureId id, uint32_t x, uint32_t y,
+                                   uint32_t w, uint32_t h) {
+    if (id == 0 || id > entries_.size() || w == 0 || h == 0) {
+        return;
+    }
+    Entry& entry = entries_[id - 1];
+    if (x >= entry.width || y >= entry.height) {
+        return; // 完全在纹理外
+    }
+    // 钳制到纹理范围内（调用方给的是写入范围，允许贴边）。
+    w = std::min(w, entry.width - x);
+    h = std::min(h, entry.height - y);
+    if (!entry.dirty) {
+        // 上次上传之后的第一笔：并集从本矩形重新开始。
+        entry.dirtyRegion = {x, y, w, h};
+    } else {
+        gpu::TextureRegion& r = entry.dirtyRegion;
+        const uint32_t right = std::max(r.x + r.w, x + w);
+        const uint32_t bottom = std::max(r.y + r.h, y + h);
+        r.x = std::min(r.x, x);
+        r.y = std::min(r.y, y);
+        r.w = right - r.x;
+        r.h = bottom - r.y;
+    }
+    entry.dirty = true;
 }
 
 void TextureStore::reset() {

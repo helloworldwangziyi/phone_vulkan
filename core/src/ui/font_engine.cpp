@@ -228,18 +228,22 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
     cached.advance = advance * scale;
 
     if (w > 0 && h > 0) {
-        // 货架法打包：当前行放得下就接着放，放不下换行，行也放不下开新页。
+        // 货架法打包：当前行放得下就接着放；横向放满、或新字形比当前
+        // 行高（高字形换行而不是垫高整行，省横向空间）则换行；换行也
+        // 放不下才开新页。
         const int needW = w + kGlyphPadding * 2;
         const int needH = h + kGlyphPadding * 2;
         int pageIndex = -1;
         for (int p = static_cast<int>(pages_.size()) - 1; p >= 0; --p) {
             AtlasPage& page = pages_[p];
-            const int nextX = page.cursorX + needW;
-            const int nextY = (page.rowHeight >= needH)
-                                  ? page.cursorY
-                                  : page.cursorY + page.rowHeight;
-            if (nextX <= kAtlasPageSize &&
-                nextY + std::max(page.rowHeight, needH) <= kAtlasPageSize) {
+            const bool wrap = page.cursorX + needW > kAtlasPageSize ||
+                              page.rowHeight < needH;
+            const int nextX = wrap ? needW : page.cursorX + needW;
+            const int nextY = wrap ? page.cursorY + page.rowHeight
+                                   : page.cursorY;
+            const int nextBottom = wrap ? nextY + needH
+                                        : page.cursorY + page.rowHeight;
+            if (nextX <= kAtlasPageSize && nextBottom <= kAtlasPageSize) {
                 pageIndex = p;
                 break;
             }
@@ -266,8 +270,8 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
             pages_.push_back(std::move(page));
         }
         AtlasPage& page = pages_[pageIndex];
-        if (page.rowHeight < needH) {
-            // 换到新一行：光标下移到更高字形的顶部。
+        // 与上面的 fit 检查同一个换行条件：横向放满或行高不够都换行。
+        if (page.cursorX + needW > kAtlasPageSize || page.rowHeight < needH) {
             page.cursorY += page.rowHeight;
             page.cursorX = 0;
             page.rowHeight = needH;
@@ -288,7 +292,12 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
             }
             dst += kAtlasPageSize;
         }
-        TextureStore::instance().markDirty(page.texture);
+        // 只把本字形的货架格（含留边）报脏：渲染器局部上传这块矩形，
+        // 不再因一个字形整页 4MB 重传。
+        TextureStore::instance().markDirtyRegion(
+            page.texture, static_cast<uint32_t>(dstX),
+            static_cast<uint32_t>(dstY), static_cast<uint32_t>(needW),
+            static_cast<uint32_t>(needH));
         page.cursorX += needW;
 
         cached.texture = page.texture;
@@ -367,6 +376,15 @@ void FontEngine::forEachGlyph(const char* utf8, float sizePx, FontId preferred,
         }
         pen += item.advance;
     }
+}
+
+void FontEngine::prewarm(const char* utf8, float sizePx, FontId preferred) {
+    if (!utf8 || sizePx <= 0.0f) {
+        return;
+    }
+    // forEachGlyph 对排布出的每个字形调 rasterizeGlyph：未缓存的字形
+    // 当即光栅化进 atlas；回调丢弃排布结果即可。
+    forEachGlyph(utf8, sizePx, preferred, [](const PlacedGlyph&) {});
 }
 
 int FontEngine::pageCount() const {

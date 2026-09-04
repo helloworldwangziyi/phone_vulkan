@@ -691,11 +691,37 @@ void testFontEngine(const char* latinPath, const char* cjkPath) {
 
     // 脏页标记（TextureStore 语义）：首帧光栅化置脏，上传后被取走，
     // 重复绘制同样文本不再置脏（字形命中缓存）。
-    assert(evk::ui::TextureStore::instance().consumeDirty(pageTex));
+    evk::gpu::TextureRegion dirtyRegion{};
+    assert(evk::ui::TextureStore::instance().consumeDirty(pageTex, &dirtyRegion));
+    // 新建页首传为整张：脏区域 = 全页。
+    assert(dirtyRegion.w == static_cast<uint32_t>(fonts.pageSize()) &&
+           dirtyRegion.h == static_cast<uint32_t>(fonts.pageSize()));
+
+    // 增量写入（新文本带来新字形）只把字形货架格的并集报脏：
+    // 脏区域应是远小于整页的子矩形，渲染器据此做局部上传。
     canvas.clear();
-    canvas.drawText("Hi 你好", evk::ui::kFontAny, 0.0f, 0.0f, 32.0f,
+    canvas.drawText("World 世界", evk::ui::kFontAny, 0.0f, 0.0f, 32.0f,
                     {0.0f, 0.0f, 400.0f, 100.0f}, evk::ui::Color::rgba(0xFFFFFFFF));
-    assert(!evk::ui::TextureStore::instance().consumeDirty(pageTex));
+    assert(evk::ui::TextureStore::instance().consumeDirty(pageTex, &dirtyRegion));
+    assert(dirtyRegion.w > 0 && dirtyRegion.h > 0);
+    assert(dirtyRegion.w < static_cast<uint32_t>(fonts.pageSize()) &&
+           dirtyRegion.h < static_cast<uint32_t>(fonts.pageSize()));
+
+    canvas.clear();
+    canvas.drawText("World 世界", evk::ui::kFontAny, 0.0f, 0.0f, 32.0f,
+                    {0.0f, 0.0f, 400.0f, 100.0f}, evk::ui::Color::rgba(0xFFFFFFFF));
+    assert(!evk::ui::TextureStore::instance().consumeDirty(pageTex, nullptr));
+
+    // 货架打包回归：一行横向放满后，不比行高高的新字形必须换行，
+    // 而不是误判本页已满去开新页。48 个互不重复的 56px 汉字占 3 行
+    // （每行 17 格），打包正确时仍收在同一页里。
+    const int pagesBefore = fonts.pageCount();
+    canvas.clear();
+    canvas.drawText(
+        "天地玄黄宇宙洪荒日月盈昃辰宿列张律吕调阳云腾致雨露结为霜金生丽水玉出昆冈剑号巨阙珠称夜光",
+        evk::ui::kFontAny, 0.0f, 0.0f, 56.0f, {0.0f, 0.0f, 2000.0f, 200.0f},
+        evk::ui::Color::rgba(0xFFFFFFFF));
+    assert(fonts.pageCount() == pagesBefore);
 
     // 嵌套 Column 必须把文字的固有行高沿约束协议上行给外层（内层 Column
     // 收无界主轴约束、包内容），否则内层会被压成 0 高，

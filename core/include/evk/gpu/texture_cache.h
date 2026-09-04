@@ -55,6 +55,8 @@ public:
      *
      * 必须在 vkCmdBeginRenderPass 之前调用：布局转换与拷贝都不是
      * render pass 内合法操作。上传用本帧槽位的中转缓冲，CPU 侧先行写入。
+     * 新建纹理与 mip 链位图整传；已首传的单级纹理（字形 atlas 页）
+     * 只传脏矩形并集。
      * @param cmd 本帧命令缓冲
      * @param frameSlot 本帧槽位（选对应的中转缓冲）
      */

@@ -9,6 +9,11 @@
 
 namespace evk::gpu {
 
+/// 像素矩形（脏区域并集用；单位像素，w/h 为 0 表示空区域）。
+struct TextureRegion {
+    uint32_t x = 0, y = 0, w = 0, h = 0;
+};
+
 /**
  * @brief UI 纹理数据源（字形 atlas 页 + 业务位图）的查询/脏页接口。
  *
@@ -47,8 +52,23 @@ public:
     virtual bool copyMipChain(uint32_t id, uint8_t* destination,
                               size_t destinationSize) const = 0;
 
-    /// 读取并清除脏标记；true = 需要整张重新上传。
-    virtual bool consumeDirty(uint32_t id) = 0;
+    /**
+     * @brief 导出 level 0 的一个像素矩形（RGBA8、行紧密排列）。
+     *
+     * 脏区域局部上传用：只转换并拷出脏区，而非整张纹理。
+     * @param destination 接收缓冲，容量至少为 w*h*4
+     * @return 参数越界或容量不足时返回 false
+     */
+    virtual bool copyRegion(uint32_t id, uint32_t x, uint32_t y, uint32_t w,
+                            uint32_t h, uint8_t* destination,
+                            size_t destinationSize) const = 0;
+
+    /**
+     * @brief 读取并清除脏标记；true = 需要重新上传。
+     * @param outRegion 非空时输出自上次上传以来修改区域的并集
+     *        （新建纹理/整图重改为整张纹理）
+     */
+    virtual bool consumeDirty(uint32_t id, TextureRegion* outRegion) = 0;
 };
 
 } // namespace evk::gpu

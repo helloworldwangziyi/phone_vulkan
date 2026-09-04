@@ -36,8 +36,14 @@ public:
                       size_t destinationSize) const override {
         return TextureStore::instance().copyMipChain(id, destination, destinationSize);
     }
-    bool consumeDirty(uint32_t id) override {
-        return TextureStore::instance().consumeDirty(id);
+    bool copyRegion(uint32_t id, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
+                    uint8_t* destination, size_t destinationSize) const override {
+        return TextureStore::instance().copyRgbaRegion(id, x, y, w, h,
+                                                       destination,
+                                                       destinationSize);
+    }
+    bool consumeDirty(uint32_t id, gpu::TextureRegion* outRegion) override {
+        return TextureStore::instance().consumeDirty(id, outRegion);
     }
 };
 
