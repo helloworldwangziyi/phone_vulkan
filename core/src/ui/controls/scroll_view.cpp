@@ -27,14 +27,6 @@ View* ScrollViewWidget::childParent(View& view) const {
     return scrollContent(view);
 }
 
-void ScrollViewWidget::configureChild(
-    View& parent, const Widget&, View& childView) const {
-    View* content = scrollContent(parent);
-    if (content) {
-        childView.setBounds(0.0f, 0.0f, content->rect.w, content->rect.h);
-    }
-}
-
 std::unique_ptr<Widget> scrollView(
     std::unique_ptr<Widget> child,
     float contentHeight,

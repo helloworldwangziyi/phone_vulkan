@@ -15,10 +15,10 @@ namespace evk::ui {
 /**
  * @brief 线性容器（Column/Row 的公共基类）。
  *
- * 对应的 View 是 FlexView：主轴空间先扣固定项与间距，剩余按 flex 系数
- * 分给弹性项（Expanded）。每个孩子的排布参数来自其 Widget 的
- * flexParentData()——所以 App 不写布局函数：尺寸变化时 FlexView 经
- * handleBoundsChanged 自动级联重排。
+ * 对应的 View 是 FlexView：非弹性孩子经约束协议自报尺寸，主轴剩余
+ * 空间按 flex 系数分给弹性项（Expanded）；交叉轴默认拉伸铺满。孩子的
+ * 排布参数（flex/对齐/间距/显式尺寸覆盖）来自其 Widget 的
+ * flexParentData()——所以 App 不写布局函数。
  */
 class Flex : public RenderObjectWidget {
 public:
@@ -26,14 +26,12 @@ public:
     uint32_t color = 0;
 
     Flex(Axis axis, std::vector<std::unique_ptr<Widget>> children);
-    FlexParentData flexParentData(Axis parentAxis) const override;
     std::unique_ptr<View> createRenderObject() const override;
     void updateRenderObject(View& view) const override;
     std::vector<std::unique_ptr<Widget>>& children() override { return children_; }
     void configureChild(View& parent, const Widget& child, View& childView) const override;
 
 private:
-    FlexParentData intrinsicData_;
     std::vector<std::unique_ptr<Widget>> children_;
 };
 

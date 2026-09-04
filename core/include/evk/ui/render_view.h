@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -31,6 +32,47 @@ struct Rect {
 
     bool contains(float px, float py) const;
     static Rect intersect(const Rect& a, const Rect& b);
+};
+
+/**
+ * @brief 盒约束：父布局下行给孩子的尺寸许可范围（Flutter 的 BoxConstraints）。
+ *
+ * 布局协议是双向的：父经 View::layout(constraints) 把 min/max 宽高下行，
+ * 孩子在 performLayout 里自定尺寸并回报（上行），父随后用 setPosition
+ * 写偏移。孩子回报的尺寸一定落在 [min, max] 区间内（layout 入口统一
+ * constrain 钳制）。
+ *
+ * 无界轴用 kInfinite 表示（如 Column 给孩子测量的主轴上限、滚动方向）。
+ * tight(w,h) = min=max 的强制尺寸；loose(w,h) = 只设上限、孩子自定。
+ */
+struct BoxConstraints {
+    static constexpr float kInfinite = std::numeric_limits<float>::infinity();
+
+    float minWidth = 0.0f;
+    float maxWidth = kInfinite;
+    float minHeight = 0.0f;
+    float maxHeight = kInfinite;
+
+    /// 强制尺寸：min=max（根视口、flex 份额、显式尺寸覆盖）。
+    static BoxConstraints tight(float width, float height);
+    /// 只设上限：孩子在 [0, max] 内自定尺寸（测量用）。
+    static BoxConstraints loose(float width, float height);
+    /// 四边内缩（Padding 用）：min/max 同步扣除，结果保持 min <= max。
+    BoxConstraints deflate(float horizontal, float vertical) const;
+
+    bool isWidthTight() const { return minWidth >= maxWidth; }
+    bool isHeightTight() const { return minHeight >= maxHeight; }
+    bool isWidthBounded() const { return maxWidth < kInfinite; }
+    bool isHeightBounded() const { return maxHeight < kInfinite; }
+
+    float constrainWidth(float value) const;
+    float constrainHeight(float value) const;
+    Size constrain(Size size) const;
+    /// 有界轴取 max（撑满），无界轴取 min（默认 0：无约束时裸 View 不占位）。
+    Size biggest() const;
+
+    bool operator==(const BoxConstraints& other) const;
+    bool operator!=(const BoxConstraints& other) const { return !(*this == other); }
 };
 
 struct Color {
@@ -146,6 +188,15 @@ private:
     std::weak_ptr<uint8_t> lifetime_;
 };
 
+/**
+ * @brief 渲染节点：持有实际尺寸、父子关系与交互状态（Flutter 的
+ *        RenderObject 对应物）。
+ *
+ * 布局走双向约束协议：父经 layout(BoxConstraints) 下行约束，子经
+ * performLayout 自报尺寸上行，父再 setPosition 写偏移。rect 语义拆分：
+ * x/y 由父写（偏移），w/h 由自身 layout 写（尺寸）。除布局入口外，
+ * 重建/增删触发的重排统一走 markNeedsLayout + flushLayout。
+ */
 class View {
 public:
     View();
@@ -171,9 +222,42 @@ public:
     virtual bool acceptsPanInput() const { return static_cast<bool>(onPan); }
     virtual void handlePointer(const struct PointerEvent& event);
     virtual void handlePan(const PanEvent& event);
-    virtual void handleBoundsChanged() {}
     virtual void handleChildRemoved(size_t) {}
 
+    /**
+     * @brief 布局协议下行入口：按约束完成本节点（及所需子树）的布局，
+     *        回报钳制后的尺寸。
+     *
+     * 幂等：约束与上次相同且子树无脏标记时直接返回缓存尺寸，不递归。
+     * 否则存下约束、调 performLayout（子类在此布局孩子并自报尺寸）、
+     * 把回报值 constrain 进约束区间后写入 rect.w/h。帧构建（paint）
+     * 期间拒绝调用（与 setBounds 同级守卫）。
+     */
+    Size layout(const BoxConstraints& constraints);
+
+    /**
+     * @brief 布局协议子类钩子：在约束内完成自身布局并回报尺寸。
+     *
+     * 容器在此逐个 child->layout(childConstraints) 拿孩子尺寸、再
+     * child->setPosition(...) 写偏移；叶子按内容自测（Text 量文字）。
+     * 默认实现 = constraints.biggest()：有界撑满、无界取 min（0）——
+     * 与「裸容器被 tight 填满、无约束不占位」的旧表现一致。
+     */
+    virtual Size performLayout(const BoxConstraints& constraints);
+
+    /// 父写孩子偏移（只动 rect.x/y，不触发布局；转场/滚动逐帧位移用它）。
+    void setPosition(float x, float y);
+
+    /// 标脏并向上冒泡到根：重建、孩子增删后由框架调用。
+    void markNeedsLayout();
+    /// 从最顶祖先以其缓存约束重排整棵脏子树；根尚无约束（首帧前）则留脏待落。
+    void flushLayout();
+    bool needsLayout() const { return layoutDirty_; }
+    bool hasConstraints() const { return hasConstraints_; }
+    /// 最近一次 layout 的下行约束（flushLayout/帧兜底重排的依据）。
+    const BoxConstraints& constraints() const { return constraints_; }
+
+    /// 兼容壳：定位 + tight 约束布局（等价于父给 (x,y) 落位并强制宽高）。
     void setBounds(float x, float y, float width, float height);
     void setVisible(bool value);
     void setBackground(uint32_t rgba);
@@ -194,6 +278,9 @@ public:
 
 private:
     std::shared_ptr<uint8_t> lifetime_;
+    BoxConstraints constraints_;   ///< 最近一次 layout 的下行约束
+    bool hasConstraints_ = false;  ///< 是否完成过至少一次 layout
+    bool layoutDirty_ = true;      ///< 脏标记：冒泡至根，flush 时清
 
     friend class ViewRef;
 };

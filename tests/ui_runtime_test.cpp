@@ -165,6 +165,119 @@ void testFlexLayout() {
     assert(cView->rect.x == 50.0f);
 }
 
+/// 布局约束协议自证：约束下行、尺寸上行、constrain 钳制、幂等短路、
+/// 脏冒泡后 flush 从根重排、帧构建期间拒绝布局。
+namespace {
+
+/// 自报 120x40 的叶子 View（记录 performLayout 次数供幂等断言）。
+class FixedView final : public evk::ui::View {
+public:
+    int layouts = 0;
+    evk::ui::Size performLayout(const evk::ui::BoxConstraints&) override {
+        ++layouts;
+        return {120.0f, 40.0f};
+    }
+};
+
+/// 包孩子的容器：自身尺寸 = 孩子尺寸（约束原样透传）。
+class WrapView final : public evk::ui::View {
+public:
+    int layouts = 0;
+    evk::ui::Size performLayout(const evk::ui::BoxConstraints& c) override {
+        ++layouts;
+        if (children.empty()) {
+            return c.biggest();
+        }
+        const evk::ui::Size size = children.front()->layout(c);
+        children.front()->setPosition(0.0f, 0.0f);
+        return size;
+    }
+};
+
+} // namespace
+
+void testBoxConstraintsProtocol() {
+    using namespace evk::ui;
+    resetRuntime();
+
+    // BoxConstraints 助手：tight/loose/deflate/constrain/biggest。
+    const BoxConstraints loose = BoxConstraints::loose(500.0f, 30.0f);
+    assert(loose.minWidth == 0.0f && loose.maxWidth == 500.0f);
+    assert(!loose.isWidthTight() && loose.isWidthBounded());
+    const BoxConstraints deflated = loose.deflate(10.0f, 5.0f);
+    assert(deflated.maxWidth == 490.0f && deflated.maxHeight == 25.0f);
+    const BoxConstraints tight = BoxConstraints::tight(50.0f, 60.0f);
+    assert(tight.isWidthTight() && tight.isHeightTight());
+    assert(tight.constrain({999.0f, 1.0f}).width == 50.0f);
+    assert(BoxConstraints::loose(70.0f, 80.0f).biggest().height == 80.0f);
+    assert(BoxConstraints{}.biggest().width == 0.0f);  // 无界轴取 min
+
+    auto root = std::make_unique<WrapView>();
+    auto fixed = std::make_unique<FixedView>();
+    WrapView* rootView = root.get();
+    FixedView* fixedView = fixed.get();
+    root->addChild(std::move(fixed));
+
+    // 约束下行、尺寸上行：松散约束下孩子自报 120x40，容器包孩子。
+    const Size size = root->layout(BoxConstraints::loose(500.0f, 500.0f));
+    assert(size.width == 120.0f && size.height == 40.0f);
+    assert(rootView->rect.w == 120.0f && rootView->rect.h == 40.0f);
+    assert(fixedView->rect.w == 120.0f && fixedView->rect.h == 40.0f);
+    assert(rootView->layouts == 1 && fixedView->layouts == 1);
+
+    // tight 钳制：孩子自报尺寸被约束强制成 tight 值（协议铁律）。
+    root->layout(BoxConstraints::tight(50.0f, 60.0f));
+    assert(fixedView->rect.w == 50.0f && fixedView->rect.h == 60.0f);
+    assert(rootView->rect.w == 50.0f && rootView->rect.h == 60.0f);
+
+    // 幂等短路：同约束且无脏 → 不再 performLayout。
+    root->layout(BoxConstraints::tight(50.0f, 60.0f));
+    assert(rootView->layouts == 2 && fixedView->layouts == 2);
+
+    // 脏冒泡：孩子标脏 ⇒ 根脏；flush 从根重排，沿途各重算一次。
+    fixedView->markNeedsLayout();
+    assert(rootView->needsLayout());
+    fixedView->flushLayout();
+    assert(!rootView->needsLayout() && !fixedView->needsLayout());
+    assert(rootView->layouts == 3 && fixedView->layouts == 3);
+
+    // 帧构建（paint）期间布局被拒绝，几何不变。
+    fixedView->painter = [fixedView](PaintContext&) {
+        fixedView->layout(BoxConstraints::tight(7.0f, 7.0f));
+        fixedView->setPosition(9.0f, 9.0f);
+    };
+    setRootView(rootView);
+    evk::requestRender();
+    evk::beginFrame(ms(1));
+    assert(fixedView->rect.w == 50.0f && fixedView->rect.x == 0.0f);
+    setRootView(nullptr);
+}
+
+/// Center 回归：tight 约束经 Padding 下行时 Center 必须松掉 min——
+/// sizedBox 保持自身宽度并居中。旧 ProxyWidget 路径靠 flexParentData
+/// 穿透 Padding 上报，协议化后断裂：盒子被 min 钳成满宽、内容贴左。
+void testCenterLoosensTightConstraints() {
+    using namespace evk::ui;
+    resetRuntime();
+    setViewportSize(750.0f, 1334.0f);
+    runApp(column(padding(
+        EdgeInsets::only(0.0f, 60.0f, 0.0f, 0.0f),
+        center(sizedBox(400.0f, 140.0f, container(0x112233FF))))), {});
+    View* page = appNavigator()->topView();
+    assert(page && page->children.size() == 1);
+    View* paddingView = page->children[0].get();
+    assert(paddingView->rect.w == 750.0f && paddingView->rect.h == 200.0f);
+    assert(paddingView->children.size() == 1);
+    View* centerView = paddingView->children[0].get();
+    assert(centerView->rect.x == 0.0f && centerView->rect.y == 60.0f);
+    assert(centerView->rect.w == 750.0f && centerView->rect.h == 140.0f);
+    assert(centerView->children.size() == 1);
+    View* box = centerView->children[0].get();
+    assert(box->rect.w == 400.0f && box->rect.h == 140.0f);
+    assert(box->rect.x == 175.0f && box->rect.y == 0.0f);
+    shutdownApp();
+}
+
 void testScrollViewDragAndClamp() {
     resetRuntime();
     auto scroll = evk::ui::createScrollView(0.0f, 1000.0f);
@@ -420,6 +533,41 @@ void testStateAndNavigatorLifecycle() {
     assert(CounterState::alive == 0);
 }
 
+/// 转场中的页内重建：整树同尺寸重排不打断转场、不重复生命周期
+/// （守卫 NavigationView 按进度重放页面偏移的分支——若误强制落地，
+/// finishPush 会被动画 tick 重复调用，DidEnter 随之重复下发）。
+void testRebuildDuringTransition() {
+    resetRuntime();
+    evk::ui::setViewportSize(400.0f, 800.0f);
+    evk::ui::runApp(evk::ui::makeWidget<CounterPage>(), {60.0f, {}});
+    evk::ui::Navigator* navigator = evk::ui::appNavigator();
+    CounterState* first = CounterState::latest;
+    assert(navigator->push(evk::ui::makeWidget<CounterPage>(), true));
+    CounterState* second = CounterState::latest;
+    assert(second && second != first);
+
+    // 转场走一小段后：页内 setState（重建标脏冒泡到根 → 整树重排）。
+    int64_t time = ms(1000);
+    for (int i = 0; i < 5; ++i) {
+        time += ms(16);
+        evk::beginFrame(time);
+    }
+    const float midX = navigator->topView()->rect.x;
+    assert(midX > 0.0f && midX < 400.0f);
+    second->setState([second] { second->count = 42; });
+    // 重排不得改动转场中的页面偏移。
+    assert(navigator->topView()->rect.x == midX);
+
+    for (int i = 0; i < 30; ++i) {
+        time += ms(16);
+        evk::beginFrame(time);
+    }
+    assert(navigator->depth() == 2);
+    assert(navigator->topView()->rect.x == 0.0f);
+    assert(first->leaves == 1 && second->enters == 1);
+    evk::ui::shutdownApp();
+}
+
 void testAnimatedNavigationAndBackEvent() {
     resetRuntime();
     evk::ui::setViewportSize(400.0f, 800.0f);
@@ -549,7 +697,8 @@ void testFontEngine(const char* latinPath, const char* cjkPath) {
                     {0.0f, 0.0f, 400.0f, 100.0f}, evk::ui::Color::rgba(0xFFFFFFFF));
     assert(!evk::ui::TextureStore::instance().consumeDirty(pageTex));
 
-    // 嵌套 Column 必须把文字的固有行高上报给外层，否则内层会被压成 0 高，
+    // 嵌套 Column 必须把文字的固有行高沿约束协议上行给外层（内层 Column
+    // 收无界主轴约束、包内容），否则内层会被压成 0 高，
     // painter 不会产生任何字形批次。
     evk::ui::runApp(
         evk::ui::column(evk::ui::column(
@@ -732,8 +881,9 @@ void testTextLayout(const char* latinPath, const char* cjkPath) {
                   evk::ui::TextAlign::kLeft, 2);
     assert(layout.lineCount() == 2 && !layout.lines()[1].ellipsized);
 
-    // 换行 Text 控件：挂进 Column 后高度 = 行数 × 行高（视图拿到宽度后
-    // 经 setFlexChild 回灌），绘制只出可见行的字形批次。
+    // 换行 Text 控件：挂进 Column 后以约束宽度排版、高度 = 行数 × 行高
+    // 经协议上行（旧的 setFlexChild 回灌已被约束协议取代），
+    // 绘制只出可见行的字形批次。
     resetRuntime();
     evk::ui::setViewportSize(400.0f, 800.0f);
     // 构造一段 2.x 屏宽的中文长文本。
@@ -763,6 +913,173 @@ void testTextLayout(const char* latinPath, const char* cjkPath) {
 
     fonts.reset();
 }
+/// 内容自适应：Flex 里的孩子经约束协议自测尺寸（裸 Text 报实测行高、
+/// Row 里各报实测宽、嵌套 Column 包内容），不再依赖构建期预量上报。
+void testFlexContentMeasurement(const char* latinPath, const char* cjkPath) {
+    using namespace evk::ui;
+    auto& fonts = FontEngine::instance();
+    fonts.reset();
+    const auto latinData = readFile(latinPath);
+    const auto cjkData = readFile(cjkPath);
+    assert(!latinData.empty() && !cjkData.empty());
+    fonts.addFont(latinData.data(), latinData.size());
+    fonts.addFont(cjkData.data(), cjkData.size());
+
+    resetRuntime();
+    setViewportSize(400.0f, 800.0f);
+
+    float textW = 0.0f;
+    float textH = 0.0f;
+    fonts.measureText("标题 Title", 32.0f, kFontAny, &textW, &textH);
+    assert(textW > 0.0f && textH > 0.0f);
+
+    // Column { 裸 Text, SizedBox, 裸 Text }：裸 Text 高 = 实测行高
+    //（旧「父写死尺寸」协议下无尺寸孩子为 0），其余孩子顺排。
+    runApp(column(
+        text("标题 Title", 32.0f, 0xFFFFFFFF, kFontAny),
+        sizedBox(-1.0f, 100.0f, container(0x112233FF)),
+        text("副标题 Sub", 32.0f, 0xFFFFFFFF, kFontAny)), {});
+    View* page = appNavigator()->topView();
+    assert(page && page->children.size() == 3);
+    View* first = page->children[0].get();
+    View* box = page->children[1].get();
+    View* second = page->children[2].get();
+    assert(first->rect.y == 0.0f && first->rect.h == textH);
+    assert(first->rect.w == 400.0f);                 // 交叉轴默认拉伸铺满
+    assert(box->rect.y == textH && box->rect.h == 100.0f);
+    assert(second->rect.y == textH + 100.0f && second->rect.h == textH);
+    shutdownApp();
+
+    // Row { Text, Text }：各得实测宽、水平顺排。
+    float w1 = 0.0f;
+    float w2 = 0.0f;
+    fonts.measureText("ab", 32.0f, kFontAny, &w1, nullptr);
+    fonts.measureText("cdef", 32.0f, kFontAny, &w2, nullptr);
+    runApp(row(
+        text("ab", 32.0f, 0xFFFFFFFF, kFontAny),
+        text("cdef", 32.0f, 0xFFFFFFFF, kFontAny)), {});
+    page = appNavigator()->topView();
+    assert(page && page->children.size() == 2);
+    assert(page->children[0]->rect.w == w1);
+    assert(page->children[1]->rect.x == w1 && page->children[1]->rect.w == w2);
+    shutdownApp();
+
+    // 嵌套 Column：内层收无界主轴约束、包内容——高度 = 两行实测行高。
+    runApp(column(column(
+        text("第一行", 32.0f, 0xFFFFFFFF, kFontAny),
+        text("第二行", 32.0f, 0xFFFFFFFF, kFontAny))), {});
+    page = appNavigator()->topView();
+    assert(page && page->children.size() == 1);
+    float lineH = 0.0f;
+    fonts.measureText("第一行", 32.0f, kFontAny, nullptr, &lineH);
+    View* inner = page->children[0].get();
+    assert(inner->rect.h == lineH * 2.0f);
+    assert(inner->children.size() == 2);
+    assert(inner->children[1]->rect.y == lineH);
+    shutdownApp();
+
+    fonts.reset();
+}
+
+/// 状态变更 → 尺寸上行：setState 改字号，文本变高、兄弟顺移
+/// （同步重建 + 立即重排，断言无需等帧）。
+class ResizeTextPage final : public evk::ui::StatefulWidget {
+public:
+    std::unique_ptr<evk::ui::State> createState() const override;
+};
+
+class ResizeTextState final : public evk::ui::State {
+public:
+    static ResizeTextState* latest;
+
+    ResizeTextState() { latest = this; }
+
+    std::unique_ptr<evk::ui::Widget> build(evk::ui::BuildContext&) override {
+        return evk::ui::column(
+            evk::ui::text("标题", fontSize_, 0xFFFFFFFF, evk::ui::kFontAny),
+            evk::ui::sizedBox(-1.0f, 50.0f, evk::ui::container(0x112233FF)));
+    }
+
+    float fontSize_ = 32.0f;
+};
+
+ResizeTextState* ResizeTextState::latest = nullptr;
+
+std::unique_ptr<evk::ui::State> ResizeTextPage::createState() const {
+    return std::make_unique<ResizeTextState>();
+}
+
+void testLayoutReflowOnStateChange(const char* latinPath, const char* cjkPath) {
+    using namespace evk::ui;
+    auto& fonts = FontEngine::instance();
+    fonts.reset();
+    const auto latinData = readFile(latinPath);
+    const auto cjkData = readFile(cjkPath);
+    assert(!latinData.empty() && !cjkData.empty());
+    fonts.addFont(latinData.data(), latinData.size());
+    fonts.addFont(cjkData.data(), cjkData.size());
+
+    resetRuntime();
+    setViewportSize(400.0f, 800.0f);
+    runApp(makeWidget<ResizeTextPage>(), {});
+    View* page = appNavigator()->topView();
+    assert(page && page->children.size() == 2);
+    float h32 = 0.0f;
+    fonts.measureText("标题", 32.0f, kFontAny, nullptr, &h32);
+    assert(page->children[0]->rect.h == h32);
+    assert(page->children[1]->rect.y == h32);
+
+    // 字号翻倍 → 文本高度上行 → Column 重排 → 兄弟顺移。
+    float h64 = 0.0f;
+    fonts.measureText("标题", 64.0f, kFontAny, nullptr, &h64);
+    assert(h64 > h32);
+    ResizeTextState::latest->setState(
+        [] { ResizeTextState::latest->fontSize_ = 64.0f; });
+    assert(page->children[0]->rect.h == h64);
+    assert(page->children[1]->rect.y == h64);
+    shutdownApp();
+
+    fonts.reset();
+}
+
+/// 视口变窄 → 下行约束变化 → 换行 Text 行数变多、总高变大（重排沿
+/// 根视口 → 页面 → 文本一路经约束协议完成）。
+void testViewportResizeReflow(const char* latinPath, const char* cjkPath) {
+    using namespace evk::ui;
+    auto& fonts = FontEngine::instance();
+    fonts.reset();
+    const auto latinData = readFile(latinPath);
+    const auto cjkData = readFile(cjkPath);
+    assert(!latinData.empty() && !cjkData.empty());
+    const FontId latin = fonts.addFont(latinData.data(), latinData.size());
+    fonts.addFont(cjkData.data(), cjkData.size());
+
+    resetRuntime();
+    setViewportSize(400.0f, 800.0f);
+    std::string longText;
+    for (int i = 0; i < 20; ++i) {
+        longText += "行情速览";
+    }
+    runApp(column(text(longText, 32.0f, 0xFFFFFFFF, kFontAny,
+                       /*softWrap=*/true)), {});
+    View* page = appNavigator()->topView();
+    assert(page && page->children.size() == 1);
+    View* textView = page->children[0].get();
+    TextLayout expect;
+    expect.layout(longText.c_str(), 32.0f, latin, 400.0f);
+    assert(expect.lineCount() > 1);
+    assert(textView->rect.w == 400.0f);
+    assert(textView->rect.h == expect.totalHeight());
+
+    setViewportSize(200.0f, 800.0f);
+    expect.layout(longText.c_str(), 32.0f, latin, 200.0f);
+    assert(textView->rect.w == 200.0f);
+    assert(textView->rect.h == expect.totalHeight());
+    shutdownApp();
+
+    fonts.reset();
+}
+
 void testCanvas2dPrimitives() {
     auto& store = evk::ui::TextureStore::instance();
     store.reset();
@@ -913,11 +1230,14 @@ int main(int argc, char** argv) {
     testViewTreePaintingAndInput();
     testButtonStateMachine();
     testFlexLayout();
+    testBoxConstraintsProtocol();
+    testCenterLoosensTightConstraints();
     testScrollViewDragAndClamp();
     testListViewLayoutAndScroll();
     testScrollAxisLock();
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
+    testRebuildDuringTransition();
     testAnimatedNavigationAndBackEvent();
     testSafeAreaInsets();
 
@@ -927,6 +1247,9 @@ int main(int argc, char** argv) {
     if (argc >= 3) {
         testFontEngine(argv[1], argv[2]);
         testTextLayout(argv[1], argv[2]);
+        testFlexContentMeasurement(argv[1], argv[2]);
+        testLayoutReflowOnStateChange(argv[1], argv[2]);
+        testViewportResizeReflow(argv[1], argv[2]);
     } else {
         std::printf("font tests skipped (pass latin.ttf cjk.ttf as args)\n");
     }

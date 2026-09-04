@@ -84,8 +84,9 @@ return column(
 | Container | container |
 | ScrollView | scrollView |
 
-Flex 的 parent data 仍存在于渲染层，但只由 Expanded、SizedBox、Padding 和
-Center 生成，App 不需要理解它的存储和下发规则。
+Flex 的 parent data 仍存在于渲染层，但只由 Expanded 生成（flex 系数；
+SizedBox/Padding 的尺寸与 Center 的居中都在 View 层经约束协议自我
+强制），App 不需要理解它的存储和下发规则。
 
 ## 4. 绘制
 

@@ -18,6 +18,8 @@
 		E57A1100000000000000014A /* swapchain.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004A /* swapchain.cpp */; };
 		E57A1100000000000000014B /* ui_pipeline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004B /* ui_pipeline.cpp */; };
 		E57A1100000000000000014C /* texture_cache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004C /* texture_cache.cpp */; };
+		E57A11000000000000000609 /* path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000607 /* path.cpp */; };
+		E57A1100000000000000060A /* path_demo_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000608 /* path_demo_page.cpp */; };
 		E57A11000000000000000104 /* ui_application.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000013 /* ui_application.cpp */; };
 		E57A11000000000000000105 /* render_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000014 /* render_view.cpp */; };
 		E57A11000000000000000106 /* pointer_input.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000015 /* pointer_input.cpp */; };
@@ -129,6 +131,8 @@
 		E57A11000000000000000045 /* list_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = list_view.cpp; path = ../../../core/src/ui/controls/list_view.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000046 /* scroll_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = scroll_view.cpp; path = ../../../core/src/ui/controls/scroll_view.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000047 /* text.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = text.cpp; path = ../../../core/src/ui/controls/text.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000607 /* path.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = path.cpp; path = ../../../core/src/ui/path.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000608 /* path_demo_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = path_demo_page.cpp; path = ../../../samples/app/path_demo_page.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001A /* button_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button_control.cpp; path = ../../../core/src/ui/view/button_control.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001B /* flex_layout.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = flex_layout.cpp; path = ../../../core/src/ui/layout/flex_layout.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001C /* scroll_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = scroll_control.cpp; path = ../../../core/src/ui/view/scroll_control.cpp; sourceTree = "<group>"; };
@@ -220,6 +224,7 @@
 				E57A11000000000000000015 /* pointer_input.cpp */,
 				E57A11000000000000000016 /* animation_scheduler.cpp */,
 				E57A11000000000000000017 /* paint_canvas.cpp */,
+				E57A11000000000000000607 /* path.cpp */,
 				E57A11000000000000000018 /* event_bus.cpp */,
 				E57A11000000000000000027 /* font_engine.cpp */,
 				E57A11000000000000000216 /* text_layout.cpp */,
@@ -258,6 +263,7 @@
 				E57A11000000000000000021 /* screen_metrics.cpp */,
 				E57A11000000000000000022 /* app_theme.cpp */,
 				E57A11000000000000000023 /* home_page.cpp */,
+				E57A11000000000000000608 /* path_demo_page.cpp */,
 				E57A11000000000000000024 /* detail_page.cpp */,
 				E57A11000000000000000037 /* watchlist_page.cpp */,
 			);
@@ -431,6 +437,7 @@
 				E57A1100000000000000014A /* swapchain.cpp in Sources */,
 				E57A1100000000000000014B /* ui_pipeline.cpp in Sources */,
 				E57A1100000000000000014C /* texture_cache.cpp in Sources */,
+				E57A11000000000000000609 /* path.cpp in Sources */,
 				E57A11000000000000000104 /* ui_application.cpp in Sources */,
 				E57A11000000000000000105 /* render_view.cpp in Sources */,
 				E57A11000000000000000106 /* pointer_input.cpp in Sources */,
@@ -466,6 +473,7 @@
 				E57A11000000000000000116 /* screen_metrics.cpp in Sources */,
 				E57A11000000000000000117 /* app_theme.cpp in Sources */,
 				E57A11000000000000000118 /* home_page.cpp in Sources */,
+				E57A1100000000000000060A /* path_demo_page.cpp in Sources */,
 				E57A11000000000000000119 /* detail_page.cpp in Sources */,
 				E57A11000000000000000126 /* watchlist_page.cpp in Sources */,
 				E57A11000000000000000120 /* ios_shell_bridge.mm in Sources */,

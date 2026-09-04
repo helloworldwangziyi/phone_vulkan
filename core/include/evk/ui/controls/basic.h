@@ -5,9 +5,10 @@
  * @brief 基础小件合集：EdgeInsets / Expanded / SizedBox / Padding / Center。
  *
  * 对照 Flutter 的 widgets/basic.dart——单个文件装不下框架、但每个类
- * 又只有几十行的小组件集中放这里。共同模式：构造时把孩子的
- * flexParentData 抄一份存着，被父 Flex 询问时改几笔再上报（Expanded
- * 改 flex、Center 改对齐、SizedBox 固定尺寸、Padding 折算内边距）。
+ * 又只有几十行的小组件集中放这里。Expanded 是 ProxyWidget：把孩子的
+ * flexParentData 抄一份、改几笔再上报（flex 系数）；SizedBox/Padding/
+ * Center 是 RenderObjectWidget：尺寸、内边距与居中在 View 层的
+ * performLayout 里经约束协议自我强制，无需向父容器上报。
  */
 
 #include "evk/ui/widget_tree.h"
@@ -45,14 +46,13 @@ private:
 /**
  * @brief 固定尺寸盒子：给孩子一个明确的宽高。
  *
- * 宽或高传 -1 表示该方向不约束（如 SizedBox(-1, 540, child) 只定高度）。
- * 对应的 SizedBoxView 会在自身尺寸变化时把孩子塞满。
+ * 宽或高传 -1 表示该方向不锁死（有界撑满、无界包孩子）。尺寸在
+ * View 层经约束协议自我强制（SizedBoxView）。
  */
 class SizedBox final : public RenderObjectWidget {
 public:
     SizedBox(float width, float height, std::unique_ptr<Widget> child);
 
-    FlexParentData flexParentData(Axis axis) const override;
     std::unique_ptr<View> createRenderObject() const override;
     void updateRenderObject(View& view) const override;
     std::vector<std::unique_ptr<Widget>>& children() override { return children_; }
@@ -60,46 +60,44 @@ public:
 private:
     float width_;
     float height_;
-    FlexParentData horizontalData_;
-    FlexParentData verticalData_;
     std::vector<std::unique_ptr<Widget>> children_;
 };
 
 /**
- * @brief 内边距盒子：孩子的 View 缩进 insets 后占据剩余空间。
- *
- * 对 Column/Row 父容器上报的排布尺寸 = 孩子尺寸 + 内边距。
+ * @brief 内边距盒子：约束扣除 insets 后下行给孩子，自身尺寸 =
+ *        孩子 + 内边距。
  */
 class Padding final : public RenderObjectWidget {
 public:
     Padding(EdgeInsets insets, std::unique_ptr<Widget> child);
 
-    FlexParentData flexParentData(Axis axis) const override;
     std::unique_ptr<View> createRenderObject() const override;
     void updateRenderObject(View& view) const override;
     std::vector<std::unique_ptr<Widget>>& children() override { return children_; }
 
 private:
     EdgeInsets insets_;
-    FlexParentData horizontalData_;
-    FlexParentData verticalData_;
     std::vector<std::unique_ptr<Widget>> children_;
 };
 
 /**
- * @brief 居中转接组件：把孩子的交叉轴对齐改成居中。
+ * @brief 居中容器：松约束让孩子按内容自测，自身有界撑满、无界包孩子，
+ *        孩子在自身范围内两轴居中。
  *
- * 对应 Flutter 的 Center（本质是 Align）。注意它不产生 View：需要
- * 背景色时外面再包一层 Container。
+ * 对应 Flutter 的 Center（RenderPositionedBox）：关键是**松掉**下行的
+ * tight 约束，孩子才不会被父级 min 值钳大——例如 tight 宽的 Padding
+ * 里的 center(sizedBox(...))，盒子保持自身宽度并居中。
  */
-class Center final : public ProxyWidget {
+class Center final : public RenderObjectWidget {
 public:
     explicit Center(std::unique_ptr<Widget> child);
-    FlexParentData flexParentData(Axis axis) const override;
+
+    std::unique_ptr<View> createRenderObject() const override;
+    void updateRenderObject(View& view) const override;
+    std::vector<std::unique_ptr<Widget>>& children() override { return children_; }
 
 private:
-    FlexParentData horizontalData_;
-    FlexParentData verticalData_;
+    std::vector<std::unique_ptr<Widget>> children_;
 };
 
 /// 构造辅助：按 flex 系数瓜分剩余主轴空间。

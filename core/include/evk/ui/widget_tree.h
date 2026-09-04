@@ -13,9 +13,10 @@
  *     Element 持有当前 Widget 的副本，并（直接或间接）持有一个 View；
  *     它跨多次重建存活，负责把新旧两份描述逐个位置对比，决定复用还是
  *     重建。
- *   - **View 树**：真正干活的节点——布局（handleBoundsChanged 级联）、
- *     绘制（paint → Canvas）、命中测试（hitTest）。由 Element 创建并
- *     持有，App 不直接操作。
+ *   - **View 树**：真正干活的节点——布局（约束协议：layout 下行约束、
+ *     performLayout 上行尺寸、setPosition 写偏移）、绘制（paint →
+ *     Canvas）、命中测试（hitTest）。由 Element 创建并持有，App 不直接
+ *     操作。
  *
  * 一次 setState 的完整流程：
  * @code
@@ -37,7 +38,7 @@
  *   - RenderObjectWidget → RenderObjectElement：唯一直接创建并持有 View
  *                          的 Widget/Element（Container/Text/ScrollView…）；
  *   - ProxyWidget        → ProxyElement：不产生 View，只在传递中修改子
- *                          Widget 的排布参数（Expanded/Center）。
+ *                          Widget 的排布参数（Expanded）。
  *
  * 与 Flutter 的差异：无 key（同位置同类型即复用）、无独立 RenderObject
  * 层（Element 直接持有 View）、setState 同步完成重建（Flutter 延迟到帧）。
@@ -122,8 +123,9 @@ public:
     }
 
     /**
-     * @brief 向 Column/Row 父容器声明排布参数（主轴尺寸、flex 系数、
-     *        交叉轴约束与对齐）。父容器不是 Flex 时不会被读取。
+     * @brief 向 Column/Row 父容器声明排布参数（flex 系数、交叉轴对齐、
+     *        间距与显式尺寸覆盖）。父容器不是 Flex 时不会被读取；
+     *        尺寸本身在布局期经约束协议自报，不由本函数决定。
      */
     virtual FlexParentData flexParentData(Axis axis) const;
 
@@ -260,7 +262,8 @@ private:
  *   - updateRenderObject：同类型重建时——怎么把新参数应用到已存在的 View；
  *   - children / childParent：子 Widget 有哪些、它们的 View 挂到哪个
  *     View 下（ScrollViewWidget 借此把孩子挂进滚动 content）；
- *   - configureChild：子 View 落位后——写排布参数（Flex 靠它布局）。
+ *   - configureChild：子 View 落位后——下发排布参数（Flex 的 parent
+ *     data；尺寸与偏移本身由约束协议在布局期算定）。
  */
 class RenderObjectWidget : public Widget {
 public:
@@ -276,8 +279,8 @@ public:
 /**
  * @brief 不产生 View 的转接 Widget：只为修改子 Widget 的排布参数。
  *
- * Expanded 把 flex 系数写进参数，Center 把交叉轴对齐改成居中；
- * 最终显示的 View 仍是子 Widget 造的那个。对应 Flutter 的 ProxyWidget。
+ * Expanded 把 flex 系数写进参数；最终显示的 View 仍是子 Widget 造的
+ * 那个。对应 Flutter 的 ProxyWidget。
  */
 class ProxyWidget : public Widget {
 public:

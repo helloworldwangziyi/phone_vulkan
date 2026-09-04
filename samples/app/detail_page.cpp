@@ -100,9 +100,12 @@ std::unique_ptr<evk::ui::Widget> DetailPage::build(
                 row(
                     expanded(padding(
                         EdgeInsets::only(
-                            0.0f, 0.0f, appCalcWidth(40.0f), 0.0f),
+                            0.0f, 0.0f, appCalcWidth(20.0f), 0.0f),
                         card(first))),
-                    expanded(card(first + 1)))));
+                    expanded(padding(
+                        EdgeInsets::only(
+                            appCalcWidth(20.0f), 0.0f, 0.0f, 0.0f),
+                        card(first + 1))))));
     };
 
     BuildContext* routeContext = &context;

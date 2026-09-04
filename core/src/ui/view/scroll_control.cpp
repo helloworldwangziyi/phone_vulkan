@@ -44,6 +44,10 @@ enum class PanAxis {
  * 橡皮筋阻尼后的显示值；手势（handlePan）只改 raw*，渲染与 onScroll
  * 回调只看 offset*。松手时按是否越界、速度大小进入回弹或 fling。
  * 双轴都可滚时按方向锁单轴响应（见 handlePan）。
+ *
+ * 布局（performLayout）：自身取 biggest（视口尺寸全由下行约束决定）；
+ * content 收 tight(内容宽, 内容高) 并放到 (-offsetX, -offsetY)。布局
+ * 只读偏移、不改写——重建/视口重排不打断进行中的橡皮筋与 fling。
  */
 class ScrollView final : public View {
 public:
@@ -54,7 +58,7 @@ public:
     float rawY = 0.0f;
     float offsetX = 0.0f;
     float offsetY = 0.0f;
-    /// 最近一次收编越界时的视口尺寸，供 handleBoundsChanged 识别同尺寸回调。
+    /// 最近一次收编越界时的视口尺寸，供 performLayout 识别同尺寸重排。
     float snappedW = -1.0f;
     float snappedH = -1.0f;
     std::function<void(float, float)> onScroll;
@@ -84,8 +88,8 @@ public:
         }
         offsetX = x;
         offsetY = y;
-        content->setBounds(
-            -offsetX, -offsetY, effectiveContentWidth(), contentHeight);
+        // 滚动 = 只平移 content 的位置；尺寸由布局协议管，这里不动。
+        content->setPosition(-offsetX, -offsetY);
         requestRender();
         if (notify && onScroll) {
             onScroll(offsetX, offsetY);
@@ -184,16 +188,30 @@ public:
         }
     }
 
-    void handleBoundsChanged() override {
-        // 仅视口尺寸真实变化时才收编越界。rebuild 链（updateChildren 收尾、
-        // 同值 setBounds）会无条件调到本钩子，原样 snap 会把拖动中的橡皮筋
-        // 越界直接钳回界内——「手没松开就复位」的成因。
-        if (rect.w == snappedW && rect.h == snappedH) {
-            return;
+    Size performLayout(const BoxConstraints& constraints) override {
+        const Size size = constraints.biggest();
+        // 仅视口尺寸真实变化时才收编越界。rebuild 链（updateChildren 收尾
+        // 标脏）会触发同尺寸重排，原样 snap 会把拖动中的橡皮筋越界直接
+        // 钳回界内——「手没松开就复位」的成因（snappedW/H 守卫沿用）。
+        if (size.width != snappedW || size.height != snappedH) {
+            snappedW = size.width;
+            snappedH = size.height;
+            animating = false;
+            const float contentW =
+                contentWidth > 0.0f ? contentWidth : size.width;
+            rawX = std::clamp(rawX, 0.0f, std::max(0.0f, contentW - size.width));
+            rawY = std::clamp(
+                rawY, 0.0f, std::max(0.0f, contentHeight - size.height));
+            offsetX = rawX;
+            offsetY = rawY;
         }
-        snappedW = rect.w;
-        snappedH = rect.h;
-        snapOffset(false);
+        if (content) {
+            const float contentW =
+                contentWidth > 0.0f ? contentWidth : size.width;
+            content->layout(BoxConstraints::tight(contentW, contentHeight));
+            content->setPosition(-offsetX, -offsetY);
+        }
+        return size;
     }
 
     void startScrollAnimation(bool springOnly, float velocityX, float velocityY);
@@ -202,15 +220,18 @@ public:
 /**
  * @brief content 层：ScrollView 的唯一孩子，App 子树的挂载点。
  *
- * 自身 bounds 被 ScrollView 写成 (-offset, -offset, 内容宽, 内容高) 来
- * 实现平移；bounds 变化时把唯一孩子塞满自己，让子树整体跟随。
+ * ScrollView 经约束协议给它 tight 内容尺寸、把它放到 (-offset, -offset)
+ * 实现平移；它再把唯一孩子 tight 塞满，让子树整体跟随。
  */
 class ScrollContentView final : public View {
 public:
-    void handleBoundsChanged() override {
+    Size performLayout(const BoxConstraints& constraints) override {
+        const Size size = constraints.biggest();
         if (!children.empty()) {
-            children.front()->setBounds(0.0f, 0.0f, rect.w, rect.h);
+            children.front()->layout(BoxConstraints::tight(size.width, size.height));
+            children.front()->setPosition(0.0f, 0.0f);
         }
+        return size;
     }
 };
 
@@ -218,27 +239,22 @@ public:
  * @brief 列表 content 层：固定行高纵向堆叠全部孩子（ListView 的布局）。
  *
  * 与 ScrollContentView 的差异：不是塞满唯一孩子，而是把第 i 个孩子放到
- * (0, i × itemExtent, 内容宽, itemExtent)。随滚动整体平移的逻辑不变。
- * 行数变化（孩子增删）或自身尺寸变化时全量重排——行高固定使重排是
- * 纯算术 O(n)，差异比对避免无变化时的级联。
+ * (0, i × itemExtent) 并给 tight(内容宽, itemExtent)。随滚动整体平移的
+ * 逻辑不变。行数变化（孩子增删）或自身尺寸变化时经标脏全量重排——行高
+ * 固定使重排是纯算术 O(n)，layout/setPosition 的幂等短路避免无效级联。
  */
 class ListContentView final : public View {
 public:
     float itemExtent = 0.0f;
 
-    void layoutRows() {
+    Size performLayout(const BoxConstraints& constraints) override {
+        const Size size = constraints.biggest();
         for (size_t i = 0; i < children.size(); ++i) {
-            View* child = children[i].get();
-            const float y = itemExtent * static_cast<float>(i);
-            if (child->rect.x != 0.0f || child->rect.y != y ||
-                child->rect.w != rect.w || child->rect.h != itemExtent) {
-                child->setBounds(0.0f, y, rect.w, itemExtent);
-            }
+            children[i]->layout(BoxConstraints::tight(size.width, itemExtent));
+            children[i]->setPosition(0.0f, itemExtent * static_cast<float>(i));
         }
+        return size;
     }
-
-    void handleBoundsChanged() override { layoutRows(); }
-    void handleChildRemoved(size_t) override { layoutRows(); }
 };
 
 /**
@@ -406,7 +422,8 @@ void updateListView(
     const float extent = std::max(0.0f, itemExtent);
     if (list->itemExtent != extent) {
         list->itemExtent = extent;
-        list->layoutRows();
+        list->markNeedsLayout();
+        list->flushLayout();
     }
 }
 
@@ -435,6 +452,9 @@ void updateScrollView(
     scroll->onScroll = std::move(onScroll);
     if (sizeChanged) {
         scroll->snapOffset(false);
+        // content 的尺寸来自布局协议：标脏重排让它按新内容尺寸布局。
+        scroll->markNeedsLayout();
+        scroll->flushLayout();
     }
 }
 

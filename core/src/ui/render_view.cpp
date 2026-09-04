@@ -44,6 +44,56 @@ Color Color::rgba(uint32_t value) {
     };
 }
 
+BoxConstraints BoxConstraints::tight(float width, float height) {
+    const float w = std::max(0.0f, width);
+    const float h = std::max(0.0f, height);
+    return {w, w, h, h};
+}
+
+BoxConstraints BoxConstraints::loose(float width, float height) {
+    return {
+        0.0f,
+        std::max(0.0f, width),
+        0.0f,
+        std::max(0.0f, height),
+    };
+}
+
+BoxConstraints BoxConstraints::deflate(float horizontal, float vertical) const {
+    const float minW = std::max(0.0f, minWidth - horizontal);
+    const float minH = std::max(0.0f, minHeight - vertical);
+    return {
+        minW,
+        std::max(minW, maxWidth - horizontal),
+        minH,
+        std::max(minH, maxHeight - vertical),
+    };
+}
+
+float BoxConstraints::constrainWidth(float value) const {
+    return std::clamp(value, minWidth, maxWidth);
+}
+
+float BoxConstraints::constrainHeight(float value) const {
+    return std::clamp(value, minHeight, maxHeight);
+}
+
+Size BoxConstraints::constrain(Size size) const {
+    return {constrainWidth(size.width), constrainHeight(size.height)};
+}
+
+Size BoxConstraints::biggest() const {
+    return {
+        isWidthBounded() ? maxWidth : minWidth,
+        isHeightBounded() ? maxHeight : minHeight,
+    };
+}
+
+bool BoxConstraints::operator==(const BoxConstraints& other) const {
+    return minWidth == other.minWidth && maxWidth == other.maxWidth &&
+           minHeight == other.minHeight && maxHeight == other.maxHeight;
+}
+
 PaintContext::PaintContext(Canvas& canvas, const Rect& bounds, const Rect& clip)
     : canvas_(canvas), bounds_(bounds), clip_(clip) {}
 
@@ -169,14 +219,82 @@ void View::handlePan(const PanEvent& event) {
     }
 }
 
+/**
+ * @brief 布局下行入口：存约束 → performLayout → 回报值钳制后写尺寸。
+ *
+ * 幂等短路：约束未变且子树无脏时直接返回缓存尺寸——整树重排（flush
+ * 从根下来）经过干净子树的开销因此为零。真正布局一次才标一次重绘。
+ */
+Size View::layout(const BoxConstraints& constraints) {
+    if (g_buildingFrame) {
+        EVK_LOGW("View::layout cannot mutate the tree during paint");
+        return {rect.w, rect.h};
+    }
+    if (!layoutDirty_ && hasConstraints_ && constraints == constraints_) {
+        return {rect.w, rect.h};
+    }
+    constraints_ = constraints;
+    hasConstraints_ = true;
+    const Size size = constraints.constrain(performLayout(constraints));
+    rect.w = size.width;
+    rect.h = size.height;
+    layoutDirty_ = false;
+    requestRender();
+    return size;
+}
+
+Size View::performLayout(const BoxConstraints& constraints) {
+    return constraints.biggest();
+}
+
+void View::setPosition(float x, float y) {
+    if (g_buildingFrame) {
+        EVK_LOGW("View::setPosition cannot mutate the tree during paint");
+        return;
+    }
+    if (rect.x == x && rect.y == y) {
+        return;
+    }
+    rect.x = x;
+    rect.y = y;
+    requestRender();
+}
+
+/**
+ * @brief 标脏并冒泡：任一后代脏 ⇒ 根必脏，flush 才能从根一路
+ *        经 layout 幂等短路抵达所有脏节点。已在脏（冒泡曾路过）则早退。
+ */
+void View::markNeedsLayout() {
+    if (layoutDirty_) {
+        return;
+    }
+    layoutDirty_ = true;
+    if (parent) {
+        parent->markNeedsLayout();
+    }
+}
+
+/**
+ * @brief 从最顶祖先重排：祖先无约束（首帧前 / 游离页）则留脏——
+ *        约束随后由 setBounds/push 落下时自然完成布局。
+ */
+void View::flushLayout() {
+    View* top = this;
+    while (top->parent) {
+        top = top->parent;
+    }
+    if (top->layoutDirty_ && top->hasConstraints_) {
+        top->layout(top->constraints_);
+    }
+}
+
 void View::setBounds(float x, float y, float width, float height) {
     if (g_buildingFrame) {
         EVK_LOGW("View::setBounds cannot mutate the tree during paint");
         return;
     }
-    rect = {x, y, std::max(0.0f, width), std::max(0.0f, height)};
-    handleBoundsChanged();
-    requestRender();
+    setPosition(x, y);
+    layout(BoxConstraints::tight(width, height));
 }
 
 void View::setVisible(bool value) {
@@ -208,6 +326,8 @@ View* View::addChild(std::unique_ptr<View> child) {
     View* raw = child.get();
     raw->parent = this;
     children.push_back(std::move(child));
+    // 只标脏不立即重排：挂载序列（updateChildren/push）末尾会统一 flush。
+    markNeedsLayout();
     requestRender();
     return raw;
 }
@@ -229,6 +349,8 @@ std::unique_ptr<View> View::removeChild(View* child) {
     children.erase(it);
     removed->parent = nullptr;
     handleChildRemoved(index);
+    markNeedsLayout();
+    flushLayout();
     requestRender();
     return removed;
 }
@@ -338,6 +460,11 @@ void buildFrame(Canvas& canvas) {
     canvas.clear();
     if (!g_rootView) {
         return;
+    }
+    // 兜底：所有布局触发点（重建/增删）都已同步 flush，这里是保险——
+    // 万一有漏网脏标记，绘制前一定先完成布局。
+    if (g_rootView->needsLayout() && g_rootView->hasConstraints()) {
+        g_rootView->layout(g_rootView->constraints());
     }
     g_rootView->updateActuals();
     const Rect clip = g_rootView->actualRect();

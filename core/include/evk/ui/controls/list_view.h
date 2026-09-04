@@ -34,7 +34,6 @@ public:
     void updateRenderObject(View& view) const override;
     std::vector<std::unique_ptr<Widget>>& children() override { return children_; }
     View* childParent(View& view) const override;
-    void configureChild(View& parent, const Widget& child, View& childView) const override;
 
 private:
     float itemHeight_;

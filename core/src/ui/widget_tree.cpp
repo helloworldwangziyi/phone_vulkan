@@ -176,8 +176,8 @@ private:
  * 对比构建。
  *
  * update（同类型重建）：updateRenderObject 把新参数应用到 View
- * （颜色、painter、样式……）→ updateChildren 逐子对比 → 通知 View
- * 「我的 bounds 变了」触发容器级联重排（FlexView 就是靠这个钩子布局）。
+ * （颜色、painter、样式……）→ updateChildren 逐子对比 → 标脏并从根
+ * 重排（约束协议：父下行约束、子上行尺寸，FlexView 靠它布局）。
  *
  * unmount：先拆全部子 Element，再把 View 从父 View 上摘下销毁——
  * 顺序不能反，父 View 的孩子列表要在子 View 存活期间保持一致。
@@ -259,7 +259,10 @@ private:
             }
         }
         children_.resize(newCount);
-        view_->handleBoundsChanged();
+        // 重建完成：标脏（冒泡至根）并立即从根重排——子树尺寸变化经
+        // 约束协议自然上行（如文字变长撑高行、撑开后续兄弟）。
+        view_->markNeedsLayout();
+        view_->flushLayout();
     }
 
     View* view_ = nullptr;
@@ -271,7 +274,7 @@ private:
  * @brief ProxyWidget 对应的 Element：不产生 View，只把子 Widget 转交给
  *        下一个 Element。
  *
- * 对应 ProxyWidget（Expanded/Center）。它唯一的作用是在转交之前改一改
+ * 对应 ProxyWidget（Expanded）。它唯一的作用是在转交之前改一改
  * 子 Widget 的排布参数（flexParentData）；renderObject() 与导航事件
  * 都是透传。
  */

@@ -97,45 +97,66 @@ public:
     View* contentView() const { return content; }
 
     /**
-     * @brief 重排 chrome 与全部页面；转场中被调到意味着尺寸真的变了
-     *        （旋转 / Surface 重建），直接把转场落到终态：
-     *        Push → finishPush（按完成落地），Pop → finishPop(false)（回滚）。
+     * @brief 重排 chrome 与全部页面。两种触发：自身尺寸真变（旋转 /
+     *        Surface 重建——转场中直接把转场落到终态：Push → finishPush
+     *        按完成落地，Pop → finishPop(false) 回滚）；或子孙重建标脏
+     *        冒泡到根的同尺寸重排——转场中按 transitionProgress 重放页面
+     *        偏移，转场照常继续，不打断、不误落地。
      *
      * 注意：正在跑的动画 tick 不会被取消，到点后还会再调一次 finish。
      * finishPop 靠 popLifecycleActive 挡住重复执行；finishPush 没有
      * 这个守卫，重复落地会重复下发 DidLeave/DidEnter——审查时注意这点。
      */
-    void handleBoundsChanged() override {
+    Size performLayout(const BoxConstraints& constraints) override {
+        const Size size = constraints.biggest();
         if (!content || !bar) {
-            return;
+            return size;
         }
-        content->setBounds(
-            0.0f,
-            navigationBarHeight,
-            rect.w,
-            std::max(0.0f, rect.h - navigationBarHeight));
-        bar->setBounds(0.0f, 0.0f, rect.w, navigationBarHeight);
-        barLine->setBounds(
-            0.0f,
-            std::max(0.0f, navigationBarHeight - 1.0f),
-            rect.w,
-            navigationBarHeight > 0.0f ? 1.0f : 0.0f);
+        const bool sizeChanged =
+            size.width != laidOutWidth_ || size.height != laidOutHeight_;
+        laidOutWidth_ = size.width;
+        laidOutHeight_ = size.height;
+
+        const float contentHeight =
+            std::max(0.0f, size.height - navigationBarHeight);
+        content->layout(BoxConstraints::tight(size.width, contentHeight));
+        content->setPosition(0.0f, navigationBarHeight);
+        bar->layout(BoxConstraints::tight(size.width, navigationBarHeight));
+        bar->setPosition(0.0f, 0.0f);
+        barLine->layout(BoxConstraints::tight(
+            size.width, navigationBarHeight > 0.0f ? 1.0f : 0.0f));
+        barLine->setPosition(0.0f, std::max(0.0f, navigationBarHeight - 1.0f));
         const float buttonWidth = navigationBarHeight > 0.0f
             ? std::min(navigationBarHeight, 96.0f)
             : 0.0f;
-        backButton->setBounds(0.0f, 0.0f, buttonWidth, navigationBarHeight);
+        backButton->layout(BoxConstraints::tight(buttonWidth, navigationBarHeight));
+        backButton->setPosition(0.0f, 0.0f);
         for (View* page : pages) {
             if (page) {
-                page->setBounds(0.0f, 0.0f, content->rect.w, content->rect.h);
+                page->layout(BoxConstraints::tight(size.width, contentHeight));
             }
         }
+
         if (transitioning) {
-            if (transitionKind == TransitionKind::Push) {
-                finishPush();
+            if (sizeChanged) {
+                if (transitionKind == TransitionKind::Push) {
+                    finishPush();
+                } else if (transitionKind == TransitionKind::Pop) {
+                    finishPop(false);
+                }
+            } else if (transitionKind == TransitionKind::Push) {
+                applyPushProgress(transitionProgress_, size.width);
             } else if (transitionKind == TransitionKind::Pop) {
-                finishPop(false);
+                applyPopProgress(transitionProgress_, size.width);
+            }
+        } else if (sizeChanged) {
+            for (View* page : pages) {
+                if (page) {
+                    page->setPosition(0.0f, 0.0f);
+                }
             }
         }
+        return size;
     }
 
     /**
@@ -190,7 +211,7 @@ public:
         transitioning = true;
         transitionKind = TransitionKind::Push;
         animate(0.0f, 1.0f, [this](float progress) {
-            applyPushProgress(progress);
+            applyPushProgress(progress, content->rect.w);
         }, [this] {
             finishPush();
         });
@@ -302,42 +323,38 @@ private:
     }
 
     // push 视差：新页从右缘外滑入（x: width→0），旧页向左让出 0.28 视差。
-    void applyPushProgress(float progress) {
+    // 纯位移：尺寸由布局协议管，转场逐帧只写偏移并记下进度（供同尺寸
+    // 重排时重放，见 performLayout）。
+    void applyPushProgress(float progress, float width) {
         if (pages.size() < 2) {
             return;
         }
-        const float width = content->rect.w;
+        transitionProgress_ = progress;
         View* next = pages.back();
         View* previous = pages[pages.size() - 2];
         previous->setVisible(true);
-        previous->setBounds(
-            -width * kParallax * progress, 0.0f, width, content->rect.h);
-        next->setBounds(
-            width * (1.0f - progress), 0.0f, width, content->rect.h);
+        previous->setPosition(-width * kParallax * progress, 0.0f);
+        next->setPosition(width * (1.0f - progress), 0.0f);
     }
 
     // pop 视差：栈顶向右滑出（x: 0→width），下层从 -0.28 视差处归位。
-    void applyPopProgress(float progress) {
+    void applyPopProgress(float progress, float width) {
         if (pages.size() < 2) {
             return;
         }
-        const float width = content->rect.w;
+        transitionProgress_ = progress;
         View* top = pages.back();
         View* below = pages[pages.size() - 2];
         below->setVisible(true);
-        below->setBounds(
-            -width * kParallax * (1.0f - progress),
-            0.0f,
-            width,
-            content->rect.h);
-        top->setBounds(width * progress, 0.0f, width, content->rect.h);
+        below->setPosition(-width * kParallax * (1.0f - progress), 0.0f);
+        top->setPosition(width * progress, 0.0f);
     }
 
     /**
      * @brief push 落地：两页归位、旧页隐藏，补发旧页 DidLeave +
      *        新页 DidEnter，然后复位转场标志。
      *
-     * 无重入守卫：转场中尺寸变化被 handleBoundsChanged 强制落地后，
+     * 无重入守卫：转场中尺寸变化被 performLayout 强制落地后，
      * 动画 tick 到点会再调一次本函数，Did* 随之重复下发。
      */
     void finishPush() {
@@ -411,7 +428,7 @@ private:
         transitionKind = TransitionKind::Pop;
         const float to = complete ? 1.0f : 0.0f;
         animate(from, to, [this](float progress) {
-            applyPopProgress(progress);
+            applyPopProgress(progress, content->rect.w);
         }, [this, complete] {
             finishPop(complete);
         });
@@ -480,6 +497,9 @@ private:
     bool transitioning = false;  ///< 转场进行中
     bool popLifecycleActive = false;  ///< pop 的 Will* 对已下发、待配对
     TransitionKind transitionKind = TransitionKind::None;
+    float laidOutWidth_ = -1.0f;   ///< 最近一次布局的尺寸（识别尺寸真变）
+    float laidOutHeight_ = -1.0f;
+    float transitionProgress_ = 0.0f;  ///< 转场进度（同尺寸重排时重放偏移）
 };
 
 } // namespace

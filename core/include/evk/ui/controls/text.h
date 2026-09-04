@@ -19,11 +19,10 @@ namespace evk::ui {
 /**
  * @brief 文本 Widget：内容、字号、颜色与首选字体，可选按宽度换行。
  *
- * 尺寸由 FontEngine 测量得出（布局期间调用，不触发光栅化）：
- * 单行模式下纵向容器里占一行高度、横向容器里占实测宽度；
- * softWrap 换行模式下以视图宽度为约束排版，纵向容器里高度 =
- * 行数 × 行高（视图拿到宽度后自行回灌，见 text.cpp 的 WrappedTextView）。
- * 绘制在 painter 里经 PaintContext::drawText 完成，字形按需进 atlas。
+ * 尺寸在布局期自测（约束协议）：单行模式经 FontEngine 测量回报宽高；
+ * softWrap 换行模式以约束宽度排版（TextLayout），高度 = 行数 × 行高
+ * 上行给父布局（见 text.cpp 的 TextView / WrappedTextView）。绘制在
+ * painter 里经 PaintContext::drawText 完成，字形按需进 atlas。
  * 首选字体缺字时自动按注册顺序回退（如 Latin 字体 + CJK 字体混排）。
  *
  * 排版增强（仅换行模式生效；单行模式无宽度约束，无对齐/截断的意义）：
@@ -40,7 +39,6 @@ public:
 
     std::unique_ptr<View> createRenderObject() const override;
     void updateRenderObject(View& view) const override;
-    FlexParentData flexParentData(Axis axis) const override;
     /// 单行/换行两种模式对应不同的 View 类型，模式切换必须重建子树。
     bool canUpdate(const Widget& other) const override;
 
