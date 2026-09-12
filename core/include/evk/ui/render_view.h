@@ -96,6 +96,32 @@ enum class PanState {
     Cancel,
 };
 
+enum class ScaleState {
+    Begin,
+    Update,
+    End,
+    Cancel,
+};
+
+/**
+ * @brief 双指缩放/旋转手势事件（对照 Flutter ScaleUpdateDetails 的精简版）。
+ *
+ * focal 为双指中点（视图局部坐标）；scale/rotation 是相对 Begin 的累计值
+ * （scale 1 = 无缩放，rotation 单位弧度）；delta* 是相对上一事件的增量。
+ * 会话期间双指的 tap/pan 认领全部作废（竞技场 scale 胜）；任一指抬起使
+ * 剩余不足两指时以 End/Cancel 收场，剩余指不追溯为 pan/tap。
+ */
+struct ScaleEvent {
+    ScaleState state = ScaleState::Begin;
+    float focalX = 0.0f;
+    float focalY = 0.0f;
+    float scale = 1.0f;
+    float rotation = 0.0f;
+    float deltaScale = 1.0f;
+    float deltaRotation = 0.0f;
+    int32_t pointerCount = 0;
+};
+
 struct PanEvent {
     PanState state = PanState::Begin;
     float x = 0.0f;
@@ -216,12 +242,19 @@ public:
 
     std::function<void(PaintContext&)> painter;
     std::function<void(const ClickEvent&)> onClick;
+    /// 设置后单击延迟 kDoubleTapTimeout 结算（等待第二击），与 Flutter 一致。
+    std::function<void(const ClickEvent&)> onDoubleTap;
+    /// 按下 500ms 未超触控阈值即触发；触发后移动仍可正常认领 pan。
+    std::function<void(const ClickEvent&)> onLongPress;
+    std::function<void(const ScaleEvent&)> onScale;
     std::function<void(const PanEvent&)> onPan;
 
     virtual bool acceptsPointerInput() const { return false; }
     virtual bool acceptsPanInput() const { return static_cast<bool>(onPan); }
+    virtual bool acceptsScaleInput() const { return static_cast<bool>(onScale); }
     virtual void handlePointer(const struct PointerEvent& event);
     virtual void handlePan(const PanEvent& event);
+    virtual void handleScale(const ScaleEvent& event);
     virtual void handleChildRemoved(size_t) {}
 
     /**

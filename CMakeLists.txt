@@ -78,6 +78,7 @@ add_library(estarx_vulkan_core STATIC
     core/src/ui/controls/button.cpp
     core/src/ui/controls/container.cpp
     core/src/ui/controls/flex.cpp
+    core/src/ui/controls/gesture_detector.cpp
     core/src/ui/controls/image.cpp
     core/src/ui/controls/list_view.cpp
     core/src/ui/controls/scroll_view.cpp

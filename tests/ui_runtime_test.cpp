@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <cstdint>
 #include <cstring>
@@ -1296,6 +1297,289 @@ void testCanvas2dPrimitives() {
 
 } // namespace
 
+namespace {
+
+using evk::ui::PointerAction;
+
+/// 多点触控：每根手指一条独立序列——第二指落下不再取消第一指
+/// （旧单指模型的核心行为变更）；两指分别点击两个 View 各自触发。
+void testMultiPointerIndependence() {
+    resetRuntime();
+    auto root = std::make_unique<evk::ui::View>();
+    root->setBounds(0.0f, 0.0f, 400.0f, 400.0f);
+
+    int clicksA = 0;
+    int clicksB = 0;
+    auto a = std::make_unique<evk::ui::View>();
+    a->setBounds(0.0f, 0.0f, 100.0f, 100.0f);
+    a->onClick = [&clicksA](const evk::ui::ClickEvent&) { ++clicksA; };
+    auto b = std::make_unique<evk::ui::View>();
+    b->setBounds(200.0f, 200.0f, 100.0f, 100.0f);
+    b->onClick = [&clicksB](const evk::ui::ClickEvent&) { ++clicksB; };
+    root->addChild(std::move(a));
+    root->addChild(std::move(b));
+    evk::ui::setRootView(root.get());
+
+    // 指 1 按住 A 不放，指 2 点击 B：两条序列互不干扰。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 50.0f, 50.0f, ms(10)});
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 2, 250.0f, 250.0f, ms(20)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 2, 250.0f, 250.0f, ms(30)});
+    assert(clicksB == 1 && clicksA == 0);
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 50.0f, 50.0f, ms(40)});
+    assert(clicksA == 1);
+
+    // 平台复用 pointerId：同 id 未 Up 就再 Down，旧序列被取消、新序列独立。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 50.0f, 50.0f, ms(50)});
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 250.0f, 250.0f, ms(60)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 250.0f, 250.0f, ms(70)});
+    assert(clicksA == 1 && clicksB == 2);
+
+    evk::ui::setRootView(nullptr);
+    root.reset();
+}
+
+/// pan 排他：双指先后拖同一 ScrollView，只有先认领的手指驱动滚动
+/// （无双倍速）；首指抬起后，次指的下一次超限移动可接过拖动。
+void testPanExclusivity() {
+    resetRuntime();
+    auto scroll = evk::ui::createScrollView(0.0f, 1000.0f);
+    scroll->setBounds(0.0f, 0.0f, 200.0f, 200.0f);
+    evk::ui::setRootView(scroll.get());
+
+    float x = 0.0f;
+    float y = 0.0f;
+
+    // 指 1 拖动 60px：偏移 = 60。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 100.0f, 160.0f, ms(1)});
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 1, 100.0f, 100.0f, ms(40)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y == 60.0f);
+
+    // 指 2 落下并拖动 40px：pan 认领被排他拒绝，偏移不变。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 2, 100.0f, 180.0f, ms(60)});
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 2, 100.0f, 140.0f, ms(80)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y == 60.0f);
+
+    // 指 1 抬起后，指 2 的下一次超限移动接过拖动（累计 40+40=80）。
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 100.0f, 100.0f, ms(100)});
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 2, 100.0f, 100.0f, ms(120)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y > 60.0f);
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 2, 100.0f, 100.0f, ms(140)});
+
+    evk::ui::setRootView(nullptr);
+}
+
+/// double tap：设了 onDoubleTap 的目标，单击挂起 300ms 结算；
+/// 时限内同目标第二击 → onDoubleTap 一次、onClick 不触发。
+void testDoubleTap() {
+    resetRuntime();
+    auto root = std::make_unique<evk::ui::View>();
+    root->setBounds(0.0f, 0.0f, 400.0f, 400.0f);
+    int taps = 0;
+    int doubleTaps = 0;
+    auto child = std::make_unique<evk::ui::View>();
+    child->setBounds(0.0f, 0.0f, 100.0f, 100.0f);
+    child->onClick = [&taps](const evk::ui::ClickEvent&) { ++taps; };
+    child->onDoubleTap = [&doubleTaps](const evk::ui::ClickEvent&) { ++doubleTaps; };
+    root->addChild(std::move(child));
+    evk::ui::setRootView(root.get());
+
+    // 单击：Up 后立即结算？否——挂起等待；推进 400ms 后超时结算。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 50.0f, 50.0f, ms(1000)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 50.0f, 50.0f, ms(1050)});
+    assert(taps == 0 && doubleTaps == 0);
+    evk::beginFrame(ms(1100));               // 未到期
+    assert(taps == 0);
+    evk::beginFrame(ms(1400));               // 超过 300ms 窗口 → 结算单击
+    assert(taps == 1 && doubleTaps == 0);
+
+    // 双击：两击间隔 150ms → onDoubleTap，首次挂起单击作废。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 50.0f, 50.0f, ms(2000)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 50.0f, 50.0f, ms(2050)});
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 60.0f, 60.0f, ms(2150)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 60.0f, 60.0f, ms(2200)});
+    assert(doubleTaps == 1 && taps == 1);
+
+    // 单击在别处落下：挂起 tap 立即按普通单击结算（竞技场输家退场）。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 50.0f, 50.0f, ms(3000)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 50.0f, 50.0f, ms(3050)});
+    assert(taps == 1);
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 2, 300.0f, 300.0f, ms(3100)});
+    assert(taps == 2);                       // 挂起的单击被别处按下结算
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 2, 300.0f, 300.0f, ms(3150)});
+
+    // 无 onDoubleTap 的目标单击保持即时（不引入延迟）。
+    auto plain = std::make_unique<evk::ui::View>();
+    plain->setBounds(200.0f, 200.0f, 100.0f, 100.0f);
+    plain->onClick = [&taps](const evk::ui::ClickEvent&) { ++taps; };
+    root->addChild(std::move(plain));
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 3, 250.0f, 250.0f, ms(4000)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 3, 250.0f, 250.0f, ms(4050)});
+    assert(taps == 3);
+
+    evk::ui::setRootView(nullptr);
+    root.reset();
+}
+
+/// long press：按住 500ms 触发；触发后移动仍可认领 pan（不锁滚动）；
+/// 提前超阈值的移动则不触发，tap 路径不受影响。
+void testLongPress() {
+    resetRuntime();
+    auto scroll = evk::ui::createScrollView(0.0f, 1000.0f);
+    scroll->setBounds(0.0f, 0.0f, 200.0f, 200.0f);
+    evk::ui::View* content = evk::ui::scrollContent(*scroll);
+    int longPresses = 0;
+    int taps = 0;
+    auto child = std::make_unique<evk::ui::View>();
+    child->setBounds(0.0f, 0.0f, 200.0f, 1000.0f);
+    child->onLongPress = [&longPresses](const evk::ui::ClickEvent&) { ++longPresses; };
+    child->onClick = [&taps](const evk::ui::ClickEvent&) { ++taps; };
+    content->addChild(std::move(child));
+    evk::ui::setRootView(scroll.get());
+
+    float x = 0.0f;
+    float y = 0.0f;
+
+    // 场景 A：按住不动。400ms 未触发，600ms 触发。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 100.0f, 100.0f, ms(1000)});
+    evk::beginFrame(ms(1400));
+    assert(longPresses == 0);
+    evk::beginFrame(ms(1600));
+    assert(longPresses == 1);
+    // 触发后移动 60px：tap 系已死，但 pan 仍认领（滚动 60）。
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 1, 100.0f, 40.0f, ms(1650)});
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y == 60.0f);
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 100.0f, 40.0f, ms(1700)});
+    assert(taps == 0);
+
+    // 场景 B：按下后 50ms 内移动超阈值 → pan 胜，long press 不触发。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 2, 100.0f, 180.0f, ms(2000)});
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 2, 100.0f, 150.0f, ms(2050)});
+    evk::beginFrame(ms(2600));
+    assert(longPresses == 1);
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y == 90.0f);
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 2, 100.0f, 150.0f, ms(2700)});
+
+    // 场景 C：快速点击 → tap 正常，long press 不触发。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 3, 100.0f, 190.0f, ms(3000)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 3, 100.0f, 190.0f, ms(3100)});
+    assert(taps == 1);
+    evk::beginFrame(ms(3700));
+    assert(longPresses == 1);
+
+    evk::ui::setRootView(nullptr);
+}
+
+/// scale：双指落在 scale 视图即开会话（Begin/Update 的 scale、rotation、
+/// focal 正确）；一指抬起收场（End）；会话期间双指 tap 与外层滚动作废。
+void testScaleGesture() {
+    resetRuntime();
+    auto scroll = evk::ui::createScrollView(0.0f, 1000.0f);
+    scroll->setBounds(0.0f, 0.0f, 200.0f, 200.0f);
+    evk::ui::View* content = evk::ui::scrollContent(*scroll);
+    int taps = 0;
+    std::vector<evk::ui::ScaleEvent> events;
+    auto scalee = std::make_unique<evk::ui::View>();
+    scalee->setBounds(0.0f, 0.0f, 200.0f, 1000.0f);
+    scalee->onClick = [&taps](const evk::ui::ClickEvent&) { ++taps; };
+    scalee->onScale = [&events](const evk::ui::ScaleEvent& event) {
+        events.push_back(event);
+    };
+    content->addChild(std::move(scalee));
+    evk::ui::setRootView(scroll.get());
+
+    const float pi = 3.14159265358979f;
+
+    // 指 1 落下：尚无会话。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 100.0f, 100.0f, ms(1)});
+    assert(events.empty());
+    // 指 2 落下：集齐双指 → Begin（scale=1，pointerCount=2，焦点=中点）。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 2, 100.0f, 150.0f, ms(2)});
+    assert(events.size() == 1);
+    assert(events[0].state == evk::ui::ScaleState::Begin);
+    assert(events[0].scale == 1.0f && events[0].pointerCount == 2);
+    assert(events[0].focalX == 100.0f && events[0].focalY == 125.0f);
+
+    // 指 2 外移：间距 50 → 100，scale 累计 2 倍，焦点跟到中点。
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 2, 100.0f, 200.0f, ms(20)});
+    assert(events.back().state == evk::ui::ScaleState::Update);
+    assert(std::fabs(events.back().scale - 2.0f) < 1e-4f);
+    assert(std::fabs(events.back().deltaScale - 2.0f) < 1e-4f);
+    assert(std::fabs(events.back().focalY - 150.0f) < 1e-4f);
+
+    // 指 2 绕指 1 转 90°：(100,200)→(200,100)，间距不变（100）、
+    // 夹角 π/2→0：deltaScale 1、deltaRotation -π/2，scale 保持 2。
+    evk::ui::dispatchPointerEvent({PointerAction::Move, 2, 200.0f, 100.0f, ms(40)});
+    assert(std::fabs(events.back().deltaScale - 1.0f) < 1e-4f);
+    assert(std::fabs(events.back().scale - 2.0f) < 1e-4f);
+    assert(std::fabs(events.back().deltaRotation + pi * 0.5f) < 1e-4f);
+    assert(std::fabs(events.back().rotation + pi * 0.5f) < 1e-4f);
+
+    // 会话期间外层滚动不作废偏移（双指移动被会话吃掉）。
+    float x = 0.0f;
+    float y = 0.0f;
+    evk::ui::getScrollOffset(*scroll, &x, &y);
+    assert(y == 0.0f);
+
+    // 指 2 抬起：剩余不足两指 → End，pointerCount=1。
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 2, 200.0f, 100.0f, ms(60)});
+    assert(events.back().state == evk::ui::ScaleState::End);
+    assert(events.back().pointerCount == 1);
+    // 指 1 抬起：会话成员不追溯为 tap。
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 100.0f, 100.0f, ms(80)});
+    assert(taps == 0);
+
+    // 会话结束后再单击：tap 通道恢复。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 3, 100.0f, 100.0f, ms(100)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 3, 100.0f, 100.0f, ms(150)});
+    assert(taps == 1);
+
+    evk::ui::setRootView(nullptr);
+}
+
+/// 多指场景下的按视图取消/丢弃：只影响引用该子树的序列与会话。
+void testCancelPointerForViewMulti() {
+    resetRuntime();
+    auto root = std::make_unique<evk::ui::View>();
+    root->setBounds(0.0f, 0.0f, 400.0f, 400.0f);
+    int clicksA = 0;
+    int clicksB = 0;
+    auto a = std::make_unique<evk::ui::View>();
+    a->setBounds(0.0f, 0.0f, 100.0f, 100.0f);
+    a->onClick = [&clicksA](const evk::ui::ClickEvent&) { ++clicksA; };
+    auto b = std::make_unique<evk::ui::View>();
+    b->setBounds(200.0f, 200.0f, 100.0f, 100.0f);
+    b->onClick = [&clicksB](const evk::ui::ClickEvent&) { ++clicksB; };
+    evk::ui::View* aView = a.get();
+    root->addChild(std::move(a));
+    root->addChild(std::move(b));
+    evk::ui::setRootView(root.get());
+
+    // 双指分别按住 A、B；取消 A 的序列 → A 不触发，B 不受影响。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 1, 50.0f, 50.0f, ms(10)});
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 2, 250.0f, 250.0f, ms(20)});
+    evk::ui::cancelPointerForView(aView);
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 1, 50.0f, 50.0f, ms(30)});
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 2, 250.0f, 250.0f, ms(40)});
+    assert(clicksA == 0 && clicksB == 1);
+
+    // 视图销毁（removeChild → ~View → discardPointerForView）：
+    // 进行中的序列被静默丢弃，不崩、不触发。
+    evk::ui::dispatchPointerEvent({PointerAction::Down, 3, 50.0f, 50.0f, ms(50)});
+    root->removeChild(aView);  // 销毁 A
+    evk::ui::dispatchPointerEvent({PointerAction::Up, 3, 50.0f, 50.0f, ms(60)});
+    assert(clicksA == 0);
+
+    evk::ui::setRootView(nullptr);
+    root.reset();
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
     testAppLifecycleCallback();
     testDirtyFramesAreCoalesced();
@@ -1307,6 +1591,12 @@ int main(int argc, char** argv) {
     testScrollViewDragAndClamp();
     testListViewLayoutAndScroll();
     testScrollAxisLock();
+    testMultiPointerIndependence();
+    testPanExclusivity();
+    testDoubleTap();
+    testLongPress();
+    testScaleGesture();
+    testCancelPointerForViewMulti();
     testEventBusAndUiQueue();
     testStateAndNavigatorLifecycle();
     testRebuildDuringTransition();

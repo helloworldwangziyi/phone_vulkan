@@ -43,8 +43,10 @@ static const int32_t kActionCancel = 3;
 // ----------------------------------------------------------------------------
 @interface ViewController ()
 @property(nonatomic, strong) CADisplayLink* displayLink;
-// 单指跟踪（对照 Android 的 activePointerId）：只转发第一个落屏手指。
-@property(nonatomic, weak) UITouch* activeTouch;
+// 多点触控跟踪表：UITouch* → pointerId（数组下标），抬指后槽位置空
+// （NSNull）复用——对照 Android MotionEvent 的 pointerId，一次手势期间
+// id 稳定，core 按它分指跟踪。
+@property(nonatomic, strong) NSMutableArray<id>* activeTouches;
 @property(nonatomic, assign) BOOL engineAlive;
 @end
 
@@ -53,9 +55,10 @@ static const int32_t kActionCancel = 3;
 - (void)loadView {
     self.view = [[EVKMetalView alloc] initWithFrame:[UIScreen mainScreen].bounds];
     self.view.backgroundColor = UIColor.blackColor;
-    // 单指即可满足 core 当前的单指手势模型（滚动/点击）；
+    // 多点触控：全量触点转发给 core（pinch/rotate/双指手势需要）；
     // 边缘返回由壳层手势识别器转成 BackPressed 事件，不占用触摸通道。
-    self.view.multipleTouchEnabled = NO;
+    self.view.multipleTouchEnabled = YES;
+    self.activeTouches = [NSMutableArray array];
 }
 
 - (void)viewDidLoad {
@@ -114,7 +117,7 @@ static const int32_t kActionCancel = 3;
     self.engineAlive = NO;
     [self.displayLink invalidate];
     self.displayLink = nil;
-    self.activeTouch = nil;
+    [self.activeTouches removeAllObjects];
     evkIosDestroy();
 }
 
@@ -153,39 +156,68 @@ static const int32_t kActionCancel = 3;
                    (float)(insets.left * scale), (float)(insets.right * scale));
 }
 
-- (void)forwardTouch:(UITouch*)touch action:(int32_t)action {
+- (void)forwardTouch:(UITouch*)touch action:(int32_t)action pointerId:(int32_t)pointerId {
     const CGFloat scale = self.view.layer.contentsScale;
     const CGPoint p = [touch locationInView:self.view];
-    evkIosTouch(action, 0, (float)(p.x * scale), (float)(p.y * scale),
+    evkIosTouch(action, pointerId, (float)(p.x * scale), (float)(p.y * scale),
                 (int64_t)(touch.timestamp * 1e9));
 }
 
-- (void)touchesBegan:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-    if (self.activeTouch) {
-        return; // 已有跟踪中的手指，忽略其余（单指模型）
+// 已跟踪的 touch 返回其槽位 id，否则返回 -1。
+- (int32_t)idForTouch:(UITouch*)touch {
+    for (NSUInteger i = 0; i < self.activeTouches.count; ++i) {
+        if (self.activeTouches[i] == touch) {
+            return (int32_t)i;
+        }
     }
-    UITouch* touch = touches.anyObject;
-    self.activeTouch = touch;
-    [self forwardTouch:touch action:kActionDown];
+    return -1;
+}
+
+// 新落屏手指分配槽位：优先复用 NSNull 空槽，否则追加。
+- (int32_t)allocSlotForTouch:(UITouch*)touch {
+    for (NSUInteger i = 0; i < self.activeTouches.count; ++i) {
+        if (self.activeTouches[i] == (id)[NSNull null]) {
+            self.activeTouches[i] = touch;
+            return (int32_t)i;
+        }
+    }
+    [self.activeTouches addObject:touch];
+    return (int32_t)self.activeTouches.count - 1;
+}
+
+- (void)touchesBegan:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
+    for (UITouch* touch in touches) {
+        const int32_t pointerId = [self allocSlotForTouch:touch];
+        [self forwardTouch:touch action:kActionDown pointerId:pointerId];
+    }
 }
 
 - (void)touchesMoved:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-    if (self.activeTouch && [touches containsObject:self.activeTouch]) {
-        [self forwardTouch:self.activeTouch action:kActionMove];
+    for (UITouch* touch in touches) {
+        const int32_t pointerId = [self idForTouch:touch];
+        if (pointerId >= 0) {
+            [self forwardTouch:touch action:kActionMove pointerId:pointerId];
+        }
     }
 }
 
 - (void)touchesEnded:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-    if (self.activeTouch && [touches containsObject:self.activeTouch]) {
-        [self forwardTouch:self.activeTouch action:kActionUp];
-        self.activeTouch = nil;
+    for (UITouch* touch in touches) {
+        const int32_t pointerId = [self idForTouch:touch];
+        if (pointerId >= 0) {
+            [self forwardTouch:touch action:kActionUp pointerId:pointerId];
+            self.activeTouches[(NSUInteger)pointerId] = [NSNull null];
+        }
     }
 }
 
 - (void)touchesCancelled:(NSSet<UITouch*>*)touches withEvent:(UIEvent*)event {
-    if (self.activeTouch && [touches containsObject:self.activeTouch]) {
-        [self forwardTouch:self.activeTouch action:kActionCancel];
-        self.activeTouch = nil;
+    for (UITouch* touch in touches) {
+        const int32_t pointerId = [self idForTouch:touch];
+        if (pointerId >= 0) {
+            [self forwardTouch:touch action:kActionCancel pointerId:pointerId];
+            self.activeTouches[(NSUInteger)pointerId] = [NSNull null];
+        }
     }
 }
 

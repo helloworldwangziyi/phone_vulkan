@@ -58,11 +58,6 @@ static evk::Compositor* g_compositor = nullptr;
 static evk::IPlatform* g_platform = nullptr;
 static bool g_appStarted = false;
 
-// 单指跟踪（与 Java 壳 VulkanSurfaceView 的 activePointerId 同策略）：
-// core 的指针输入是单指模型，多点触摸只跟随第一根手指。
-static constexpr int32_t kNoPointer = -1;
-static int32_t g_activePointerId = kNoPointer;
-
 // hilog sink 由平台壳注入；core 默认只提供 stdout（见 evk/log.h）。
 // spdlog 没有内置 hilog sink，用 callback_sink 转 OH_LOG_Print。
 static void ensureLogger() {
@@ -169,7 +164,6 @@ static void OnSurfaceDestroyedCB(OH_NativeXComponent* /*component*/, void* /*win
     evk::setFrameFunc(nullptr);
     evk::setEngineReady(false);
     g_appStarted = false; // 下次 OnSurfaceCreated 走完整 EngineReady 重建流程
-    g_activePointerId = kNoPointer;
     if (g_compositor) {
         delete g_compositor;
         g_compositor = nullptr;
@@ -193,8 +187,10 @@ static evk::ui::PointerAction toPointerAction(OH_NativeXComponent_TouchEventType
     }
 }
 
-// 触摸事件。timeStamp 是系统启动以来的纳秒数，与 core 计算滑动速度所需的
-// 时间基准一致，无需换算（Android 侧是毫秒 ×1e6 换算到纳秒）。
+// 触摸事件。多点触控全量转发：touchPoints[i].id 天然稳定（对照 Android
+// 的 MotionEvent pointerId），DOWN/UP 报变化触点，MOVE 逐点批量转发，
+// CANCEL 对当前所有触点逐个补发。timeStamp 是系统启动以来的纳秒数，
+// 与 core 计算滑动速度所需的时间基准一致，无需换算。
 static void DispatchTouchEventCB(OH_NativeXComponent* component, void* window) {
     OH_NativeXComponent_TouchEvent touchEvent{};
     if (OH_NativeXComponent_GetTouchEvent(component, window, &touchEvent) !=
@@ -204,45 +200,41 @@ static void DispatchTouchEventCB(OH_NativeXComponent* component, void* window) {
 
     switch (touchEvent.type) {
         case OH_NATIVEXCOMPONENT_DOWN:
-            g_activePointerId = touchEvent.id;
-            break;
-        case OH_NATIVEXCOMPONENT_MOVE: {
-            if (g_activePointerId == kNoPointer) {
-                return;
-            }
-            // MOVE 批量上报所有触点，只转发被跟踪手指的坐标
-            // （对应 Android 的 event.findPointerIndex(activePointerId)）。
-            for (uint32_t i = 0; i < touchEvent.numPoints; ++i) {
-                if (touchEvent.touchPoints[i].id == g_activePointerId) {
-                    const evk::ui::PointerEvent event{
-                        evk::ui::PointerAction::Move, g_activePointerId,
-                        touchEvent.touchPoints[i].x, touchEvent.touchPoints[i].y,
-                        touchEvent.timeStamp};
-                    evk::ui::dispatchPointerEvent(event);
-                    return;
-                }
-            }
+        case OH_NATIVEXCOMPONENT_UP: {
+            const evk::ui::PointerEvent event{toPointerAction(touchEvent.type),
+                                              touchEvent.id, touchEvent.x,
+                                              touchEvent.y, touchEvent.timeStamp};
+            evk::ui::dispatchPointerEvent(event);
             return;
         }
-        case OH_NATIVEXCOMPONENT_UP:
-            if (touchEvent.id != g_activePointerId) {
-                return;
+        case OH_NATIVEXCOMPONENT_MOVE:
+            for (uint32_t i = 0; i < touchEvent.numPoints; ++i) {
+                const evk::ui::PointerEvent event{
+                    evk::ui::PointerAction::Move, touchEvent.touchPoints[i].id,
+                    touchEvent.touchPoints[i].x, touchEvent.touchPoints[i].y,
+                    touchEvent.timeStamp};
+                evk::ui::dispatchPointerEvent(event);
             }
-            g_activePointerId = kNoPointer;
-            break;
+            return;
         case OH_NATIVEXCOMPONENT_CANCEL:
-            if (g_activePointerId == kNoPointer) {
+            if (touchEvent.numPoints == 0) {
+                const evk::ui::PointerEvent event{evk::ui::PointerAction::Cancel,
+                                                  touchEvent.id, touchEvent.x,
+                                                  touchEvent.y, touchEvent.timeStamp};
+                evk::ui::dispatchPointerEvent(event);
                 return;
             }
-            g_activePointerId = kNoPointer;
-            break;
+            for (uint32_t i = 0; i < touchEvent.numPoints; ++i) {
+                const evk::ui::PointerEvent event{
+                    evk::ui::PointerAction::Cancel, touchEvent.touchPoints[i].id,
+                    touchEvent.touchPoints[i].x, touchEvent.touchPoints[i].y,
+                    touchEvent.timeStamp};
+                evk::ui::dispatchPointerEvent(event);
+            }
+            return;
         default:
             return;
     }
-
-    const evk::ui::PointerEvent event{toPointerAction(touchEvent.type), touchEvent.id,
-                                      touchEvent.x, touchEvent.y, touchEvent.timeStamp};
-    evk::ui::dispatchPointerEvent(event);
 }
 
 // ---------------------------------------------------------------------------

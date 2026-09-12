@@ -19,10 +19,7 @@ import androidx.core.view.WindowInsetsCompat;
  */
 public class VulkanSurfaceView extends SurfaceView implements SurfaceHolder.Callback {
 
-    private static final int NO_POINTER = -1;
-
     private boolean surfaceReady;
-    private int activePointerId = NO_POINTER;
     private final Choreographer.FrameCallback frameCallback = new Choreographer.FrameCallback() {
         @Override
         public void doFrame(long frameTimeNanos) {
@@ -89,37 +86,54 @@ public class VulkanSurfaceView extends SurfaceView implements SurfaceHolder.Call
     @Override
     public void surfaceDestroyed(SurfaceHolder holder) {
         surfaceReady = false;
-        activePointerId = NO_POINTER;
         Choreographer.getInstance().removeFrameCallback(frameCallback);
         NativeBridge.nativeDestroy();
     }
 
-    // 手指触摸到这块 View 时系统回调，按下/移动/抬起都会进来。
+    // 手指触摸到这块 View 时系统回调。多点触控全量转发：
+    // DOWN/POINTER_DOWN 报落指的 id；MOVE 批量携带全部触点，逐 id 转发；
+    // UP/POINTER_UP 报抬指的 id；CANCEL 对当前所有触点逐个补发。
+    // core 侧按 pointerId 分指跟踪，单指与多指手势走同一状态表。
     // getEventTime() 是事件发生时刻（毫秒），换算成纳秒传给 native 计算滑动速度。
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         final int action = event.getActionMasked();
         final long eventTimeNanos = event.getEventTime() * 1_000_000L;
-        if (action == MotionEvent.ACTION_DOWN) {
-            activePointerId = event.getPointerId(0);
-            NativeBridge.nativeOnTouch(action, activePointerId, event.getX(0),
-                    event.getY(0), eventTimeNanos);
-        } else if (action == MotionEvent.ACTION_MOVE && activePointerId != NO_POINTER) {
-            final int pointerIndex = event.findPointerIndex(activePointerId);
-            if (pointerIndex >= 0) {
-                NativeBridge.nativeOnTouch(action, activePointerId,
-                        event.getX(pointerIndex), event.getY(pointerIndex), eventTimeNanos);
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+            case MotionEvent.ACTION_POINTER_DOWN: {
+                final int index = event.getActionIndex();
+                NativeBridge.nativeOnTouch(MotionEvent.ACTION_DOWN,
+                        event.getPointerId(index), event.getX(index),
+                        event.getY(index), eventTimeNanos);
+                break;
             }
-        } else if ((action == MotionEvent.ACTION_UP ||
-                    action == MotionEvent.ACTION_POINTER_UP) &&
-                   event.getPointerId(event.getActionIndex()) == activePointerId) {
-            final int pointerIndex = event.getActionIndex();
-            NativeBridge.nativeOnTouch(MotionEvent.ACTION_UP, activePointerId,
-                    event.getX(pointerIndex), event.getY(pointerIndex), eventTimeNanos);
-            activePointerId = NO_POINTER;
-        } else if (action == MotionEvent.ACTION_CANCEL && activePointerId != NO_POINTER) {
-            NativeBridge.nativeOnTouch(action, activePointerId, 0.0f, 0.0f, eventTimeNanos);
-            activePointerId = NO_POINTER;
+            case MotionEvent.ACTION_MOVE: {
+                for (int i = 0; i < event.getPointerCount(); ++i) {
+                    NativeBridge.nativeOnTouch(MotionEvent.ACTION_MOVE,
+                            event.getPointerId(i), event.getX(i),
+                            event.getY(i), eventTimeNanos);
+                }
+                break;
+            }
+            case MotionEvent.ACTION_UP:
+            case MotionEvent.ACTION_POINTER_UP: {
+                final int index = event.getActionIndex();
+                NativeBridge.nativeOnTouch(MotionEvent.ACTION_UP,
+                        event.getPointerId(index), event.getX(index),
+                        event.getY(index), eventTimeNanos);
+                break;
+            }
+            case MotionEvent.ACTION_CANCEL: {
+                for (int i = 0; i < event.getPointerCount(); ++i) {
+                    NativeBridge.nativeOnTouch(MotionEvent.ACTION_CANCEL,
+                            event.getPointerId(i), event.getX(i),
+                            event.getY(i), eventTimeNanos);
+                }
+                break;
+            }
+            default:
+                break;
         }
         // return true  = "这个事件我处理了"，后续的 MOVE/UP 才会继续发给我；
         // return false = 不感兴趣，系统只给这一次 DOWN，之后不再送来。

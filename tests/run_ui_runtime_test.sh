@@ -50,6 +50,7 @@ done
     "$repo_root/core/src/ui/controls/button.cpp" \
     "$repo_root/core/src/ui/controls/container.cpp" \
     "$repo_root/core/src/ui/controls/flex.cpp" \
+    "$repo_root/core/src/ui/controls/gesture_detector.cpp" \
     "$repo_root/core/src/ui/controls/image.cpp" \
     "$repo_root/core/src/ui/controls/list_view.cpp" \
     "$repo_root/core/src/ui/controls/scroll_view.cpp" \

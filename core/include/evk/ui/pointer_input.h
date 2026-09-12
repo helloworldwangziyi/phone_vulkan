@@ -25,5 +25,7 @@ void dispatchPointerEvent(const PointerEvent& event);
 void discardPointerForView(View* view);
 void cancelPointerForView(View* view);
 void cancelAllPointerEvents();
+/// 该视图当前是否正被某根手指的 pan 拖动着（多指下同视图 pan 排他）。
+bool isPanGestureActive(View* view);
 
 } // namespace evk::ui

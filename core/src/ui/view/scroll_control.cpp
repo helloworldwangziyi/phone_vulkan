@@ -123,9 +123,13 @@ public:
     void handlePointer(const PointerEvent& event) override {
         if (event.action == PointerAction::Down) {
             animating = false;
-            panAxis = PanAxis::None;
-            rawX = offsetX;
-            rawY = offsetY;
+            // 另一根手指正在拖动本视口时，新按下的手指只停 fling，
+            // 不复位 raw/panAxis——否则第一指拖出的橡皮筋越界会被钳回。
+            if (!isPanGestureActive(this)) {
+                panAxis = PanAxis::None;
+                rawX = offsetX;
+                rawY = offsetY;
+            }
         }
     }
 

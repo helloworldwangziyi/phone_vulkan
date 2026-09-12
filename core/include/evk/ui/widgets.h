@@ -14,6 +14,7 @@
 #include "evk/ui/controls/button.h"
 #include "evk/ui/controls/container.h"
 #include "evk/ui/controls/flex.h"
+#include "evk/ui/controls/gesture_detector.h"
 #include "evk/ui/controls/image.h"
 #include "evk/ui/controls/list_view.h"
 #include "evk/ui/controls/scroll_view.h"

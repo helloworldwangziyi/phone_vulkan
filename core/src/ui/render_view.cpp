@@ -219,6 +219,12 @@ void View::handlePan(const PanEvent& event) {
     }
 }
 
+void View::handleScale(const ScaleEvent& event) {
+    if (onScale) {
+        onScale(event);
+    }
+}
+
 /**
  * @brief 布局下行入口：存约束 → performLayout → 回报值钳制后写尺寸。
  *
