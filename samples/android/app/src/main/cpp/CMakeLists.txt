@@ -61,6 +61,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/samples/app/detail_page.cpp
     ${EVK_ROOT}/samples/app/watchlist_page.cpp
     ${EVK_ROOT}/samples/app/path_demo_page.cpp
+    ${EVK_ROOT}/samples/app/gesture_demo_page.cpp
     ${EVK_ROOT}/platform/android/cpp/android_jni_bridge.cpp
     ${EVK_ROOT}/platform/android/cpp/android_vulkan_platform.cpp
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
@@ -91,6 +92,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/controls/button.cpp
     ${EVK_ROOT}/core/src/ui/controls/container.cpp
     ${EVK_ROOT}/core/src/ui/controls/flex.cpp
+    ${EVK_ROOT}/core/src/ui/controls/gesture_detector.cpp
     ${EVK_ROOT}/core/src/ui/controls/image.cpp
     ${EVK_ROOT}/core/src/ui/controls/list_view.cpp
     ${EVK_ROOT}/core/src/ui/controls/scroll_view.cpp

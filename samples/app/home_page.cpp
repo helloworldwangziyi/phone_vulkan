@@ -12,6 +12,7 @@
 #include "app_images.h"
 #include "app_theme.h"
 #include "detail_page.h"
+#include "gesture_demo_page.h"
 #include "path_demo_page.h"
 #include "watchlist_page.h"
 #include "evk/log.h"
@@ -157,6 +158,33 @@ public:
                                        fontSize, 0xFFFFFFFF);
                     }))));
 
+        /// 手势演示页入口：tap / double tap / long press / scale 可视化。
+        auto gestureDemoEntry = padding(
+            EdgeInsets::only(0.0f, appCalcHeight(60.0f), 0.0f, 0.0f),
+            center(sizedBox(
+                appCalcWidth(400.0f),
+                appCalcHeight(140.0f),
+                container(
+                    theme.primary,
+                    [this] {
+                        context().navigator().push(
+                            makeWidget<GestureDemoPage>(), true);
+                    },
+                    [](PaintContext& paint) {
+                        const Size size = paint.size();
+                        const char* label = "手势演示（Gesture）";
+                        const float fontSize = appCalcHeight(36.0f);
+                        float textWidth = 0.0f;
+                        float textHeight = 0.0f;
+                        evk::ui::FontEngine::instance().measureText(
+                            label, fontSize, appFonts::cjk(), &textWidth,
+                            &textHeight);
+                        paint.drawText(label, appFonts::cjk(),
+                                       (size.width - textWidth) * 0.5f,
+                                       (size.height - textHeight) * 0.5f,
+                                       fontSize, 0xFFFFFFFF);
+                    }))));
+
         std::vector<std::unique_ptr<Widget>> rows;
         float contentHeight = 0.0f;
         if (!quoteLoaded_) {
@@ -246,6 +274,7 @@ public:
             std::move(themeButton),
             std::move(watchlistEntry),
             std::move(pathDemoEntry),
+            std::move(gestureDemoEntry),
             std::move(shapeRow),
             std::move(titleBlock),
             std::move(list)));

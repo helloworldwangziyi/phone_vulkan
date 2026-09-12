@@ -62,6 +62,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/samples/app/detail_page.cpp
     ${EVK_ROOT}/samples/app/watchlist_page.cpp
     ${EVK_ROOT}/samples/app/path_demo_page.cpp
+    ${EVK_ROOT}/samples/app/gesture_demo_page.cpp
     ${EVK_ROOT}/platform/hongmeng/cpp/hongmeng_napi_bridge.cpp
     ${EVK_ROOT}/platform/hongmeng/cpp/hongmeng_vulkan_platform.cpp
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
