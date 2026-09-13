@@ -17,6 +17,10 @@ file(MAKE_DIRECTORY "${EVK_GENERATED_DIR}/evk/assets")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${EVK_ROOT}/core/shaders/ui_vertex.vert"
     "${EVK_ROOT}/core/shaders/ui_fragment.frag"
+    "${EVK_ROOT}/core/shaders/ui_sdf.vert"
+    "${EVK_ROOT}/core/shaders/ui_sdf.frag"
+    "${EVK_ROOT}/core/shaders/fullscreen.vert"
+    "${EVK_ROOT}/core/shaders/blur.frag"
     "${EVK_ROOT}/cmake/embed_ui_shaders.cmake"
 )
 
@@ -27,6 +31,32 @@ execute_process(
             -DVERT_SRC=${EVK_ROOT}/core/shaders/ui_vertex.vert
             -DFRAG_SRC=${EVK_ROOT}/core/shaders/ui_fragment.frag
             -DOUTPUT_HEADER=${EVK_UI_SHADER_HEADER}
+            -P "${EVK_ROOT}/cmake/embed_ui_shaders.cmake"
+    COMMAND_ERROR_IS_FATAL ANY
+)
+
+# SDF 效果管线 shader（阴影/圆角裁剪）。
+set(EVK_UI_SDF_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/ui_sdf_shaders.h")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+            -DGLSLC_EXECUTABLE=${GLSLC_EXECUTABLE}
+            -DSHADER_NAME=ui_sdf
+            -DVERT_SRC=${EVK_ROOT}/core/shaders/ui_sdf.vert
+            -DFRAG_SRC=${EVK_ROOT}/core/shaders/ui_sdf.frag
+            -DOUTPUT_HEADER=${EVK_UI_SDF_SHADER_HEADER}
+            -P "${EVK_ROOT}/cmake/embed_ui_shaders.cmake"
+    COMMAND_ERROR_IS_FATAL ANY
+)
+
+# 模糊 shader（fullscreen.vert + blur.frag）：背景模糊的离屏通道用。
+set(EVK_BLUR_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/blur_shaders.h")
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+            -DGLSLC_EXECUTABLE=${GLSLC_EXECUTABLE}
+            -DSHADER_NAME=blur
+            -DVERT_SRC=${EVK_ROOT}/core/shaders/fullscreen.vert
+            -DFRAG_SRC=${EVK_ROOT}/core/shaders/blur.frag
+            -DOUTPUT_HEADER=${EVK_BLUR_SHADER_HEADER}
             -P "${EVK_ROOT}/cmake/embed_ui_shaders.cmake"
     COMMAND_ERROR_IS_FATAL ANY
 )
@@ -62,6 +92,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/samples/app/watchlist_page.cpp
     ${EVK_ROOT}/samples/app/path_demo_page.cpp
     ${EVK_ROOT}/samples/app/gesture_demo_page.cpp
+    ${EVK_ROOT}/samples/app/effects_demo_page.cpp
     ${EVK_ROOT}/platform/android/cpp/android_jni_bridge.cpp
     ${EVK_ROOT}/platform/android/cpp/android_vulkan_platform.cpp
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
@@ -72,6 +103,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/gpu/vulkan_context.cpp
     ${EVK_ROOT}/core/src/gpu/swapchain.cpp
     ${EVK_ROOT}/core/src/gpu/ui_pipeline.cpp
+    ${EVK_ROOT}/core/src/gpu/offscreen_effects.cpp
     ${EVK_ROOT}/core/src/gpu/texture_cache.cpp
     ${EVK_ROOT}/core/src/ui/ui_application.cpp
     ${EVK_ROOT}/core/src/ui/render_view.cpp
@@ -89,7 +121,9 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/navigation/navigation_stack.cpp
     ${EVK_ROOT}/core/src/ui/widget_tree.cpp
     ${EVK_ROOT}/core/src/ui/controls/basic.cpp
+    ${EVK_ROOT}/core/src/ui/controls/backdrop_blur.cpp
     ${EVK_ROOT}/core/src/ui/controls/button.cpp
+    ${EVK_ROOT}/core/src/ui/controls/clip_rrect.cpp
     ${EVK_ROOT}/core/src/ui/controls/container.cpp
     ${EVK_ROOT}/core/src/ui/controls/flex.cpp
     ${EVK_ROOT}/core/src/ui/controls/gesture_detector.cpp

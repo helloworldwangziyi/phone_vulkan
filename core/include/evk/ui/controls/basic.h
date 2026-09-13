@@ -100,6 +100,25 @@ private:
     std::vector<std::unique_ptr<Widget>> children_;
 };
 
+/**
+ * @brief 堆叠容器：孩子按数组顺序层叠（后者在上），各自以松约束自测，
+ *        默认左上角对齐；自身尺寸有界撑满、无界包最大孩子。
+ *
+ * 对照 Flutter 的 Stack（未定位孩子的极简版）：浮层/毛玻璃卡片这类
+ * 叠加布局用它。
+ */
+class Stack final : public RenderObjectWidget {
+public:
+    explicit Stack(std::vector<std::unique_ptr<Widget>> children);
+
+    std::unique_ptr<View> createRenderObject() const override;
+    void updateRenderObject(View& view) const override;
+    std::vector<std::unique_ptr<Widget>>& children() override { return children_; }
+
+private:
+    std::vector<std::unique_ptr<Widget>> children_;
+};
+
 /// 构造辅助：按 flex 系数瓜分剩余主轴空间。
 std::unique_ptr<Widget> expanded(
     std::unique_ptr<Widget> child,
@@ -115,5 +134,7 @@ std::unique_ptr<Widget> padding(
     std::unique_ptr<Widget> child);
 /// 构造辅助：交叉轴居中。
 std::unique_ptr<Widget> center(std::unique_ptr<Widget> child);
+/// 构造辅助：层叠布局（孩子按顺序后者居上，左上对齐）。
+std::unique_ptr<Widget> stack(std::vector<std::unique_ptr<Widget>> children);
 
 } // namespace evk::ui

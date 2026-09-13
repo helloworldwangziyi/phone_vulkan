@@ -29,6 +29,40 @@ execute_process(
     COMMAND_ERROR_IS_FATAL ANY
 )
 
+# SDF 效果管线 shader（阴影/圆角裁剪）：同免运行时读文件方案。
+set(EVK_UI_SDF_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/ui_sdf_shaders.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/ui_sdf.vert"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/ui_sdf.frag"
+)
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+            -DGLSLC_EXECUTABLE=${GLSLC_EXECUTABLE}
+            -DSHADER_NAME=ui_sdf
+            -DVERT_SRC=${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/ui_sdf.vert
+            -DFRAG_SRC=${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/ui_sdf.frag
+            -DOUTPUT_HEADER=${EVK_UI_SDF_SHADER_HEADER}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_ui_shaders.cmake"
+    COMMAND_ERROR_IS_FATAL ANY
+)
+
+# 模糊 shader（fullscreen.vert + blur.frag）：背景模糊的离屏通道用。
+set(EVK_BLUR_SHADER_HEADER "${EVK_GENERATED_DIR}/evk/assets/blur_shaders.h")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/fullscreen.vert"
+    "${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/blur.frag"
+)
+execute_process(
+    COMMAND "${CMAKE_COMMAND}"
+            -DGLSLC_EXECUTABLE=${GLSLC_EXECUTABLE}
+            -DSHADER_NAME=blur
+            -DVERT_SRC=${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/fullscreen.vert
+            -DFRAG_SRC=${CMAKE_CURRENT_SOURCE_DIR}/core/shaders/blur.frag
+            -DOUTPUT_HEADER=${EVK_BLUR_SHADER_HEADER}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_ui_shaders.cmake"
+    COMMAND_ERROR_IS_FATAL ANY
+)
+
 # 字体资产：二进制内嵌为字节数组（FontEngine 注册用，同 shader 的免运行时读文件方案）。
 set(EVK_FONT_HEADER "${EVK_GENERATED_DIR}/evk/assets/font_assets.h")
 set(EVK_FONT_LIST
@@ -58,6 +92,7 @@ add_library(estarx_vulkan_core STATIC
     core/src/gpu/vulkan_context.cpp
     core/src/gpu/swapchain.cpp
     core/src/gpu/ui_pipeline.cpp
+    core/src/gpu/offscreen_effects.cpp
     core/src/gpu/texture_cache.cpp
     core/src/ui/ui_application.cpp
     core/src/ui/render_view.cpp
@@ -75,7 +110,9 @@ add_library(estarx_vulkan_core STATIC
     core/src/ui/navigation/navigation_stack.cpp
     core/src/ui/widget_tree.cpp
     core/src/ui/controls/basic.cpp
+    core/src/ui/controls/backdrop_blur.cpp
     core/src/ui/controls/button.cpp
+    core/src/ui/controls/clip_rrect.cpp
     core/src/ui/controls/container.cpp
     core/src/ui/controls/flex.cpp
     core/src/ui/controls/gesture_detector.cpp

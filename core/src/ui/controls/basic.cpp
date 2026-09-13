@@ -96,6 +96,29 @@ public:
     }
 };
 
+/**
+ * @brief Stack 对应的 View：全部孩子用松约束自测、左上落位（后者居上），
+ *        自身有界撑满、无界包最大孩子。
+ */
+class StackView final : public View {
+public:
+    Size performLayout(const BoxConstraints& constraints) override {
+        float maxChildW = 0.0f;
+        float maxChildH = 0.0f;
+        for (auto& child : children) {
+            const BoxConstraints loose{0.0f, constraints.maxWidth, 0.0f,
+                                       constraints.maxHeight};
+            const Size size = child->layout(loose);
+            child->setPosition(0.0f, 0.0f);
+            maxChildW = std::max(maxChildW, size.width);
+            maxChildH = std::max(maxChildH, size.height);
+        }
+        return {constraints.isWidthBounded() ? constraints.maxWidth : maxChildW,
+                constraints.isHeightBounded() ? constraints.maxHeight
+                                              : maxChildH};
+    }
+};
+
 } // namespace
 
 EdgeInsets EdgeInsets::all(float value) {
@@ -183,6 +206,15 @@ std::unique_ptr<View> Center::createRenderObject() const {
 
 void Center::updateRenderObject(View&) const {}
 
+Stack::Stack(std::vector<std::unique_ptr<Widget>> children)
+    : children_(std::move(children)) {}
+
+std::unique_ptr<View> Stack::createRenderObject() const {
+    return std::make_unique<StackView>();
+}
+
+void Stack::updateRenderObject(View&) const {}
+
 std::unique_ptr<Widget> expanded(std::unique_ptr<Widget> child, float flex) {
     return makeWidget<Expanded>(std::move(child), flex);
 }
@@ -202,6 +234,10 @@ std::unique_ptr<Widget> padding(
 
 std::unique_ptr<Widget> center(std::unique_ptr<Widget> child) {
     return makeWidget<Center>(std::move(child));
+}
+
+std::unique_ptr<Widget> stack(std::vector<std::unique_ptr<Widget>> children) {
+    return makeWidget<Stack>(std::move(children));
 }
 
 } // namespace evk::ui

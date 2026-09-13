@@ -89,6 +89,21 @@ struct ClickEvent {
     float y = 0.0f;
 };
 
+/**
+ * @brief 圆角矩形阴影描述（对照 Flutter BoxShadow 的精简版）。
+ *
+ * color = 0 表示无阴影；blur 为 SDF 羽化窗口（像素）；radius < 0 时由
+ * widget 层解析（Container 沿用 cornerRadius）。阴影画在控件自身之下、
+ * 父 clip 之内（不被自身 scissor 裁掉）。
+ */
+struct BoxShadow {
+    uint32_t color = 0;
+    float dx = 0.0f;
+    float dy = 0.0f;
+    float blur = 0.0f;
+    float radius = -1.0f;
+};
+
 enum class PanState {
     Begin,
     Update,
@@ -239,6 +254,16 @@ public:
     std::vector<std::unique_ptr<View>> children;
     float actualX = 0.0f;
     float actualY = 0.0f;
+
+    /// 阴影（BoxShadow）：color 非 0 时在自身之下画 SDF 羽化阴影。
+    BoxShadow shadow;
+    /// 圆角裁剪半径：> 0 时自身背景/painter/孩子全部被 SDF 圆角遮罩裁切
+    /// （对照 Flutter ClipRRect；矩形 scissor 照旧逐层收窄，圆角削角由
+    /// 片元距离场完成；嵌套圆角只有最内层生效）。
+    float clipRadius = 0.0f;
+    /// 背景模糊（BackdropFilter）：> 0 时把本视图之下的内容离屏高斯模糊
+    /// 后合成回本区域（圆角取 clipRadius）。
+    float backdropBlurSigma = 0.0f;
 
     std::function<void(PaintContext&)> painter;
     std::function<void(const ClickEvent&)> onClick;

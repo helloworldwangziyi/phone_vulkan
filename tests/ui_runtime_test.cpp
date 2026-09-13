@@ -1186,9 +1186,12 @@ void testCanvas2dPrimitives() {
     assert(canvas.vertices().size() - n == 8 * 3);
     n = canvas.vertices().size();
 
-    // 圆角矩形：3 个矩形（18）+ 4 角 × segments 个三角形。
+    // 圆角矩形：SDF 解析填充（一张 quad = 6 顶点，kSdf 批 mode=1）。
     canvas.drawRoundRect({0.0f, 0.0f, 100.0f, 60.0f}, 12.0f, clip, white, 6);
-    assert(canvas.vertices().size() - n == 3 * 6 + 4 * 6 * 3);
+    assert(canvas.vertices().size() - n == 6);
+    assert(canvas.batches().back().effect == evk::ui::BatchEffect::kSdf);
+    assert(canvas.effectParams()[canvas.batches().back().paramsIndex].radius ==
+           12.0f);
     n = canvas.vertices().size();
 
     // 弧环：segments 个四边形 = 6*segments；零扫角跳过。
@@ -1578,6 +1581,186 @@ void testCancelPointerForViewMulti() {
     root.reset();
 }
 
+void testCanvasEffectBatches() {
+    evk::ui::Canvas canvas;
+    const evk::ui::Rect clip{0.0f, 0.0f, 1000.0f, 1000.0f};
+    const evk::ui::Color dark = evk::ui::Color::rgba(0x00000088);
+
+    // 阴影：kSdf 批、mode=0、参数矩形 = 平移 (dx,dy) 后的形状、6 顶点。
+    canvas.clear();
+    canvas.drawRoundShadow({100.0f, 100.0f, 200.0f, 80.0f}, 12.0f,
+                           0.0f, 8.0f, 16.0f, dark, clip);
+    assert(canvas.batches().size() == 1);
+    const auto& sb = canvas.batches().back();
+    assert(sb.effect == evk::ui::BatchEffect::kSdf);
+    assert(sb.vertexCount == 6);
+    const auto& sp = canvas.effectParams()[sb.paramsIndex];
+    assert(sp.x == 100.0f && sp.y == 108.0f && sp.w == 200.0f && sp.h == 80.0f);
+    assert(sp.radius == 12.0f && sp.blur == 16.0f && sp.mode == 0.0f);
+    // 全透明阴影静默跳过。
+    canvas.drawRoundShadow({0.0f, 0.0f, 10.0f, 10.0f}, 0.0f, 0.0f, 0.0f, 8.0f,
+                           evk::ui::Color::rgba(0), clip);
+    assert(canvas.batches().size() == 1);
+
+    // 圆角裁剪：push 后普通绘制升级为 kSdf（mode=1），pop 后恢复 kNone；
+    // 效果不同不并批（kSdf / kNone / kSdf / kNone = 4 批）。
+    canvas.clear();
+    canvas.pushRoundClip({50.0f, 50.0f, 300.0f, 200.0f}, 20.0f);
+    canvas.drawRect({60.0f, 60.0f, 100.0f, 50.0f}, clip, dark);
+    assert(canvas.batches().back().effect == evk::ui::BatchEffect::kSdf);
+    assert(canvas.effectParams()[canvas.batches().back().paramsIndex].mode ==
+           1.0f);
+    canvas.popClip();
+    canvas.drawRect({60.0f, 60.0f, 100.0f, 50.0f}, clip, dark);
+    assert(canvas.batches().back().effect == evk::ui::BatchEffect::kNone);
+    canvas.pushRoundClip({50.0f, 50.0f, 300.0f, 200.0f}, 20.0f);
+    canvas.drawRect({60.0f, 60.0f, 100.0f, 50.0f}, clip, dark);
+    canvas.popClip();
+    canvas.drawRect({60.0f, 60.0f, 100.0f, 50.0f}, clip, dark);
+    assert(canvas.batches().size() == 4);
+    assert(canvas.batches()[2].effect == evk::ui::BatchEffect::kSdf);
+    assert(canvas.batches()[3].effect == evk::ui::BatchEffect::kNone);
+
+    // 背景模糊：0 顶点 kBlur 标记批 + hasBlur；sigma<=0 静默跳过。
+    canvas.clear();
+    assert(!canvas.hasBlur());
+    canvas.blurBackdrop({10.0f, 10.0f, 400.0f, 200.0f}, 16.0f, 12.0f, clip);
+    assert(canvas.hasBlur());
+    assert(canvas.batches().size() == 1);
+    const auto& bb = canvas.batches().back();
+    assert(bb.effect == evk::ui::BatchEffect::kBlur &&
+           bb.vertexCount == 0);
+    const auto& bp = canvas.effectParams()[bb.paramsIndex];
+    assert(bp.w == 400.0f && bp.radius == 16.0f && bp.blur == 12.0f);
+    canvas.blurBackdrop({10.0f, 10.0f, 400.0f, 200.0f}, 16.0f, 0.0f, clip);
+    assert(canvas.batches().size() == 1);
+}
+
+void testViewShadowClipBlurPaint() {
+    resetRuntime();
+    auto root = std::make_unique<evk::ui::View>();
+    root->setBounds(0.0f, 0.0f, 400.0f, 400.0f);
+
+    // 孩子 1：带阴影。阴影批必须用父 clip（根 bounds），而非自身收窄 clip。
+    auto shadowed = std::make_unique<evk::ui::View>();
+    shadowed->setBounds(50.0f, 50.0f, 200.0f, 100.0f);
+    shadowed->shadow = evk::ui::BoxShadow{0x00000088, 0.0f, 4.0f, 12.0f, 8.0f};
+    shadowed->setBackground(0xFFFFFFFF);
+    root->addChild(std::move(shadowed));
+
+    // 孩子 2：圆角裁剪容器，内部孩子的批应带 kSdf(mode=1)。
+    auto clipper = std::make_unique<evk::ui::View>();
+    clipper->setBounds(0.0f, 200.0f, 300.0f, 150.0f);
+    clipper->clipRadius = 24.0f;
+    auto inner = std::make_unique<evk::ui::View>();
+    inner->setBounds(20.0f, 20.0f, 100.0f, 60.0f);
+    inner->setBackground(0xFF0000FF);
+    clipper->addChild(std::move(inner));
+    root->addChild(std::move(clipper));
+
+    // 孩子 3：背景模糊视图——进自身内容前先发 kBlur 标记批。
+    auto blurView = std::make_unique<evk::ui::View>();
+    blurView->setBounds(100.0f, 300.0f, 200.0f, 80.0f);
+    blurView->backdropBlurSigma = 10.0f;
+    blurView->setBackground(0x22FFFFFF);
+    root->addChild(std::move(blurView));
+
+    // 孩子 4：普通兄弟——验证圆角裁剪栈已弹出（批恢复 kNone）。
+    auto plain = std::make_unique<evk::ui::View>();
+    plain->setBounds(320.0f, 20.0f, 60.0f, 40.0f);
+    plain->setBackground(0x00FF00FF);
+    root->addChild(std::move(plain));
+
+    evk::ui::setRootView(root.get());
+    evk::requestRender();
+    evk::beginFrame(ms(1));
+
+    const auto& batches = g_canvas.batches();
+    // 顺序：阴影(kSdf) → 孩子1背景(kNone) → 裁剪容器内孩子(kSdf) →
+    //       模糊标记(kBlur) → 模糊视图背景(kNone) → 普通兄弟(kNone)
+    assert(batches.size() == 6);
+    assert(batches[0].effect == evk::ui::BatchEffect::kSdf);
+    assert(batches[0].clip.w == 400.0f && batches[0].clip.h == 400.0f);
+    assert(g_canvas.effectParams()[batches[0].paramsIndex].mode == 0.0f);
+    assert(batches[1].effect == evk::ui::BatchEffect::kNone);
+    assert(batches[2].effect == evk::ui::BatchEffect::kSdf);
+    assert(g_canvas.effectParams()[batches[2].paramsIndex].mode == 1.0f);
+    assert(batches[3].effect == evk::ui::BatchEffect::kBlur &&
+           batches[3].vertexCount == 0);
+    assert(batches[4].effect == evk::ui::BatchEffect::kNone);
+    assert(batches[5].effect == evk::ui::BatchEffect::kNone);
+    assert(g_canvas.hasBlur());
+
+    evk::ui::setRootView(nullptr);
+    root.reset();
+}
+
+void testClipAndBlurWidgets() {
+    // clipRRect：clipRadius 透传到 View。
+    auto w = evk::ui::clipRRect(18.0f, evk::ui::container(0xFF112233));
+    auto* cw = static_cast<evk::ui::ClipRRect*>(w.get());
+    auto cv = cw->createRenderObject();
+    assert(cv->clipRadius == 18.0f);
+
+    // backdropBlur：sigma/圆角透传到 View。
+    auto bw = evk::ui::backdropBlur(9.0f, 14.0f, evk::ui::container(0xFF112233));
+    auto* bp = static_cast<evk::ui::BackdropBlur*>(bw.get());
+    auto bv = bp->createRenderObject();
+    assert(bv->backdropBlurSigma == 9.0f && bv->clipRadius == 14.0f);
+
+    // Container 阴影透传：radius < 0 时沿用 cornerRadius。
+    auto mc = evk::ui::makeWidget<evk::ui::Container>(0xFF0000FF);
+    auto* cp = static_cast<evk::ui::Container*>(mc.get());
+    cp->cornerRadius = 10.0f;
+    cp->shadow = evk::ui::BoxShadow{0x00000088, 0.0f, 6.0f, 18.0f, -1.0f};
+    auto cvw = cp->createRenderObject();
+    assert(cvw->shadow.color == 0x00000088 && cvw->shadow.radius == 10.0f);
+}
+
+void testHitTestPassesThroughNonInteractive() {
+    resetRuntime();
+    // 叠层：下层有交互面，上层是铺满的无回调容器 + 一枚居中的交互子件。
+    // 命中上层空白处应穿透到下层；命中上层交互子件则归子件。
+    auto root = std::make_unique<evk::ui::View>();
+    root->setBounds(0.0f, 0.0f, 400.0f, 400.0f);
+
+    auto lower = std::make_unique<evk::ui::View>();
+    lower->setBounds(0.0f, 0.0f, 400.0f, 400.0f);
+    int lowerClicks = 0;
+    lower->onClick = [&lowerClicks](const evk::ui::ClickEvent&) {
+        ++lowerClicks;
+    };
+    root->addChild(std::move(lower));
+
+    auto overlay = std::make_unique<evk::ui::View>(); // 无回调 = 命中透明
+    overlay->setBounds(0.0f, 0.0f, 400.0f, 400.0f);
+    auto overlayChild = std::make_unique<evk::ui::View>();
+    overlayChild->setBounds(160.0f, 160.0f, 80.0f, 80.0f);
+    int childClicks = 0;
+    overlayChild->onClick = [&childClicks](const evk::ui::ClickEvent&) {
+        ++childClicks;
+    };
+    overlay->addChild(std::move(overlayChild));
+    root->addChild(std::move(overlay));
+
+    evk::ui::setRootView(root.get());
+    // 命中上层空白（非子件区域）：穿透到下层。
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Down, 0, 40.0f, 40.0f, ms(10)});
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Up, 0, 40.0f, 40.0f, ms(20)});
+    assert(lowerClicks == 1 && childClicks == 0);
+    // 命中上层交互子件：归子件，不穿到下层。
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Down, 1, 200.0f, 200.0f, ms(30)});
+    evk::ui::dispatchPointerEvent(
+        {evk::ui::PointerAction::Up, 1, 200.0f, 200.0f, ms(40)});
+    assert(lowerClicks == 1 && childClicks == 1);
+
+    evk::ui::setRootView(nullptr);
+    root.reset();
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1605,6 +1788,10 @@ int main(int argc, char** argv) {
     testSafeAreaInsets();
 
     testCanvas2dPrimitives();
+    testCanvasEffectBatches();
+    testViewShadowClipBlurPaint();
+    testClipAndBlurWidgets();
+    testHitTestPassesThroughNonInteractive();
 
     // 字体测试需要两个字体文件路径（拉丁 + 中文）。
     if (argc >= 3) {

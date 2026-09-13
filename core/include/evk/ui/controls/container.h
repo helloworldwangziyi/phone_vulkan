@@ -25,6 +25,7 @@ public:
     uint32_t borderColor = 0;  ///< 描边色；非 0 且 borderWidth > 0 时生效
     float borderWidth = 0.0f;  ///< 描边宽度（像素，向内侧）
     float cornerRadius = 0.0f; ///< 圆角半径；> 0 时背景/描边走圆角绘制
+    BoxShadow shadow;          ///< 阴影（color != 0 生效）；radius < 0 沿用 cornerRadius
     std::function<void()> onTap;
     std::function<void(PaintContext&)> painter;
 

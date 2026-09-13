@@ -19,12 +19,9 @@
 // std::vector：承接 Vulkan 枚举惯用法返回的列表。
 #include <vector>
 
-// 关键宏：让 GLM 的投影矩阵把深度映射到 Vulkan 的 NDC 范围 [0,1]，
-// 而不是 OpenGL 默认的 [-1,1]；必须在包含任何 glm 头之前定义才生效。
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE
-// glm 核心类型（mat4 等），用于构造正交投影矩阵。
+// glm 核心类型（mat4 等）与 glm::ortho：投影矩阵构建。
+// （GLM_FORCE_DEPTH_ZERO_TO_ONE 已在 vulkan_renderer.h 顶部统一定义。）
 #include <glm/glm.hpp>
-// glm::ortho 所在的矩阵变换头。
 #include <glm/gtc/matrix_transform.hpp>
 
 namespace evk {
@@ -36,7 +33,8 @@ Renderer::Renderer(IPlatform* platform, gpu::ITextureSource* textureSource)
     : context_(platform),
       textureCache_(context_, textureSource),
       swapchain_(context_),
-      uiPipeline_(context_) {}
+      uiPipeline_(context_),
+      offscreenEffects_(context_) {}
 
 Renderer::~Renderer() {
     // 析构兜底调 shutdown()；内部对空句柄有判断，重复调用也安全。
@@ -56,12 +54,37 @@ bool Renderer::initialize() {
                             swapchain_.msaaSamples(),
                             textureCache_.descriptorSetLayout())) return false;
     if (!swapchain_.createFramebuffers()) return false;
+    // 离屏效果设施（背景模糊）：尺寸/格式/采样数依赖 swapchain，失败仅降级
+    // （模糊标记批被忽略，内容照画），不阻断启动。
+    if (!createOffscreenEffects()) {
+        EVK_LOGW("offscreen effects unavailable; backdrop blur disabled");
+    }
     // ④ 执行设施：命令池、顶点缓冲、命令缓冲、同步原语，与 swapchain 尺寸无关。
     if (!createCommandPool()) return false;
     if (!createVertexBuffers()) return false;
     if (!createCommandBuffers()) return false;
     if (!createSyncObjects()) return false;
     return true;
+}
+
+/// 离屏效果设施创建：视觉尺寸（90/270° 与 buffer 宽高互换）+ swapchain
+/// 格式/采样数；管线复用 UiPipeline 的共享 layout，挂在主/场景 pass 上。
+bool Renderer::createOffscreenEffects() {
+    const VkExtent2D extent = swapchain_.extent();
+    const VkSurfaceTransformFlagBitsKHR transform = swapchain_.surfaceTransform();
+    const bool swap = transform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+                      transform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
+    const VkExtent2D visual = swap ? VkExtent2D{extent.height, extent.width}
+                                   : extent;
+    if (!offscreenEffects_.create(visual, swapchain_.imageFormat(),
+                                  swapchain_.msaaSamples(),
+                                  textureCache_.descriptorSetLayout(),
+                                  uiPipeline_.layout())) {
+        return false;
+    }
+    return offscreenEffects_.createPipelines(swapchain_.renderPass(),
+                                             uiPipeline_.layout(),
+                                             swapchain_.msaaSamples());
 }
 
 void Renderer::shutdown() {
@@ -86,8 +109,8 @@ void Renderer::shutdown() {
         // 纹理设施（atlas 页 / 白纹理 / 采样器 / descriptor 池与布局 / 上传中转缓冲）。
         textureCache_.shutdown();
 
-        // 管线与 swapchain 相关资源（framebuffer / renderPass / imageView / swapchain）
-        // 各归其模块集中清理。
+        // 离屏效果、管线与 swapchain 相关资源各归其模块集中清理。
+        offscreenEffects_.destroy();
         uiPipeline_.destroy();
         swapchain_.cleanup();
     }
@@ -325,7 +348,8 @@ void Renderer::recreateSwapchain() {
     vkDeviceWaitIdle(context_.device());
     // 然后按 initialize() 里"依赖 swapchain 的那一段"原序重建；
     // 命令池、顶点缓冲、同步对象与尺寸无关，不用动。
-    // 管线配置跟随 swapchain 格式/尺寸/采样数，与 swapchain 资源同批销毁重建。
+    // 管线与离屏设施都跟随 swapchain 格式/尺寸/采样数，同批销毁重建。
+    offscreenEffects_.destroy();
     uiPipeline_.destroy();
     swapchain_.cleanup();
     swapchain_.create();
@@ -333,6 +357,9 @@ void Renderer::recreateSwapchain() {
                        swapchain_.msaaSamples(),
                        textureCache_.descriptorSetLayout());
     swapchain_.createFramebuffers();
+    if (!createOffscreenEffects()) {
+        EVK_LOGW("offscreen effects unavailable after recreate; backdrop blur disabled");
+    }
 }
 
 void Renderer::setSize(uint32_t width, uint32_t height) {
@@ -464,6 +491,266 @@ bool Renderer::render(const ui::Canvas& canvas) {
     return true;
 }
 
+namespace {
+
+/// push constant 的 CPU 侧布局：mvp 64B + effectRect 16B + effectParams 16B
+/// + effectExtra 16B = 112B；主/SDF 管线只用前 96B，离屏全屏管线用满。
+struct PushConstants {
+    glm::mat4 mvp;
+    float effectRect[4];   ///< 效果/目标矩形 x,y,w,h（视觉像素）
+    float effectParams[4]; ///< SDF：radius,blur,mode；模糊：uv 步长 stepU,stepV
+    float effectExtra[4];  ///< 全屏管线：texelSize（1/W, 1/H）
+};
+
+} // namespace
+
+void Renderer::barrierImage(VkCommandBuffer cmd, VkImage image,
+                            VkImageLayout oldLayout, VkImageLayout newLayout,
+                            VkAccessFlags srcAccess, VkAccessFlags dstAccess,
+                            VkPipelineStageFlags srcStage,
+                            VkPipelineStageFlags dstStage) {
+    // 单张图像的布局/内存屏障：离屏各段之间的同步都走它（render pass 的
+    // 隐式外部依赖阶段太宽，显式屏障语义最直白）。
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    vkCmdPipelineBarrier(cmd, srcStage, dstStage, 0, 0, nullptr, 0, nullptr, 1,
+                         &barrier);
+}
+
+void Renderer::recordBatchRange(VkCommandBuffer cmd, const ui::Canvas& canvas,
+                                size_t begin, size_t end, const glm::mat4& mvp,
+                                VkExtent2D targetExtent,
+                                VkSurfaceTransformFlagBitsKHR transform) {
+    // 起始统一切回主管线（前一段可能是模糊/合成管线）；范围内按需切 SDF。
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      uiPipeline_.pipeline(gpu::PipelineKind::kMain));
+    gpu::PipelineKind boundPipeline = gpu::PipelineKind::kMain;
+
+    // 按渲染目标尺寸组 viewport（NDC 到像素的映射），每段重设。
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(targetExtent.width);
+    viewport.height = static_cast<float>(targetExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    // 绑定顶点缓冲到槽位 0（对应管线 vertex input 的 binding 0），偏移 0。
+    VkBuffer vertexBuffers[] = {vertexBuffers_[currentFrame_]};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
+
+    // 视觉尺寸（app 坐标空间 = 用户实际看到的方向）：呈现旋转 90/270 时
+    // 与目标 buffer 宽高互换；离屏场景按视觉方向绘制（transform=IDENTITY）。
+    const float bufferW = static_cast<float>(targetExtent.width);
+    const float bufferH = static_cast<float>(targetExtent.height);
+    const bool rotate90or270 =
+        transform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
+        transform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR;
+    const bool compensate = transform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+    const float visualW = rotate90or270 ? bufferH : bufferW;
+    const float visualH = rotate90or270 ? bufferW : bufferH;
+
+    const auto& batches = canvas.batches();
+    for (size_t i = begin; i < end; ++i) {
+        const auto& batch = batches[i];
+        // 空批直接跳过；kBlur 标记批由离屏路径处理（模糊未启用/降级时忽略）。
+        if (batch.vertexCount == 0 || batch.effect == ui::BatchEffect::kBlur) {
+            continue;
+        }
+        const bool sdf = batch.effect == ui::BatchEffect::kSdf;
+        const gpu::PipelineKind kind =
+            sdf ? gpu::PipelineKind::kSdf : gpu::PipelineKind::kMain;
+        if (kind != boundPipeline) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              uiPipeline_.pipeline(kind));
+            boundPipeline = kind;
+        }
+
+        // 每批推一次 push constant（mvp 恒定，开销可忽略）；SDF 批追加 32B
+        // 效果参数（矩形/半径/羽化/模式），片元阶段据此算距离场覆盖率。
+        if (sdf && batch.paramsIndex < canvas.effectParams().size()) {
+            const ui::EffectParams& p = canvas.effectParams()[batch.paramsIndex];
+            PushConstants pc{};
+            pc.mvp = mvp;
+            pc.effectRect[0] = p.x; pc.effectRect[1] = p.y;
+            pc.effectRect[2] = p.w; pc.effectRect[3] = p.h;
+            pc.effectParams[0] = p.radius; pc.effectParams[1] = p.blur;
+            pc.effectParams[2] = p.mode;   pc.effectParams[3] = p.pad;
+            vkCmdPushConstants(cmd, uiPipeline_.layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, 96, &pc);
+        } else {
+            vkCmdPushConstants(cmd, uiPipeline_.layout(), VK_SHADER_STAGE_VERTEX_BIT,
+                               0, sizeof(mvp), &mvp);
+        }
+
+        // clip 与可视矩形求交（在视觉空间进行，与 app 布局坐标一致）。
+        ui::Rect clip = ui::Rect::intersect(batch.clip, {0.0f, 0.0f, visualW, visualH});
+
+        // 需要补偿时，把视觉空间的 clip 旋转到 buffer 像素空间（与 NDC 补偿同向）：
+        // 90°: (x,y)->(H-y-h, x)，宽高互换；180°: 两轴各自翻转；270° 为 90° 逆。
+        ui::Rect bclip;
+        if (compensate && transform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
+            bclip = {visualH - clip.y - clip.h, clip.x, clip.h, clip.w};
+        } else if (compensate && transform == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
+            bclip = {visualW - clip.x - clip.w, visualH - clip.y - clip.h, clip.w, clip.h};
+        } else if (compensate && transform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
+            bclip = {clip.y, visualW - clip.x - clip.w, clip.h, clip.w};
+        } else {
+            bclip = clip;
+        }
+
+        // 转 int32 时 clamp：offset 不小于 0，且 offset+extent 不超出渲染目标。
+        int32_t ox = std::max(0, static_cast<int32_t>(bclip.x));
+        int32_t oy = std::max(0, static_cast<int32_t>(bclip.y));
+        int32_t ex = std::min(static_cast<int32_t>(bclip.x + bclip.w),
+                              static_cast<int32_t>(targetExtent.width)) - ox;
+        int32_t ey = std::min(static_cast<int32_t>(bclip.y + bclip.h),
+                              static_cast<int32_t>(targetExtent.height)) - oy;
+        if (ex <= 0 || ey <= 0) {
+            continue;
+        }
+
+        VkRect2D scissor{};
+        scissor.offset = {ox, oy};
+        scissor.extent = {static_cast<uint32_t>(ex), static_cast<uint32_t>(ey)};
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        // 绑定本批纹理：0 = 白纹理（纯色/渐变），n = 数据源第 n 号纹理。
+        VkDescriptorSet set = textureCache_.descriptorFor(batch.textureId);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, uiPipeline_.layout(),
+                                0, 1, &set, 0, nullptr);
+
+        // 画这一批：firstVertex 定位到该批在总顶点数组里的起始偏移。
+        vkCmdDraw(cmd, batch.vertexCount, 1, batch.firstVertex, 0);
+    }
+}
+
+bool Renderer::recordBlurBackdrop(VkCommandBuffer cmd,
+                                  const ui::EffectParams& params) {
+    const VkExtent2D visual = offscreenEffects_.extent();
+    const float sigma = std::min(std::max(params.blur, 0.0f), 32.0f);
+
+    // 模糊覆盖矩形：region 外扩 2σ 余量（V 通道向上/下采样需要），钳到图内。
+    const float margin = sigma * 2.0f;
+    ui::Rect blurRect = {params.x - margin, params.y - margin,
+                         params.w + margin * 2.0f, params.h + margin * 2.0f};
+    blurRect = ui::Rect::intersect(
+        blurRect, {0.0f, 0.0f, static_cast<float>(visual.width),
+                   static_cast<float>(visual.height)});
+    if (blurRect.w <= 0.0f || blurRect.h <= 0.0f) {
+        // 区域出屏：不模糊不合成；场景 resolve 尚未被动过，调用方直接重开
+        // 续画段即可。
+        return false;
+    }
+
+    // ① 场景 resolve 图：颜色附件 → 可采样。
+    barrierImage(cmd, offscreenEffects_.sceneImage(),
+                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    // ② H/V 两趟可分离高斯（pingA ← 场景，pingB ← pingA），全部在 1/4
+    // 降采样空间进行：σ 同步 ÷4（欠采样残影与带宽一起省掉）；采样输入用
+    // 归一化 uv（源图尺寸不同不影响），合成时线性过滤放大回视觉尺寸。
+    const VkExtent2D ping = offscreenEffects_.pingExtent();
+    const float pingTexelW = 1.0f / static_cast<float>(ping.width);
+    const float pingTexelH = 1.0f / static_cast<float>(ping.height);
+    const glm::mat4 mvpPing = glm::ortho(
+        0.0f, static_cast<float>(ping.width), 0.0f,
+        static_cast<float>(ping.height), -1.0f, 1.0f);
+    ui::Rect blurRectPing = {blurRect.x * 0.25f, blurRect.y * 0.25f,
+                             blurRect.w * 0.25f, blurRect.h * 0.25f};
+    blurRectPing = ui::Rect::intersect(
+        blurRectPing, {0.0f, 0.0f, static_cast<float>(ping.width),
+                       static_cast<float>(ping.height)});
+    const float stepPing = sigma / 12.0f; // 5 采样核按 σ≈3 标定，且已 ÷4
+    for (int passIndex = 0; passIndex < 2; ++passIndex) {
+        const bool vertical = passIndex == 1;
+        if (vertical) {
+            // pingA 写→读同步（布局已由上一 pass 尾部转好，这里纯内存依赖）。
+            barrierImage(cmd, offscreenEffects_.pingImage(false),
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                         VK_ACCESS_SHADER_READ_BIT,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        }
+
+        VkRenderPassBeginInfo blurInfo{};
+        blurInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        blurInfo.renderPass = offscreenEffects_.blurPass();
+        blurInfo.framebuffer = offscreenEffects_.blurFramebuffer(vertical);
+        blurInfo.renderArea.offset = {0, 0};
+        blurInfo.renderArea.extent = ping;
+        vkCmdBeginRenderPass(cmd, &blurInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        VkViewport viewport{};
+        viewport.width = static_cast<float>(ping.width);
+        viewport.height = static_cast<float>(ping.height);
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(cmd, 0, 1, &viewport);
+        VkRect2D scissor{};
+        scissor.offset = {std::max(0, static_cast<int32_t>(blurRectPing.x)),
+                          std::max(0, static_cast<int32_t>(blurRectPing.y))};
+        scissor.extent = {static_cast<uint32_t>(blurRectPing.w),
+                          static_cast<uint32_t>(blurRectPing.h)};
+        vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                          offscreenEffects_.blurPipeline());
+        PushConstants pc{};
+        pc.mvp = mvpPing;
+        pc.effectRect[0] = blurRectPing.x; pc.effectRect[1] = blurRectPing.y;
+        pc.effectRect[2] = blurRectPing.w; pc.effectRect[3] = blurRectPing.h;
+        pc.effectParams[0] = vertical ? 0.0f : stepPing * pingTexelW;
+        pc.effectParams[1] = vertical ? stepPing * pingTexelH : 0.0f;
+        pc.effectExtra[0] = pingTexelW; pc.effectExtra[1] = pingTexelH;
+        vkCmdPushConstants(cmd, uiPipeline_.layout(),
+                           VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                           0, sizeof(pc), &pc);
+        VkDescriptorSet input =
+            vertical ? offscreenEffects_.pingSet(false)
+                     : offscreenEffects_.sceneSet();
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                uiPipeline_.layout(), 0, 1, &input, 0, nullptr);
+        vkCmdDraw(cmd, 6, 1, 0, 0);
+        vkCmdEndRenderPass(cmd);
+    }
+
+    // pingB 写→读同步（随后续画段的合成 quad 采样它）。
+    barrierImage(cmd, offscreenEffects_.pingImage(true),
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    // ③ 场景 resolve 图回到颜色附件布局：续画段（loadOp=LOAD）接着画。
+    barrierImage(cmd, offscreenEffects_.sceneImage(),
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                 VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    return true;
+}
+
 void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, const ui::Canvas& canvas) {
     const VkExtent2D extent = swapchain_.extent();
     const VkSampleCountFlagBits msaaSamples = swapchain_.msaaSamples();
@@ -481,49 +768,6 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     textureCache_.ensureStoreTextures();
     textureCache_.uploadPendingTextures(cmd, currentFrame_);
 
-    // render pass begin 信息：用哪个 pass、渲染到哪个 framebuffer、范围多大。
-    VkRenderPassBeginInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = swapchain_.renderPass();
-    // framebuffer 按 acquire 到的 imageIndex 选：画到将要上屏的那张图。
-    renderPassInfo.framebuffer = swapchain_.framebuffer(imageIndex);
-    // renderArea 限定渲染区域；全屏渲染就是整个 swapchain 尺寸。
-    renderPassInfo.renderArea.offset = {0, 0};
-    renderPassInfo.renderArea.extent = extent;
-
-    // 清屏色：深蓝灰 (0.06, 0.06, 0.09)，作用于 render pass 里 loadOp=CLEAR 的附件。
-    // MSAA 开启时有两个附件（[0] 呈现图、[1] 多采样图）都是 CLEAR，按附件下标
-    // 顺序各给一份；用同一个颜色，resolve 平均后落到屏幕的底色一致。
-    VkClearValue clearColors[2] = {
-        {{{0.06f, 0.06f, 0.09f, 1.0f}}},
-        {{{0.06f, 0.06f, 0.09f, 1.0f}}},
-    };
-    renderPassInfo.clearValueCount =
-        msaaSamples != VK_SAMPLE_COUNT_1_BIT ? 2 : 1;
-    renderPassInfo.pClearValues = clearColors;
-
-    // INLINE 表示命令直接录在这条 primary 缓冲里（另一种是执行 secondary 缓冲）。
-    vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    // 绑定图形管线：之后的 draw 都用这套着色器与固定功能状态。
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, uiPipeline_.pipeline());
-
-    // 按当前 swapchain 尺寸组一份 viewport（NDC 到像素的映射）。
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<float>(extent.width);
-    viewport.height = static_cast<float>(extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    // 管线把 viewport 和 scissor 设成动态状态，所以每帧都要重新设置。
-    vkCmdSetViewport(cmd, 0, 1, &viewport);
-
-    // 绑定顶点缓冲到槽位 0（对应管线 vertex input 的 binding 0），偏移 0。
-    VkBuffer vertexBuffers[] = {vertexBuffers_[currentFrame_]};
-    VkDeviceSize offsets[] = {0};
-    vkCmdBindVertexBuffers(cmd, 0, 1, vertexBuffers, offsets);
-
     // 布局/视觉尺寸（app 坐标空间 = 用户实际看到的方向）。
     const float bufferW = static_cast<float>(extent.width);
     const float bufferH = static_cast<float>(extent.height);
@@ -532,103 +776,201 @@ void Renderer::recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, con
     const bool rotate90or270 = (surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR ||
                                 surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR);
     const bool compensate = surfaceTransform != VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-    const bool dimsSwapped = rotate90or270;
-    const float visualW = dimsSwapped ? bufferH : bufferW;
-    const float visualH = dimsSwapped ? bufferW : bufferH;
+    const float visualW = rotate90or270 ? bufferH : bufferW;
+    const float visualH = rotate90or270 ? bufferW : bufferH;
 
     // 像素坐标 → NDC 的正交投影（原点在左上角，y 向下，基于视觉尺寸）。
     // 注意 glm::ortho 第三/四参数是 bottom/top：Vulkan 正 viewport 高度下
     // NDC +y 朝 framebuffer 下方，要 y 向下需传 bottom=0、top=height。
-    // 效果：窗口左上映射到 NDC (-1,-1)、右下映射到 (1,1)；z 用不到，给 [-1,1] 即可。
-    glm::mat4 mvp = glm::ortho(0.0f, visualW, 0.0f, visualH, -1.0f, 1.0f);
+    glm::mat4 mvpDirect = glm::ortho(0.0f, visualW, 0.0f, visualH, -1.0f, 1.0f);
 
-    // 需要补偿时（见上）：呈现时系统把 buffer 按 currentTransform 旋转上屏，
-    // 这里预先把 NDC 反向旋转，上屏后内容回到正立方向。
-    // 90/180/270 在 NDC 平面内是精确换轴（glm::mat4 按列填充）：
+    // 呈现旋转补偿：系统把 buffer 按 currentTransform 旋转上屏，这里预先把
+    // NDC 反向旋转，上屏后内容回到正立方向（90/180/270 是精确换轴）。
     if (compensate && surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
         // (x, y) -> (-y, x)
         const glm::mat4 rot( 0.0f, 1.0f, 0.0f, 0.0f,
                             -1.0f, 0.0f, 0.0f, 0.0f,
                              0.0f, 0.0f, 1.0f, 0.0f,
                              0.0f, 0.0f, 0.0f, 1.0f);
-        mvp = rot * mvp;
+        mvpDirect = rot * mvpDirect;
     } else if (compensate && surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
         // (x, y) -> (-x, -y)
         const glm::mat4 rot(-1.0f,  0.0f, 0.0f, 0.0f,
                              0.0f, -1.0f, 0.0f, 0.0f,
                              0.0f,  0.0f, 1.0f, 0.0f,
                              0.0f,  0.0f, 0.0f, 1.0f);
-        mvp = rot * mvp;
+        mvpDirect = rot * mvpDirect;
     } else if (compensate && surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
         // (x, y) -> (y, -x)
         const glm::mat4 rot(0.0f, -1.0f, 0.0f, 0.0f,
                             1.0f,  0.0f, 0.0f, 0.0f,
                             0.0f,  0.0f, 1.0f, 0.0f,
                             0.0f,  0.0f, 0.0f, 1.0f);
-        mvp = rot * mvp;
+        mvpDirect = rot * mvpDirect;
+    }
+    // 离屏场景按视觉方向绘制（不做补偿），纯正交投影；补偿集中在末段 blit。
+    const glm::mat4 mvpScene = glm::ortho(0.0f, visualW, 0.0f, visualH, -1.0f, 1.0f);
+
+    // 主 render pass（swapchain）的开始：直通路径与离屏末段 blit 共用。
+    auto beginMainPass = [&] {
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = swapchain_.renderPass();
+        renderPassInfo.framebuffer = swapchain_.framebuffer(imageIndex);
+        renderPassInfo.renderArea.offset = {0, 0};
+        renderPassInfo.renderArea.extent = extent;
+        // 清屏色：深蓝灰；MSAA 时两个附件（呈现图 + 多采样图）各一份。
+        VkClearValue clearColors[2] = {
+            {{{0.06f, 0.06f, 0.09f, 1.0f}}},
+            {{{0.06f, 0.06f, 0.09f, 1.0f}}},
+        };
+        renderPassInfo.clearValueCount =
+            msaaSamples != VK_SAMPLE_COUNT_1_BIT ? 2 : 1;
+        renderPassInfo.pClearValues = clearColors;
+        vkCmdBeginRenderPass(cmd, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+    };
+
+    const auto& batches = canvas.batches();
+
+    if (!canvas.hasBlur() || !offscreenEffects_.ready()) {
+        // 直通路径：内容直画 swapchain（SDF 批在批内换管线，零离屏开销）。
+        beginMainPass();
+        recordBatchRange(cmd, canvas, 0, batches.size(), mvpDirect, extent,
+                         surfaceTransform);
+        // 结束 render pass：同时触发附件布局转换到 PRESENT_SRC_KHR。
+        vkCmdEndRenderPass(cmd);
+        vkEndCommandBuffer(cmd);
+        return;
     }
 
-    // 逐批绘制：每批共享一个 clip，裁剪矩形取 clip 与 swapchain 的交集。
-    for (const auto& batch : canvas.batches()) {
-        // 空批直接跳过，避免无意义的 draw。
-        if (batch.vertexCount == 0) {
-            continue;
+    // ---- 离屏路径：帧内含背景模糊，整帧先画进场景纹理 ----
+    const VkExtent2D visualExtent = {static_cast<uint32_t>(visualW),
+                                     static_cast<uint32_t>(visualH)};
+    VkClearValue sceneClear[2] = {
+        {{{0.06f, 0.06f, 0.09f, 1.0f}}},
+        {{{0.06f, 0.06f, 0.09f, 1.0f}}},
+    };
+    auto beginScenePass = [&](bool load) {
+        VkRenderPassBeginInfo info{};
+        info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        info.renderPass = offscreenEffects_.scenePass(load);
+        info.framebuffer = offscreenEffects_.sceneFramebuffer();
+        info.renderArea.offset = {0, 0};
+        info.renderArea.extent = visualExtent;
+        info.clearValueCount = msaaSamples != VK_SAMPLE_COUNT_1_BIT ? 2 : 1;
+        info.pClearValues = sceneClear;
+        vkCmdBeginRenderPass(cmd, &info, VK_SUBPASS_CONTENTS_INLINE);
+    };
+
+    size_t segmentBegin = 0;
+    // 跨帧同步：离屏三图（场景 resolve + ping-pong）是单实例，而渲染双帧
+    // 在飞——上一帧末段 blit/合成可能仍在 GPU 上采样这些图，本帧场景段
+    // 若直接覆写就会产生重影（滚动时尤其明显）。帧首插一道同布局执行
+    // 屏障（同队列屏障对先前提交的命令生效），把本帧写入排在其采样之后。
+    if (offscreenUsedOnce_) {
+        for (int i = 0; i < 3; ++i) {
+            VkImage image = i == 0 ? offscreenEffects_.sceneImage()
+                                   : offscreenEffects_.pingImage(i == 2);
+            barrierImage(cmd, image,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                         VK_ACCESS_SHADER_READ_BIT,
+                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
         }
-        // 把正交投影矩阵经 push constant 发给顶点着色器；每批推一次（内容相同），开销可忽略。
-        vkCmdPushConstants(cmd, uiPipeline_.layout(), VK_SHADER_STAGE_VERTEX_BIT,
-                           0, sizeof(mvp), &mvp);
-
-        // clip 与屏幕矩形求交（在视觉空间进行，与 app 布局坐标一致）。
-        ui::Rect clip = ui::Rect::intersect(batch.clip, {0.0f, 0.0f, visualW, visualH});
-
-        // 需要补偿时，把视觉空间的 clip 旋转到 buffer 像素空间（与上面的 NDC 补偿同向）：
-        // 90°: (x,y)->(H-y-h, x)，宽高互换；180°: 两轴各自翻转；
-        // 270°: (x,y)->(y, W-x-w)，是 90° 的逆。
-        // 无需补偿时 buffer 空间即视觉空间，直接用 clip。
-        ui::Rect bclip;
-        if (compensate && surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_90_BIT_KHR) {
-            bclip = {visualH - clip.y - clip.h, clip.x, clip.h, clip.w};
-        } else if (compensate && surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_180_BIT_KHR) {
-            bclip = {visualW - clip.x - clip.w, visualH - clip.y - clip.h, clip.w, clip.h};
-        } else if (compensate && surfaceTransform == VK_SURFACE_TRANSFORM_ROTATE_270_BIT_KHR) {
-            bclip = {clip.y, visualW - clip.x - clip.w, clip.h, clip.w};
-        } else {
-            bclip = clip;
-        }
-
-        // 转 int32 时 clamp：offset 不小于 0，且 offset+extent 不超出 swapchain。
-        // 左上角 clamp 到 >= 0：scissor 的 offset 不能为负。
-        int32_t ox = std::max(0, static_cast<int32_t>(bclip.x));
-        int32_t oy = std::max(0, static_cast<int32_t>(bclip.y));
-        // 右下角 clamp 到 swapchain 尺寸内，再减去 offset 得到宽高。
-        int32_t ex = std::min(static_cast<int32_t>(bclip.x + bclip.w),
-                              static_cast<int32_t>(extent.width)) - ox;
-        int32_t ey = std::min(static_cast<int32_t>(bclip.y + bclip.h),
-                              static_cast<int32_t>(extent.height)) - oy;
-        // 交集为空（批完全在屏外）就跳过。
-        if (ex <= 0 || ey <= 0) {
-            continue;
-        }
-
-        // 转成 VkRect2D（offset 有符号、extent 无符号）并设为动态 scissor：
-        // 这就是 UI 裁剪（clip）的硬件实现。
-        VkRect2D scissor{};
-        scissor.offset = {ox, oy};
-        scissor.extent = {static_cast<uint32_t>(ex), static_cast<uint32_t>(ey)};
-        vkCmdSetScissor(cmd, 0, 1, &scissor);
-
-        // 绑定本批纹理：0 = 白纹理（纯色/渐变），n = 数据源第 n 号纹理。
-        // 同一 (clip, 纹理) 的绘制已在 Canvas 侧合并，这里每批一次绑定。
-        VkDescriptorSet set = textureCache_.descriptorFor(batch.textureId);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, uiPipeline_.layout(),
-                                0, 1, &set, 0, nullptr);
-
-        // 画这一批：firstVertex 定位到该批在总顶点数组里的起始偏移，
-        // 所有批共享同一块顶点缓冲，靠 firstVertex 分段。
-        vkCmdDraw(cmd, batch.vertexCount, 1, batch.firstVertex, 0);
     }
+    offscreenUsedOnce_ = true;
+    beginScenePass(false);
+    for (size_t i = 0; i < batches.size(); ++i) {
+        const auto& batch = batches[i];
+        if (batch.effect != ui::BatchEffect::kBlur ||
+            batch.paramsIndex >= canvas.effectParams().size()) {
+            continue;
+        }
+        const ui::EffectParams& p = canvas.effectParams()[batch.paramsIndex];
+        // ① marker 之前的内容画进场景（本段在场景 pass 内）。
+        recordBatchRange(cmd, canvas, segmentBegin, i, mvpScene, visualExtent,
+                         VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR);
+        vkCmdEndRenderPass(cmd);
+        // ② 高斯 ping-pong（pass 外）；区域出屏则只续画不合成。
+        const bool blurred = recordBlurBackdrop(cmd, p);
+        // ③ 续画段重开（LOAD 保留场景内容），先合成模糊结果再画后续。
+        beginScenePass(true);
+        if (blurred) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              offscreenEffects_.sdfBlitPipeline());
+            VkViewport viewport{};
+            viewport.width = static_cast<float>(visualExtent.width);
+            viewport.height = static_cast<float>(visualExtent.height);
+            viewport.maxDepth = 1.0f;
+            vkCmdSetViewport(cmd, 0, 1, &viewport);
 
-    // 结束 render pass：同时触发附件布局转换到 PRESENT_SRC_KHR。
+            PushConstants pc{};
+            pc.mvp = mvpScene;
+            pc.effectRect[0] = p.x; pc.effectRect[1] = p.y;
+            pc.effectRect[2] = p.w; pc.effectRect[3] = p.h;
+            pc.effectParams[0] = p.radius; pc.effectParams[1] = 0.0f;
+            pc.effectParams[2] = 2.0f; // SDF mode=2：模糊合成（过渡带外移）
+            pc.effectExtra[0] = 1.0f / visualW; pc.effectExtra[1] = 1.0f / visualH;
+            vkCmdPushConstants(cmd, uiPipeline_.layout(),
+                               VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                               0, sizeof(pc), &pc);
+
+            ui::Rect compClip = ui::Rect::intersect(batch.clip,
+                                                    {0.0f, 0.0f, visualW, visualH});
+            VkRect2D scissor{};
+            scissor.offset = {std::max(0, static_cast<int32_t>(compClip.x)),
+                              std::max(0, static_cast<int32_t>(compClip.y))};
+            scissor.extent = {static_cast<uint32_t>(compClip.w),
+                              static_cast<uint32_t>(compClip.h)};
+            vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+            VkDescriptorSet blurred = offscreenEffects_.pingSet(true);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                    uiPipeline_.layout(), 0, 1, &blurred, 0,
+                                    nullptr);
+            vkCmdDraw(cmd, 6, 1, 0, 0);
+        }
+        segmentBegin = i + 1;
+    }
+    // marker 之后的剩余内容画进场景末段。
+    recordBatchRange(cmd, canvas, segmentBegin, batches.size(), mvpScene,
+                     visualExtent, VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR);
+    vkCmdEndRenderPass(cmd);
+
+    // ④ 场景图转可采样，末段全屏 blit 上屏（旋转补偿在 mvpDirect 里）。
+    barrierImage(cmd, offscreenEffects_.sceneImage(),
+                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT,
+                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+
+    beginMainPass();
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                      offscreenEffects_.blitPipeline());
+    VkViewport viewport{};
+    viewport.width = static_cast<float>(extent.width);
+    viewport.height = static_cast<float>(extent.height);
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    VkRect2D fullScissor{};
+    fullScissor.extent = extent;
+    vkCmdSetScissor(cmd, 0, 1, &fullScissor);
+
+    PushConstants pc{};
+    pc.mvp = mvpDirect;
+    pc.effectRect[0] = 0.0f; pc.effectRect[1] = 0.0f;
+    pc.effectRect[2] = visualW; pc.effectRect[3] = visualH;
+    pc.effectExtra[0] = 1.0f / visualW; pc.effectExtra[1] = 1.0f / visualH;
+    vkCmdPushConstants(cmd, uiPipeline_.layout(),
+                       VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                       0, sizeof(pc), &pc);
+    VkDescriptorSet sceneSet = offscreenEffects_.sceneSet();
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                            uiPipeline_.layout(), 0, 1, &sceneSet, 0, nullptr);
+    vkCmdDraw(cmd, 6, 1, 0, 0);
     vkCmdEndRenderPass(cmd);
 
     // 结束录制，缓冲才可提交。

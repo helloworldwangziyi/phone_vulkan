@@ -18,9 +18,14 @@
 		E57A1100000000000000014A /* swapchain.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004A /* swapchain.cpp */; };
 		E57A1100000000000000014B /* ui_pipeline.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004B /* ui_pipeline.cpp */; };
 		E57A1100000000000000014C /* texture_cache.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000004C /* texture_cache.cpp */; };
+		E57A11000000000000000614 /* offscreen_effects.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000613 /* offscreen_effects.cpp */; };
 		E57A11000000000000000609 /* path.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000607 /* path.cpp */; };
 		E57A1100000000000000060A /* path_demo_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000608 /* path_demo_page.cpp */; };
 		E57A1100000000000000060C /* gesture_demo_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000060B /* gesture_demo_page.cpp */; };
+		E57A11000000000000000610 /* gesture_detector.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000060D /* gesture_detector.cpp */; };
+		E57A11000000000000000611 /* clip_rrect.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000060E /* clip_rrect.cpp */; };
+		E57A11000000000000000612 /* backdrop_blur.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000060F /* backdrop_blur.cpp */; };
+		E57A11000000000000000616 /* effects_demo_page.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000615 /* effects_demo_page.cpp */; };
 		E57A11000000000000000104 /* ui_application.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000013 /* ui_application.cpp */; };
 		E57A11000000000000000105 /* render_view.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000014 /* render_view.cpp */; };
 		E57A11000000000000000106 /* pointer_input.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000015 /* pointer_input.cpp */; };
@@ -105,6 +110,7 @@
 		E57A1100000000000000004A /* swapchain.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = swapchain.cpp; path = ../../../core/src/gpu/swapchain.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000004B /* ui_pipeline.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ui_pipeline.cpp; path = ../../../core/src/gpu/ui_pipeline.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000004C /* texture_cache.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = texture_cache.cpp; path = ../../../core/src/gpu/texture_cache.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000613 /* offscreen_effects.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = offscreen_effects.cpp; path = ../../../core/src/gpu/offscreen_effects.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000013 /* ui_application.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = ui_application.cpp; path = ../../../core/src/ui/ui_application.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000014 /* render_view.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = render_view.cpp; path = ../../../core/src/ui/render_view.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000015 /* pointer_input.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = pointer_input.cpp; path = ../../../core/src/ui/pointer_input.cpp; sourceTree = "<group>"; };
@@ -135,6 +141,10 @@
 		E57A11000000000000000607 /* path.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = path.cpp; path = ../../../core/src/ui/path.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000608 /* path_demo_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = path_demo_page.cpp; path = ../../../samples/app/path_demo_page.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000060B /* gesture_demo_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = gesture_demo_page.cpp; path = ../../../samples/app/gesture_demo_page.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000060D /* gesture_detector.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = gesture_detector.cpp; path = ../../../core/src/ui/controls/gesture_detector.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000060E /* clip_rrect.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = clip_rrect.cpp; path = ../../../core/src/ui/controls/clip_rrect.cpp; sourceTree = "<group>"; };
+		E57A1100000000000000060F /* backdrop_blur.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = backdrop_blur.cpp; path = ../../../core/src/ui/controls/backdrop_blur.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000615 /* effects_demo_page.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = effects_demo_page.cpp; path = ../../../samples/app/effects_demo_page.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001A /* button_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button_control.cpp; path = ../../../core/src/ui/view/button_control.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001B /* flex_layout.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = flex_layout.cpp; path = ../../../core/src/ui/layout/flex_layout.cpp; sourceTree = "<group>"; };
 		E57A1100000000000000001C /* scroll_control.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = scroll_control.cpp; path = ../../../core/src/ui/view/scroll_control.cpp; sourceTree = "<group>"; };
@@ -221,6 +231,7 @@
 				E57A1100000000000000004A /* swapchain.cpp */,
 				E57A1100000000000000004B /* ui_pipeline.cpp */,
 				E57A1100000000000000004C /* texture_cache.cpp */,
+				E57A11000000000000000613 /* offscreen_effects.cpp */,
 				E57A11000000000000000013 /* ui_application.cpp */,
 				E57A11000000000000000014 /* render_view.cpp */,
 				E57A11000000000000000015 /* pointer_input.cpp */,
@@ -242,6 +253,9 @@
 				E57A11000000000000000040 /* basic.cpp */,
 				E57A11000000000000000041 /* button.cpp */,
 				E57A11000000000000000042 /* container.cpp */,
+				E57A1100000000000000060D /* gesture_detector.cpp */,
+				E57A1100000000000000060E /* clip_rrect.cpp */,
+				E57A1100000000000000060F /* backdrop_blur.cpp */,
 				E57A11000000000000000043 /* flex.cpp */,
 				E57A11000000000000000044 /* image.cpp */,
 				E57A11000000000000000045 /* list_view.cpp */,
@@ -267,6 +281,7 @@
 				E57A11000000000000000023 /* home_page.cpp */,
 				E57A11000000000000000608 /* path_demo_page.cpp */,
 				E57A1100000000000000060B /* gesture_demo_page.cpp */,
+				E57A11000000000000000615 /* effects_demo_page.cpp */,
 				E57A11000000000000000024 /* detail_page.cpp */,
 				E57A11000000000000000037 /* watchlist_page.cpp */,
 			);
@@ -409,6 +424,10 @@
 			inputPaths = (
 				"$(SRCROOT)/../../../core/shaders/ui_vertex.vert",
 				"$(SRCROOT)/../../../core/shaders/ui_fragment.frag",
+				"$(SRCROOT)/../../../core/shaders/ui_sdf.vert",
+				"$(SRCROOT)/../../../core/shaders/ui_sdf.frag",
+				"$(SRCROOT)/../../../core/shaders/fullscreen.vert",
+				"$(SRCROOT)/../../../core/shaders/blur.frag",
 				"$(SRCROOT)/../../../cmake/embed_ui_shaders.cmake",
 			);
 			name = "Embed Assets";
@@ -416,11 +435,13 @@
 			);
 			outputPaths = (
 				"$(DERIVED_FILE_DIR)/evk/assets/ui_shaders.h",
+				"$(DERIVED_FILE_DIR)/evk/assets/ui_sdf_shaders.h",
+				"$(DERIVED_FILE_DIR)/evk/assets/blur_shaders.h",
 				"$(DERIVED_FILE_DIR)/evk/assets/font_assets.h",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -e\n# glslc / cmake 多在 /opt/homebrew/bin，Xcode 默认 PATH 不含\nexport PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"\nREPO=\"$SRCROOT/../../..\"\nGLSLC=$(command -v glslc || true)\nif [ -z \"$GLSLC\" ]; then\n    echo \"error: glslc not found; install with 'brew install shaderc'\"\n    exit 1\nfi\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=ui \\\n    -DVERT_SRC=\"$REPO/core/shaders/ui_vertex.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/ui_fragment.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/ui_shaders.h\" \\\n    -P \"$REPO/cmake/embed_ui_shaders.cmake\"\ncmake \\n    -DFONT_LIST=\"kFontRobotoRegular=$REPO/core/assets/fonts/roboto_regular_subset.ttf;kFontNotoSansScRegular=$REPO/core/assets/fonts/notosanssc_regular_subset.ttf;kFontNotoSansScBold=$REPO/core/assets/fonts/notosanssc_bold_subset.ttf\" \\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/font_assets.h\" \\n    -P \"$REPO/cmake/embed_font_assets.cmake\"\n";
+			shellScript = "set -e\n# glslc / cmake 多在 /opt/homebrew/bin，Xcode 默认 PATH 不含\nexport PATH=\"$PATH:/opt/homebrew/bin:/usr/local/bin\"\nREPO=\"$SRCROOT/../../..\"\nGLSLC=$(command -v glslc || true)\nif [ -z \"$GLSLC\" ]; then\n    echo \"error: glslc not found; install with 'brew install shaderc'\"\n    exit 1\nfi\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=ui \\\n    -DVERT_SRC=\"$REPO/core/shaders/ui_vertex.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/ui_fragment.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/ui_shaders.h\" \\\n    -P \"$REPO/cmake/embed_ui_shaders.cmake\"\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=ui_sdf \\\n    -DVERT_SRC=\"$REPO/core/shaders/ui_sdf.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/ui_sdf.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/ui_sdf_shaders.h\" \\\n    -P \"$REPO/cmake/embed_ui_shaders.cmake\"\ncmake \\\n    -DGLSLC_EXECUTABLE=\"$GLSLC\" \\\n    -DSHADER_NAME=blur \\\n    -DVERT_SRC=\"$REPO/core/shaders/fullscreen.vert\" \\\n    -DFRAG_SRC=\"$REPO/core/shaders/blur.frag\" \\\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/blur_shaders.h\" \\\n    -P \"$REPO/cmake/embed_ui_shaders.cmake\"\ncmake \\n    -DFONT_LIST=\"kFontRobotoRegular=$REPO/core/assets/fonts/roboto_regular_subset.ttf;kFontNotoSansScRegular=$REPO/core/assets/fonts/notosanssc_regular_subset.ttf;kFontNotoSansScBold=$REPO/core/assets/fonts/notosanssc_bold_subset.ttf\" \\n    -DOUTPUT_HEADER=\"$DERIVED_FILE_DIR/evk/assets/font_assets.h\" \\n    -P \"$REPO/cmake/embed_font_assets.cmake\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -440,6 +461,7 @@
 				E57A1100000000000000014A /* swapchain.cpp in Sources */,
 				E57A1100000000000000014B /* ui_pipeline.cpp in Sources */,
 				E57A1100000000000000014C /* texture_cache.cpp in Sources */,
+				E57A11000000000000000614 /* offscreen_effects.cpp in Sources */,
 				E57A11000000000000000609 /* path.cpp in Sources */,
 				E57A11000000000000000104 /* ui_application.cpp in Sources */,
 				E57A11000000000000000105 /* render_view.cpp in Sources */,
@@ -461,6 +483,9 @@
 				E57A11000000000000000140 /* basic.cpp in Sources */,
 				E57A11000000000000000141 /* button.cpp in Sources */,
 				E57A11000000000000000142 /* container.cpp in Sources */,
+				E57A11000000000000000610 /* gesture_detector.cpp in Sources */,
+				E57A11000000000000000611 /* clip_rrect.cpp in Sources */,
+				E57A11000000000000000612 /* backdrop_blur.cpp in Sources */,
 				E57A11000000000000000143 /* flex.cpp in Sources */,
 				E57A11000000000000000144 /* image.cpp in Sources */,
 				E57A11000000000000000145 /* list_view.cpp in Sources */,
@@ -478,6 +503,7 @@
 				E57A11000000000000000118 /* home_page.cpp in Sources */,
 				E57A1100000000000000060A /* path_demo_page.cpp in Sources */,
 				E57A1100000000000000060C /* gesture_demo_page.cpp in Sources */,
+				E57A11000000000000000616 /* effects_demo_page.cpp in Sources */,
 				E57A11000000000000000119 /* detail_page.cpp in Sources */,
 				E57A11000000000000000126 /* watchlist_page.cpp in Sources */,
 				E57A11000000000000000120 /* ios_shell_bridge.mm in Sources */,

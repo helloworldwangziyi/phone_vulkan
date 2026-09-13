@@ -29,6 +29,11 @@ void Container::updateRenderObject(View& view) const {
     view.onClick = onTap
         ? [callback = onTap](const ClickEvent&) { callback(); }
         : std::function<void(const ClickEvent&)>{};
+    // 阴影透传：radius 未显式指定时沿用 cornerRadius（圆角卡片阴影贴边）。
+    view.shadow = shadow;
+    if (view.shadow.radius < 0.0f) {
+        view.shadow.radius = cornerRadius;
+    }
     if (decorated) {
         view.painter = [fill = color, radius = cornerRadius, border = borderColor,
                         borderWidth = borderWidth, user = painter](PaintContext& paint) {

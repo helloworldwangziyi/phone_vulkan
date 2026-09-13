@@ -399,6 +399,13 @@ View* View::hitTest(float px, float py) {
             return hit;
         }
     }
+    // 无交互面的视图对命中透明（Flutter 的 deferToChild 语义）：返回
+    // nullptr 让命中穿透到下层兄弟——Stack 里上层的 Center/包装层不再
+    // 遮挡下层内容。交互面 = 任一指针/手势回调或覆写的接收接口。
+    if (!acceptsPointerInput() && !acceptsPanInput() && !acceptsScaleInput() &&
+        !onClick && !onDoubleTap && !onLongPress && !onScale && !onPan) {
+        return nullptr;
+    }
     return this;
 }
 
@@ -425,9 +432,25 @@ void View::paint(Canvas& canvas, const Rect& parentClip) {
         return;
     }
     const Rect bounds = actualRect();
+    // 阴影在收窄 clip 之前画：用父 clip 做 scissor，阴影外沿不被自身
+    // 矩形裁掉；z 序上先于我及我之上的内容、晚于之前的兄弟——正是
+    // 「阴影垫在控件下面」的语义。
+    if (shadow.color != 0) {
+        canvas.drawRoundShadow(bounds, shadow.radius, shadow.dx, shadow.dy,
+                               shadow.blur, Color::rgba(shadow.color), parentClip);
+    }
     const Rect clip = Rect::intersect(parentClip, bounds);
     if (clip.w <= 0.0f || clip.h <= 0.0f) {
         return;
+    }
+    // 背景模糊标记：把「我之下」的内容离屏模糊后合成回本区域
+    // （圆角取 clipRadius）；渲染层遇到该标记批时切离屏通道。
+    if (backdropBlurSigma > 0.0f) {
+        canvas.blurBackdrop(bounds, clipRadius, backdropBlurSigma, clip);
+    }
+    const bool roundClip = clipRadius > 0.0f;
+    if (roundClip) {
+        canvas.pushRoundClip(bounds, clipRadius);
     }
     if (hasBackground) {
         canvas.drawRect(bounds, clip, background);
@@ -438,6 +461,9 @@ void View::paint(Canvas& canvas, const Rect& parentClip) {
     }
     for (auto& child : children) {
         child->paint(canvas, clip);
+    }
+    if (roundClip) {
+        canvas.popClip();
     }
 }
 

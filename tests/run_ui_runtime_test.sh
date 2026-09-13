@@ -47,7 +47,9 @@ done
     "$repo_root/core/src/ui/layout/flex_layout.cpp" \
     "$repo_root/core/src/ui/widget_tree.cpp" \
     "$repo_root/core/src/ui/controls/basic.cpp" \
+    "$repo_root/core/src/ui/controls/backdrop_blur.cpp" \
     "$repo_root/core/src/ui/controls/button.cpp" \
+    "$repo_root/core/src/ui/controls/clip_rrect.cpp" \
     "$repo_root/core/src/ui/controls/container.cpp" \
     "$repo_root/core/src/ui/controls/flex.cpp" \
     "$repo_root/core/src/ui/controls/gesture_detector.cpp" \

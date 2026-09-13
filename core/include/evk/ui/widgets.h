@@ -11,7 +11,9 @@
 #include "evk/ui/widget_tree.h"
 
 #include "evk/ui/controls/basic.h"
+#include "evk/ui/controls/backdrop_blur.h"
 #include "evk/ui/controls/button.h"
+#include "evk/ui/controls/clip_rrect.h"
 #include "evk/ui/controls/container.h"
 #include "evk/ui/controls/flex.h"
 #include "evk/ui/controls/gesture_detector.h"

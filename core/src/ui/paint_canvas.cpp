@@ -25,27 +25,97 @@ constexpr float kTwoPi = kPi * 2.0f;
 void Canvas::clear() {
     vertices_.clear();
     batches_.clear();
+    effectParams_.clear();
+    roundClipStack_.clear();
+    hasBlur_ = false;
 }
 
 /**
- * @brief 追加顶点并按 (clip, 纹理) 合批：连续且 clip、纹理都相同的绘制
+ * @brief 追加顶点并按 (clip, 纹理, 效果) 合批：连续且三者都相同的绘制
  * 合并进同一个 Batch，GPU 只需设一次 scissor、绑一次纹理即可画完整个批次。
  *
  * clip 或纹理任一变化才开新 Batch；顶点始终顺序追加进全局顶点数组，
  * Batch 只记录 [firstVertex, vertexCount) 区间，不复制数据。
+ * 圆角裁剪栈非空时普通绘制自动升级为 kSdf 批（栈顶参数，mode=1）。
  */
 void Canvas::append(const Rect& clip, TextureId textureId, const UiVertex* verts,
                     size_t count) {
+    if (roundClipStack_.empty()) {
+        appendEffect(clip, textureId, verts, count, BatchEffect::kNone, 0);
+    } else {
+        appendEffect(clip, textureId, verts, count, BatchEffect::kSdf,
+                     roundClipStack_.back());
+    }
+}
+
+void Canvas::appendEffect(const Rect& clip, TextureId textureId,
+                          const UiVertex* verts, size_t count,
+                          BatchEffect effect, uint32_t paramsIndex) {
     if (count == 0) {
         return;
     }
     if (batches_.empty() || !sameClip(batches_.back().clip, clip) ||
-        batches_.back().textureId != textureId) {
+        batches_.back().textureId != textureId ||
+        batches_.back().effect != effect ||
+        (effect != BatchEffect::kNone &&
+         batches_.back().paramsIndex != paramsIndex)) {
         batches_.push_back(Batch{clip, textureId,
-                                 static_cast<uint32_t>(vertices_.size()), 0});
+                                 static_cast<uint32_t>(vertices_.size()), 0,
+                                 effect, paramsIndex});
     }
     vertices_.insert(vertices_.end(), verts, verts + count);
     batches_.back().vertexCount += static_cast<uint32_t>(count);
+}
+
+void Canvas::drawRoundShadow(const Rect& r, float radius, float dx, float dy,
+                             float blur, Color c, const Rect& clip) {
+    if (c.a <= 0.0f || r.w <= 0.0f || r.h <= 0.0f) {
+        return;
+    }
+    // 阴影形状 = 源矩形平移 (dx, dy)；quad 向外扩出羽化余量。
+    const Rect shape = {r.x + dx, r.y + dy, r.w, r.h};
+    const float extent = std::max(blur, 1.0f) + 1.0f;
+    const Rect quad = {shape.x - extent, shape.y - extent,
+                       shape.w + extent * 2.0f, shape.h + extent * 2.0f};
+    const UiVertex v[6] = {
+        {quad.x,         quad.y,         c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {quad.x + quad.w, quad.y,        c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {quad.x + quad.w, quad.y + quad.h, c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {quad.x,         quad.y,         c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {quad.x + quad.w, quad.y + quad.h, c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {quad.x,         quad.y + quad.h, c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+    };
+    effectParams_.push_back(
+        EffectParams{shape.x, shape.y, shape.w, shape.h, radius, blur, 0.0f, 0.0f});
+    appendEffect(clip, 0, v, 6, BatchEffect::kSdf,
+                 static_cast<uint32_t>(effectParams_.size() - 1));
+}
+
+void Canvas::pushRoundClip(const Rect& r, float radius) {
+    effectParams_.push_back(
+        EffectParams{r.x, r.y, r.w, r.h, radius, 0.0f, 1.0f, 0.0f});
+    roundClipStack_.push_back(static_cast<uint32_t>(effectParams_.size() - 1));
+}
+
+void Canvas::popClip() {
+    if (!roundClipStack_.empty()) {
+        roundClipStack_.pop_back();
+    }
+}
+
+void Canvas::blurBackdrop(const Rect& region, float radius, float sigma,
+                          const Rect& clip) {
+    if (region.w <= 0.0f || region.h <= 0.0f || sigma <= 0.0f) {
+        return;
+    }
+    effectParams_.push_back(
+        EffectParams{region.x, region.y, region.w, region.h, radius, sigma,
+                     2.0f, 0.0f});
+    // 0 顶点标记批：渲染层遇到它时把已绘内容离屏模糊合成回 region。
+    batches_.push_back(Batch{clip, 0, static_cast<uint32_t>(vertices_.size()), 0,
+                             BatchEffect::kBlur,
+                             static_cast<uint32_t>(effectParams_.size() - 1)});
+    hasBlur_ = true;
 }
 
 /**
@@ -179,7 +249,8 @@ void Canvas::drawEllipse(float cx, float cy, float rx, float ry, const Rect& cli
 
 void Canvas::drawRoundRect(const Rect& r, float radius, const Rect& clip, Color c,
                            int segments) {
-    if (r.w <= 0.0f || r.h <= 0.0f) {
+    (void)segments; // SDF 解析边缘，角部分段数不再使用（签名兼容保留）
+    if (r.w <= 0.0f || r.h <= 0.0f || c.a <= 0.0f) {
         return;
     }
     // 半径钳到宽高一半；退化成直角就走矩形。
@@ -189,40 +260,25 @@ void Canvas::drawRoundRect(const Rect& r, float radius, const Rect& clip, Color 
         drawRect(r, clip, c);
         return;
     }
-    if (segments <= 0) {
-        segments = kDefaultCornerSegments;
-    }
-    // 十字分解：竖矩形 + 横矩形 + 四角四分之一圆扇。
-    drawRect({r.x + radius, r.y, r.w - radius * 2.0f, r.h}, clip, c);
-    drawRect({r.x, r.y + radius, radius, r.h - radius * 2.0f}, clip, c);
-    drawRect({r.x + r.w - radius, r.y + radius, radius, r.h - radius * 2.0f}, clip, c);
-    const float centers[4][2] = {
-        {r.x + radius, r.y + radius},
-        {r.x + r.w - radius, r.y + radius},
-        {r.x + r.w - radius, r.y + r.h - radius},
-        {r.x + radius, r.y + r.h - radius},
+    // SDF 解析填充：一张覆盖矩形本体的 quad，边缘由片元距离场算覆盖率
+    // （mode=1：内 1 外 0、1px 抗锯齿过渡）——不依赖 MSAA，顶点仅 6 个。
+    const UiVertex v[6] = {
+        {r.x,       r.y,       c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {r.x + r.w, r.y,       c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {r.x + r.w, r.y + r.h, c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {r.x,       r.y,       c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {r.x + r.w, r.y + r.h, c.r, c.g, c.b, c.a, 0.0f, 0.0f},
+        {r.x,       r.y + r.h, c.r, c.g, c.b, c.a, 0.0f, 0.0f},
     };
-    // 四个角各占四分之一圆：左上 [π, 3π/2]、右上 [3π/2, 2π]、
-    // 右下 [0, π/2]、左下 [π/2, π]（屏幕坐标 y 向下）。
-    const float starts[4] = {kPi, kPi * 1.5f, 0.0f, kPi * 0.5f};
-    for (int corner = 0; corner < 4; ++corner) {
-        const float cx = centers[corner][0];
-        const float cy = centers[corner][1];
-        for (int i = 0; i < segments; ++i) {
-            const float a0 = starts[corner] +
-                             (kPi * 0.5f) * static_cast<float>(i) / segments;
-            const float a1 = starts[corner] +
-                             (kPi * 0.5f) * static_cast<float>(i + 1) / segments;
-            const UiVertex v[3] = {
-                {cx, cy, c.r, c.g, c.b, c.a, 0.0f, 0.0f},
-                {cx + std::cos(a0) * radius, cy + std::sin(a0) * radius,
-                 c.r, c.g, c.b, c.a, 0.0f, 0.0f},
-                {cx + std::cos(a1) * radius, cy + std::sin(a1) * radius,
-                 c.r, c.g, c.b, c.a, 0.0f, 0.0f},
-            };
-            append(clip, 0, v, 3);
-        }
+    if (!roundClipStack_.empty()) {
+        // 圆角裁剪栈内：栈顶 clip 参数优先（嵌套效果取外层遮罩）。
+        append(clip, 0, v, 6);
+        return;
     }
+    effectParams_.push_back(
+        EffectParams{r.x, r.y, r.w, r.h, radius, 0.0f, 1.0f, 0.0f});
+    appendEffect(clip, 0, v, 6, BatchEffect::kSdf,
+                 static_cast<uint32_t>(effectParams_.size() - 1));
 }
 
 void Canvas::drawArc(float cx, float cy, float radius, float thickness,
