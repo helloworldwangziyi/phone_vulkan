@@ -47,7 +47,12 @@ public final class NativeBridge {
     }
 
     // 引擎→平台出向的落点（native 经 JNI 回调进来）；未注册时返回空串。
+    // "a11y/" 前缀是无障碍语义通道（core 语义树快照），平台库内部自洽处理，
+    // 不占用 App 的 PlatformHandler；其余方法照旧转发给 App。
     public static String onPlatformInvoke(String method, String args) {
+        if (method != null && method.startsWith("a11y/")) {
+            return SemanticsA11yBridge.onInvoke(method, args);
+        }
         PlatformHandler handler = sPlatformHandler;
         return handler != null ? handler.onInvoke(method, args) : "";
     }

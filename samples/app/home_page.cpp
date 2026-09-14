@@ -12,6 +12,7 @@
 #include "app_fonts.h"
 #include "app_images.h"
 #include "app_theme.h"
+#include "theme_scope.h"
 #include "detail_page.h"
 #include "effects_demo_page.h"
 #include "gesture_demo_page.h"
@@ -33,6 +34,63 @@ evk::ui::NavigationStyle navigationStyle(const AppTheme& theme) {
         theme.surface,
         theme.backArrow,
     };
+}
+
+/// 读取 ThemeScope 的演示盒子：build 时登记依赖，作用域换色时精确重建。
+class ScopedThemeBox final : public evk::ui::StatelessWidget {
+public:
+    explicit ScopedThemeBox(std::function<void()> onTap) : onTap_(std::move(onTap)) {}
+
+    std::unique_ptr<evk::ui::Widget> build(evk::ui::BuildContext& context) const override {
+        const ThemeScope& scope = ThemeScope::of(context);
+        const uint32_t labelColor = scope.textColor();
+        return evk::ui::semantics(
+            "Inherited 主题演示（点击切换）",
+            evk::ui::SemanticsRole::kButton,
+            evk::ui::container(
+                scope.boxColor(),
+                onTap_,
+                [labelColor](evk::ui::PaintContext& paint) {
+                    const evk::ui::Size size = paint.size();
+                    const char* label = "Inherited 主题（点击切换）";
+                    const float fontSize = appCalcHeight(30.0f);
+                    float textWidth = 0.0f;
+                    float textHeight = 0.0f;
+                    evk::ui::FontEngine::instance().measureText(
+                        label, fontSize, appFonts::cjk(), &textWidth, &textHeight);
+                    paint.drawText(label, appFonts::cjk(),
+                                   (size.width - textWidth) * 0.5f,
+                                   (size.height - textHeight) * 0.5f,
+                                   fontSize, labelColor);
+                }));
+    }
+
+private:
+    std::function<void()> onTap_;
+};
+
+/// 树内依赖下发演示：State 持有 dark 标志，ThemeScope 把它沿树下发。
+class InheritedThemeDemo final : public evk::ui::StatefulWidget {
+public:
+    std::unique_ptr<evk::ui::State> createState() const override;
+};
+
+class InheritedThemeDemoState final : public evk::ui::State {
+public:
+    std::unique_ptr<evk::ui::Widget> build(evk::ui::BuildContext&) override {
+        return evk::ui::makeWidget<ThemeScope>(
+            dark_,
+            evk::ui::makeWidget<ScopedThemeBox>([this] {
+                setState([this] { dark_ = !dark_; });
+            }));
+    }
+
+private:
+    bool dark_ = true;
+};
+
+inline std::unique_ptr<evk::ui::State> InheritedThemeDemo::createState() const {
+    return std::make_unique<InheritedThemeDemoState>();
 }
 
 class HomePageState final : public evk::ui::State {
@@ -82,30 +140,44 @@ public:
                             currentTheme.panelGradient[2]);
                     })));
 
+        auto detailButtonWidget = std::make_unique<Button>(
+            ButtonStyle{theme.primary, theme.primaryPressed, theme.primaryDisabled},
+            [this] {
+                context().navigator().push(
+                    makeWidget<DetailPage>(detailCount_++), true);
+            });
+        detailButtonWidget->semanticsLabel = "详情页演示";
         auto detailButton = padding(
             EdgeInsets::only(0.0f, appCalcHeight(60.0f), 0.0f, 0.0f),
             center(sizedBox(
                 appCalcWidth(400.0f),
                 appCalcHeight(140.0f),
-                button(
-                    {theme.primary, theme.primaryPressed, theme.primaryDisabled},
-                    [this] {
-                        context().navigator().push(
-                            makeWidget<DetailPage>(detailCount_++), true);
-                    }))));
+                std::move(detailButtonWidget))));
 
+        auto themeButtonWidget = std::make_unique<Button>(
+            ButtonStyle{theme.secondary, theme.secondaryPressed, theme.primaryDisabled},
+            [this] {
+                appThemeToggle();
+                context().navigator().setStyle(navigationStyle(appTheme()));
+                EventBus::instance().emit(kEventThemeChanged);
+            });
+        themeButtonWidget->semanticsLabel = "切换主题";
         auto themeButton = padding(
             EdgeInsets::only(0.0f, appCalcHeight(60.0f), 0.0f, 0.0f),
             center(sizedBox(
                 appCalcWidth(400.0f),
                 appCalcHeight(140.0f),
-                button(
-                    {theme.secondary, theme.secondaryPressed, theme.primaryDisabled},
-                    [this] {
-                        appThemeToggle();
-                        context().navigator().setStyle(navigationStyle(appTheme()));
-                        EventBus::instance().emit(kEventThemeChanged);
-                    }))));
+                std::move(themeButtonWidget))));
+
+        /// ---- 树内依赖下发演示：ThemeScope 局部换肤 ----
+        /// 与 themeButton 的 EventBus 广播换肤对照：色值经 InheritedWidget
+        /// 沿树下发，点击只精确重建登记了依赖的这个盒子。
+        auto inheritedDemo = padding(
+            EdgeInsets::only(0.0f, appCalcHeight(60.0f), 0.0f, 0.0f),
+            center(sizedBox(
+                appCalcWidth(400.0f),
+                appCalcHeight(140.0f),
+                makeWidget<InheritedThemeDemo>())));
 
         /// 蓝湖「自选」图纸复刻页入口（带文字标签，区别于上面两个色块按钮）。
         auto watchlistEntry = padding(
@@ -113,26 +185,29 @@ public:
             center(sizedBox(
                 appCalcWidth(400.0f),
                 appCalcHeight(140.0f),
-                container(
-                    theme.accent,
-                    [this] {
-                        context().navigator().push(
-                            makeWidget<WatchlistPage>(), true);
-                    },
-                    [](PaintContext& paint) {
-                        const Size size = paint.size();
-                        const char* label = "自选行情（蓝湖复刻）";
-                        const float fontSize = appCalcHeight(36.0f);
-                        float textWidth = 0.0f;
-                        float textHeight = 0.0f;
-                        evk::ui::FontEngine::instance().measureText(
-                            label, fontSize, appFonts::cjk(), &textWidth,
-                            &textHeight);
-                        paint.drawText(label, appFonts::cjk(),
-                                       (size.width - textWidth) * 0.5f,
-                                       (size.height - textHeight) * 0.5f,
-                                       fontSize, 0xFFFFFFFF);
-                    }))));
+                semantics(
+                    "自选行情（蓝湖复刻）",
+                    SemanticsRole::kButton,
+                    container(
+                        theme.accent,
+                        [this] {
+                            context().navigator().push(
+                                makeWidget<WatchlistPage>(), true);
+                        },
+                        [](PaintContext& paint) {
+                            const Size size = paint.size();
+                            const char* label = "自选行情（蓝湖复刻）";
+                            const float fontSize = appCalcHeight(36.0f);
+                            float textWidth = 0.0f;
+                            float textHeight = 0.0f;
+                            evk::ui::FontEngine::instance().measureText(
+                                label, fontSize, appFonts::cjk(), &textWidth,
+                                &textHeight);
+                            paint.drawText(label, appFonts::cjk(),
+                                           (size.width - textWidth) * 0.5f,
+                                           (size.height - textHeight) * 0.5f,
+                                           fontSize, 0xFFFFFFFF);
+                        })))));
 
         /// 矢量路径（Path）演示页入口：贝塞尔曲线填充/描边 + 凹多边形三角化。
         auto pathDemoEntry = padding(
@@ -140,26 +215,29 @@ public:
             center(sizedBox(
                 appCalcWidth(400.0f),
                 appCalcHeight(140.0f),
-                container(
-                    theme.secondary,
-                    [this] {
-                        context().navigator().push(
-                            makeWidget<PathDemoPage>(), true);
-                    },
-                    [](PaintContext& paint) {
-                        const Size size = paint.size();
-                        const char* label = "矢量路径演示（Path）";
-                        const float fontSize = appCalcHeight(36.0f);
-                        float textWidth = 0.0f;
-                        float textHeight = 0.0f;
-                        evk::ui::FontEngine::instance().measureText(
-                            label, fontSize, appFonts::cjk(), &textWidth,
-                            &textHeight);
-                        paint.drawText(label, appFonts::cjk(),
-                                       (size.width - textWidth) * 0.5f,
-                                       (size.height - textHeight) * 0.5f,
-                                       fontSize, 0xFFFFFFFF);
-                    }))));
+                semantics(
+                    "矢量路径演示（Path）",
+                    SemanticsRole::kButton,
+                    container(
+                        theme.secondary,
+                        [this] {
+                            context().navigator().push(
+                                makeWidget<PathDemoPage>(), true);
+                        },
+                        [](PaintContext& paint) {
+                            const Size size = paint.size();
+                            const char* label = "矢量路径演示（Path）";
+                            const float fontSize = appCalcHeight(36.0f);
+                            float textWidth = 0.0f;
+                            float textHeight = 0.0f;
+                            evk::ui::FontEngine::instance().measureText(
+                                label, fontSize, appFonts::cjk(), &textWidth,
+                                &textHeight);
+                            paint.drawText(label, appFonts::cjk(),
+                                           (size.width - textWidth) * 0.5f,
+                                           (size.height - textHeight) * 0.5f,
+                                           fontSize, 0xFFFFFFFF);
+                        })))));
 
         /// 手势演示页入口：tap / double tap / long press / scale 可视化。
         auto gestureDemoEntry = padding(
@@ -167,26 +245,29 @@ public:
             center(sizedBox(
                 appCalcWidth(400.0f),
                 appCalcHeight(140.0f),
-                container(
-                    theme.primary,
-                    [this] {
-                        context().navigator().push(
-                            makeWidget<GestureDemoPage>(), true);
-                    },
-                    [](PaintContext& paint) {
-                        const Size size = paint.size();
-                        const char* label = "手势演示（Gesture）";
-                        const float fontSize = appCalcHeight(36.0f);
-                        float textWidth = 0.0f;
-                        float textHeight = 0.0f;
-                        evk::ui::FontEngine::instance().measureText(
-                            label, fontSize, appFonts::cjk(), &textWidth,
-                            &textHeight);
-                        paint.drawText(label, appFonts::cjk(),
-                                       (size.width - textWidth) * 0.5f,
-                                       (size.height - textHeight) * 0.5f,
-                                       fontSize, 0xFFFFFFFF);
-                    }))));
+                semantics(
+                    "手势演示（Gesture）",
+                    SemanticsRole::kButton,
+                    container(
+                        theme.primary,
+                        [this] {
+                            context().navigator().push(
+                                makeWidget<GestureDemoPage>(), true);
+                        },
+                        [](PaintContext& paint) {
+                            const Size size = paint.size();
+                            const char* label = "手势演示（Gesture）";
+                            const float fontSize = appCalcHeight(36.0f);
+                            float textWidth = 0.0f;
+                            float textHeight = 0.0f;
+                            evk::ui::FontEngine::instance().measureText(
+                                label, fontSize, appFonts::cjk(), &textWidth,
+                                &textHeight);
+                            paint.drawText(label, appFonts::cjk(),
+                                           (size.width - textWidth) * 0.5f,
+                                           (size.height - textHeight) * 0.5f,
+                                           fontSize, 0xFFFFFFFF);
+                        })))));
 
         /// 渲染特效演示页入口：阴影 / 圆角裁剪 / 背景模糊。
         auto effectsDemoEntry = padding(
@@ -194,26 +275,29 @@ public:
             center(sizedBox(
                 appCalcWidth(400.0f),
                 appCalcHeight(140.0f),
-                container(
-                    theme.accent,
-                    [this] {
-                        context().navigator().push(
-                            makeWidget<EffectsDemoPage>(), true);
-                    },
-                    [](PaintContext& paint) {
-                        const Size size = paint.size();
-                        const char* label = "渲染特效（Effects）";
-                        const float fontSize = appCalcHeight(36.0f);
-                        float textWidth = 0.0f;
-                        float textHeight = 0.0f;
-                        evk::ui::FontEngine::instance().measureText(
-                            label, fontSize, appFonts::cjk(), &textWidth,
-                            &textHeight);
-                        paint.drawText(label, appFonts::cjk(),
-                                       (size.width - textWidth) * 0.5f,
-                                       (size.height - textHeight) * 0.5f,
-                                       fontSize, 0xFFFFFFFF);
-                    }))));
+                semantics(
+                    "渲染特效（Effects）",
+                    SemanticsRole::kButton,
+                    container(
+                        theme.accent,
+                        [this] {
+                            context().navigator().push(
+                                makeWidget<EffectsDemoPage>(), true);
+                        },
+                        [](PaintContext& paint) {
+                            const Size size = paint.size();
+                            const char* label = "渲染特效（Effects）";
+                            const float fontSize = appCalcHeight(36.0f);
+                            float textWidth = 0.0f;
+                            float textHeight = 0.0f;
+                            evk::ui::FontEngine::instance().measureText(
+                                label, fontSize, appFonts::cjk(), &textWidth,
+                                &textHeight);
+                            paint.drawText(label, appFonts::cjk(),
+                                           (size.width - textWidth) * 0.5f,
+                                           (size.height - textHeight) * 0.5f,
+                                           fontSize, 0xFFFFFFFF);
+                        })))));
 
         /// 平台通道演示入口：点击经 invokePlatform 出向同步调平台壳取
         /// deviceInfo，返回串存进状态并重绘；平台未实现时显示兜底文案。
@@ -336,6 +420,7 @@ public:
             std::move(panel),
             std::move(detailButton),
             std::move(themeButton),
+            std::move(inheritedDemo),
             std::move(watchlistEntry),
             std::move(pathDemoEntry),
             std::move(gestureDemoEntry),

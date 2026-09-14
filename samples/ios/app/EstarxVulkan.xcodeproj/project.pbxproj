@@ -45,7 +45,10 @@
 		E57A11000000000000000125 /* app_images.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A1100000000000000002A /* app_images.cpp */; };
 		E57A11000000000000000123 /* app_fonts.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000028 /* app_fonts.cpp */; };
 		E57A11000000000000000110 /* widget_tree.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000019 /* widget_tree.cpp */; };
+		E57A11000000000000000170 /* inherited_widget.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000070 /* inherited_widget.cpp */; };
 		E57A11000000000000000171 /* platform_channel.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000071 /* platform_channel.cpp */; };
+		E57A11000000000000000172 /* semantics.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000072 /* semantics.cpp */; };
+		E57A11000000000000000173 /* semantics_widget.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000073 /* semantics_widget.cpp */; };
 		E57A11000000000000000140 /* basic.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000040 /* basic.cpp */; };
 		E57A11000000000000000141 /* button.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000041 /* button.cpp */; };
 		E57A11000000000000000142 /* container.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000042 /* container.cpp */; };
@@ -131,7 +134,10 @@
 		E57A1100000000000000002A /* app_images.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_images.cpp; path = ../../../samples/app/app_images.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000028 /* app_fonts.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = app_fonts.cpp; path = ../../../samples/app/app_fonts.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000019 /* widget_tree.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = widget_tree.cpp; path = ../../../core/src/ui/widget_tree.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000070 /* inherited_widget.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = inherited_widget.cpp; path = ../../../core/src/ui/inherited_widget.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000071 /* platform_channel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = platform_channel.cpp; path = ../../../core/src/platform_channel.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000072 /* semantics.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = semantics.cpp; path = ../../../core/src/ui/semantics.cpp; sourceTree = "<group>"; };
+		E57A11000000000000000073 /* semantics_widget.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = semantics_widget.cpp; path = ../../../core/src/ui/controls/semantics_widget.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000040 /* basic.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = basic.cpp; path = ../../../core/src/ui/controls/basic.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000041 /* button.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = button.cpp; path = ../../../core/src/ui/controls/button.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000042 /* container.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = container.cpp; path = ../../../core/src/ui/controls/container.cpp; sourceTree = "<group>"; };
@@ -252,7 +258,10 @@
 				E57A11000000000000000506 /* eastasianwidthdef.c */,
 				E57A11000000000000000029 /* texture_store.cpp */,
 				E57A11000000000000000019 /* widget_tree.cpp */,
+				E57A11000000000000000070 /* inherited_widget.cpp */,
 				E57A11000000000000000071 /* platform_channel.cpp */,
+				E57A11000000000000000072 /* semantics.cpp */,
+				E57A11000000000000000073 /* semantics_widget.cpp */,
 				E57A11000000000000000040 /* basic.cpp */,
 				E57A11000000000000000041 /* button.cpp */,
 				E57A11000000000000000042 /* container.cpp */,
@@ -483,7 +492,10 @@
 				E57A11000000000000000606 /* eastasianwidthdef.c in Sources */,
 				E57A11000000000000000124 /* texture_store.cpp in Sources */,
 				E57A11000000000000000110 /* widget_tree.cpp in Sources */,
+				E57A11000000000000000170 /* inherited_widget.cpp in Sources */,
 				E57A11000000000000000171 /* platform_channel.cpp in Sources */,
+				E57A11000000000000000172 /* semantics.cpp in Sources */,
+				E57A11000000000000000173 /* semantics_widget.cpp in Sources */,
 				E57A11000000000000000140 /* basic.cpp in Sources */,
 				E57A11000000000000000141 /* button.cpp in Sources */,
 				E57A11000000000000000142 /* container.cpp in Sources */,

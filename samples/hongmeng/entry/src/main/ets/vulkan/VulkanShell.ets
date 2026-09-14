@@ -1,5 +1,9 @@
 import displaySync from '@ohos.graphics.displaySync';
+import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
+
+const TAG = 'estarx-vulkan';
+const DOMAIN = 0x0000;
 
 /**
  * native 模块句柄：函数由 platform/hongmeng/cpp/hongmeng_napi_bridge.cpp 导出。
@@ -76,12 +80,28 @@ export struct VulkanShell {
         // 平台通道出向注入：引擎 invokePlatform("deviceInfo") 的落点。
         // 返回设备信息常量串——不引 deviceInfo kit 依赖，保持零权限；
         // 未匹配的方法返回空串（= 未实现）。
+        // 无障碍语义通道（"a11y/" 前缀）：本样本只验证数据通道——打日志统计
+        // 节点数；a11y 方法不向 App 转发，在此自洽消化。
         g_bridge.setPlatformInvoker((method: string, args: string): string => {
           if (method === 'deviceInfo') {
             return 'HarmonyOS device';
           }
+          if (method === 'a11y/update') {
+            // 语义树快照（格式见 core/src/ui/semantics.cpp 的 serializeJson）。
+            // 节点数按 "id" 键出现次数粗算：core 保证每个节点恰好一个 "id"
+            // 字段；change=-1（关闭无障碍推的空树）时计数为 0，天然覆盖。
+            const nodeCount: number = args.split('"id"').length - 1;
+            hilog.info(DOMAIN, TAG, 'a11y/update: %{public}d nodes, %{public}d bytes',
+              nodeCount, args.length);
+            return '';
+          }
           return '';
         });
+        // 无障碍开关钩子（对应 Android 的 TalkBack 监听 / iOS 的 VoiceOver
+        // 通知）：此处应监听系统无障碍开关变化，并在变化时调用
+        // g_bridge.dispatchPlatformCall('a11y/enabled', enabled ? '1' : '0')，
+        // 引擎就绪（onLoad 走到这里）后再推一次初始态。为不引新 kit 依赖
+        // 暂不接入，数据通道已由上面的 a11y/update 分支验证。
         // native 句柄就绪：补报一次当前安全区，并启动帧节奏。
         this.reportSafeArea();
         this.startFrames();

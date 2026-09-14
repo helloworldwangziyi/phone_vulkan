@@ -13,11 +13,24 @@ static const int32_t kActionMove = 2;
 static const int32_t kActionCancel = 3;
 
 // 平台通道演示：引擎 invokePlatform("deviceInfo") 的出向落点，返回机型串。
+// 无障碍语义通道（"a11y/" 前缀）：本样本只验证数据通道——打日志统计节点数，
+// 不做 UIAccessibility 全对接；a11y 方法不占用 deviceInfo 分支。
 // 静态 NSString 持有返回串，保证指针在本次调用期间有效（桥约定：core 立即拷贝）。
 static const char* samplePlatformInvoke(const char* method, const char* args) {
     static NSString* deviceInfo = [[UIDevice currentDevice] model];
     if (strcmp(method, "deviceInfo") == 0) {
         return deviceInfo.UTF8String;
+    }
+    if (strcmp(method, "a11y/update") == 0) {
+        // 语义树快照（格式见 core/src/ui/semantics.cpp 的 serializeJson）。
+        // 节点数按 "id" 键的出现次数粗算：core 序列化保证每个节点恰好一个
+        // "id" 字段；change=-1（关闭无障碍推的空树）时计数为 0，天然覆盖。
+        NSString* json = @(args);
+        const NSUInteger nodeCount =
+            [json componentsSeparatedByString:@"\"id\""].count - 1;
+        NSLog(@"a11y/update: %lu nodes, %lu bytes",
+              (unsigned long)nodeCount, (unsigned long)json.length);
+        return "";
     }
     return "";
 }
@@ -97,6 +110,14 @@ static const char* samplePlatformInvoke(const char* method, const char* args) {
            selector:@selector(onEnterForeground)
                name:UIApplicationWillEnterForegroundNotification
              object:nil];
+    // VoiceOver 开关监听：变化时推 a11y/enabled 给 core（首次推送不在此处——
+    // 引擎未就绪时 core 尚未注册 a11y/enabled 处理器，推送会落空；
+    // 初始态在 startEngine 的 evkIosInit 之后推，见下）。
+    [NSNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(onVoiceOverStatusChanged)
+               name:UIAccessibilityVoiceOverStatusDidChangeNotification
+             object:nil];
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -122,6 +143,11 @@ static const char* samplePlatformInvoke(const char* method, const char* args) {
     self.engineAlive = YES;
     // layer 的 drawableSize 已在 layoutSubviews 里设好。
     evkIosInit((__bridge const void*)self.view.layer);
+    // 无障碍初始态：evkIosInit 内同步派发 EngineReady（core 在 runApp 时已
+    // 注册 a11y/enabled 处理器，先于首帧），此处推送不会落空——对照 Android
+    // 在 surfaceCreated 的 nativeInit 之后推初始态的做法。
+    evkIosDispatchPlatformCall("a11y/enabled",
+                               UIAccessibilityIsVoiceOverRunning() ? "1" : "0");
     self.displayLink = [CADisplayLink displayLinkWithTarget:self
                                                    selector:@selector(onVSync:)];
     [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop]
@@ -142,6 +168,17 @@ static const char* samplePlatformInvoke(const char* method, const char* args) {
 
 - (void)onEnterForeground {
     [self startEngine];
+}
+
+// VoiceOver 开关变化（dealloc 的 removeObserver:self 已统一注销本观察者）。
+// 引擎停着（退后台）时 core 的 a11y/enabled 处理器随引擎销毁，推送会落空，
+// 直接丢弃——重回前台时 startEngine 会重推一次当时的状态，不会失真。
+- (void)onVoiceOverStatusChanged {
+    if (!self.engineAlive) {
+        return;
+    }
+    evkIosDispatchPlatformCall("a11y/enabled",
+                               UIAccessibilityIsVoiceOverRunning() ? "1" : "0");
 }
 
 // CADisplayLink.timestamp 是秒（与 UITouch.timestamp 同一时钟），

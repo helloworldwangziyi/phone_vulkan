@@ -121,6 +121,8 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/view/scroll_control.cpp
     ${EVK_ROOT}/core/src/ui/navigation/navigation_stack.cpp
     ${EVK_ROOT}/core/src/ui/widget_tree.cpp
+    ${EVK_ROOT}/core/src/ui/inherited_widget.cpp
+    ${EVK_ROOT}/core/src/ui/semantics.cpp
     ${EVK_ROOT}/core/src/ui/controls/basic.cpp
     ${EVK_ROOT}/core/src/ui/controls/backdrop_blur.cpp
     ${EVK_ROOT}/core/src/ui/controls/button.cpp
@@ -128,6 +130,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/core/src/ui/controls/container.cpp
     ${EVK_ROOT}/core/src/ui/controls/flex.cpp
     ${EVK_ROOT}/core/src/ui/controls/gesture_detector.cpp
+    ${EVK_ROOT}/core/src/ui/controls/semantics_widget.cpp
     ${EVK_ROOT}/core/src/ui/controls/image.cpp
     ${EVK_ROOT}/core/src/ui/controls/list_view.cpp
     ${EVK_ROOT}/core/src/ui/controls/scroll_view.cpp
