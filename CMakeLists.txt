@@ -87,6 +87,7 @@ execute_process(
 add_library(estarx_vulkan_core STATIC
     core/src/app_lifecycle.cpp
     core/src/frame_scheduler.cpp
+    core/src/platform_channel.cpp
     core/src/compositor.cpp
     core/src/vulkan_renderer.cpp
     core/src/gpu/vulkan_context.cpp

@@ -2,6 +2,8 @@
 
 #import <QuartzCore/CAMetalLayer.h>
 
+#include <cstring>
+
 #include "ios_shell_bridge.h"
 
 // action 编码与 ios_shell_bridge.h 的约定一致（0=Down 1=Up 2=Move 3=Cancel）。
@@ -9,6 +11,16 @@ static const int32_t kActionDown = 0;
 static const int32_t kActionUp = 1;
 static const int32_t kActionMove = 2;
 static const int32_t kActionCancel = 3;
+
+// 平台通道演示：引擎 invokePlatform("deviceInfo") 的出向落点，返回机型串。
+// 静态 NSString 持有返回串，保证指针在本次调用期间有效（桥约定：core 立即拷贝）。
+static const char* samplePlatformInvoke(const char* method, const char* args) {
+    static NSString* deviceInfo = [[UIDevice currentDevice] model];
+    if (strcmp(method, "deviceInfo") == 0) {
+        return deviceInfo.UTF8String;
+    }
+    return "";
+}
 
 // ----------------------------------------------------------------------------
 // EVKMetalView：backing layer 换成 CAMetalLayer 的 UIView。
@@ -63,6 +75,9 @@ static const int32_t kActionCancel = 3;
 
 - (void)viewDidLoad {
     [super viewDidLoad];
+    // 平台通道出向注册：引擎的 invokePlatform 同步落到 samplePlatformInvoke。
+    // 与引擎生命周期无关（不含渲染状态），App 级注册一次即可。
+    evkIosSetPlatformInvoker(samplePlatformInvoke);
     // iOS 没有系统返回键：壳层用左边缘手势识别器模拟"系统返回"，
     // 一次性上报 BackPressed 事件（不做跟手动画，与 Android 语义对齐）。
     UIScreenEdgePanGestureRecognizer* edgeBack =

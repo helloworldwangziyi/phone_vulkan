@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -17,6 +18,7 @@
 #include "path_demo_page.h"
 #include "watchlist_page.h"
 #include "evk/log.h"
+#include "evk/platform_channel.h"
 #include "evk/ui/font_engine.h"
 #include "evk/ui/navigation/navigation_stack.h"
 #include "evk/ui/widgets.h"
@@ -213,6 +215,40 @@ public:
                                        fontSize, 0xFFFFFFFF);
                     }))));
 
+        /// 平台通道演示入口：点击经 invokePlatform 出向同步调平台壳取
+        /// deviceInfo，返回串存进状态并重绘；平台未实现时显示兜底文案。
+        auto platformInfoEntry = padding(
+            EdgeInsets::only(0.0f, appCalcHeight(60.0f), 0.0f, 0.0f),
+            center(sizedBox(
+                appCalcWidth(400.0f),
+                appCalcHeight(140.0f),
+                semantics(
+                    "平台信息（平台通道）",
+                    SemanticsRole::kButton,
+                    container(
+                        theme.primary,
+                        [this] {
+                            std::string info;
+                            const bool ok = evk::invokePlatform("deviceInfo", "", &info);
+                            setState([this, ok, info = std::move(info)] {
+                                platformInfo_ =
+                                    ok && !info.empty() ? info : "平台未实现 deviceInfo";
+                            });
+                        },
+                        [this](PaintContext& paint) {
+                            const Size size = paint.size();
+                            const float fontSize = appCalcHeight(36.0f);
+                            float textWidth = 0.0f;
+                            float textHeight = 0.0f;
+                            evk::ui::FontEngine::instance().measureText(
+                                platformInfo_.c_str(), fontSize, appFonts::cjk(),
+                                &textWidth, &textHeight);
+                            paint.drawText(platformInfo_.c_str(), appFonts::cjk(),
+                                           (size.width - textWidth) * 0.5f,
+                                           (size.height - textHeight) * 0.5f,
+                                           fontSize, 0xFFFFFFFF);
+                        })))));
+
         std::vector<std::unique_ptr<Widget>> rows;
         float contentHeight = 0.0f;
         if (!quoteLoaded_) {
@@ -304,6 +340,7 @@ public:
             std::move(pathDemoEntry),
             std::move(gestureDemoEntry),
             std::move(effectsDemoEntry),
+            std::move(platformInfoEntry),
             std::move(shapeRow),
             std::move(titleBlock),
             std::move(list)));
@@ -357,6 +394,7 @@ private:
     int detailCount_ = 0;
     bool quoteLoaded_ = false;
     bool quotePending_ = false;
+    std::string platformInfo_ = "点击获取设备信息";
     std::vector<uint32_t> quotes_;
     std::shared_ptr<std::atomic_bool> quoteCancel_;
 };

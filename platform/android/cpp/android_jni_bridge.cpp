@@ -43,12 +43,15 @@
 
 #include <jni.h>
 
+#include <string>
+
 #include <spdlog/sinks/android_sink.h>
 
 #include "evk/app_lifecycle.h"
 #include "evk/kv_store.h"
 #include "evk/log.h"
 #include "evk/frame_scheduler.h"
+#include "evk/platform_channel.h"
 #include "evk/compositor.h"
 // 完整类型：g_platform->getSurfaceSize 与 compositor->renderer()->setSize 要用。
 #include "evk/render_platform.h"
@@ -67,6 +70,51 @@ extern "C" void evkDestroyAndroidPlatform(evk::IPlatform* platform);
 static evk::Compositor* g_compositor = nullptr;
 static evk::IPlatform* g_platform = nullptr;
 static bool g_appStarted = false;
+
+// ---------------------------------------------------------------------------
+// 平台通道出向（引擎→平台）所需的 Java 侧句柄，nativeInit 时缓存、
+// nativeDestroy 时释放。jmethodID 随类存活，与全局引用同生命周期。
+// ---------------------------------------------------------------------------
+static JavaVM* g_jvm = nullptr;
+static jclass g_nativeBridgeClass = nullptr;
+static jmethodID g_onPlatformInvoke = nullptr;
+
+// 注入给 core 的出向实现：AttachCurrentThread（已在 UI 线程时 GetEnv 直接
+// 命中，附着成本为零，对照 android_vulkan_platform.cpp 的析构范例）→
+// 调 NativeBridge.onPlatformInvoke → 结果转 std::string。同步返回，
+// 与通道的"同步、UI 线程"约定一致。
+static std::string invokeJavaPlatform(const std::string& method, const std::string& args) {
+    if (!g_jvm || !g_nativeBridgeClass || !g_onPlatformInvoke) {
+        return {};
+    }
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    if (g_jvm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) != JNI_OK) {
+        if (g_jvm->AttachCurrentThread(&env, nullptr) != JNI_OK) {
+            return {};
+        }
+        attached = true;
+    }
+    jstring jsMethod = env->NewStringUTF(method.c_str());
+    jstring jsArgs = env->NewStringUTF(args.c_str());
+    std::string result;
+    jobject jsResult = env->CallStaticObjectMethod(g_nativeBridgeClass, g_onPlatformInvoke,
+                                                   jsMethod, jsArgs);
+    if (jsResult) {
+        const char* chars = env->GetStringUTFChars(static_cast<jstring>(jsResult), nullptr);
+        if (chars) {
+            result = chars;
+            env->ReleaseStringUTFChars(static_cast<jstring>(jsResult), chars);
+        }
+        env->DeleteLocalRef(jsResult);
+    }
+    env->DeleteLocalRef(jsMethod);
+    env->DeleteLocalRef(jsArgs);
+    if (attached) {
+        g_jvm->DetachCurrentThread();
+    }
+    return result;
+}
 
 // Java: NativeBridge.nativeSetStoragePath(String)
 // 引擎启动最早时刻注入私有存储目录（filesDir），core 的 KeyValueStore
@@ -87,13 +135,24 @@ Java_com_estarx_vulkan_NativeBridge_nativeSetStoragePath(JNIEnv* env, jclass /*c
 // Java: NativeBridge.nativeInit(Surface)
 // surface 创建就绪时调用（可能多次：退后台重建）。幂等：已有渲染器直接返回。
 extern "C" JNIEXPORT void JNICALL
-Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass /*clazz*/, jobject surface) {
+Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass clazz, jobject surface) {
     // logcat sink 由平台壳注入；core 默认只提供 stdout（见 evk/log.h）。
     auto logger = spdlog::get("estarx-vulkan");
     if (!logger) {
         logger = spdlog::android_logger_mt("estarx-vulkan", "estarx-vulkan");
     }
     evk::log::init(logger);
+
+    // 平台通道出向注入（幂等，surface 重建重复调用安全）：缓存 JavaVM 与
+    // NativeBridge 类/方法句柄（static native 方法的 jclass 参数即
+    // NativeBridge 本身，规则 4），core 的 invokePlatform 由此落到 Java。
+    env->GetJavaVM(&g_jvm);
+    if (!g_nativeBridgeClass) {
+        g_nativeBridgeClass = static_cast<jclass>(env->NewGlobalRef(clazz));
+        g_onPlatformInvoke = env->GetStaticMethodID(
+            clazz, "onPlatformInvoke", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        evk::setPlatformInvoker(&invokeJavaPlatform);
+    }
     if (g_compositor) {
         return;
     }
@@ -184,6 +243,35 @@ Java_com_estarx_vulkan_NativeBridge_nativeOnBackPressed(JNIEnv* /*env*/, jclass 
     return evk::dispatchEvent(evk::EventId::BackPressed, nullptr) ? JNI_TRUE : JNI_FALSE;
 }
 
+// Java: NativeBridge.nativeDispatchPlatformCall(String, String)
+// 平台通道入向（平台→引擎）：与 nativeOnBackPressed 同款同步返回值语义，
+// 本层只做"解包 jstring → core 路由 → 回包 jstring"；未注册方法返回空串。
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_estarx_vulkan_NativeBridge_nativeDispatchPlatformCall(JNIEnv* env, jclass /*clazz*/,
+                                                               jstring method, jstring args) {
+    if (!method) {
+        return env->NewStringUTF("");
+    }
+    const char* methodChars = env->GetStringUTFChars(method, nullptr);
+    if (!methodChars) {
+        return nullptr; // OOM，JVM 已抛异常
+    }
+    const char* argsChars = nullptr;
+    if (args) {
+        argsChars = env->GetStringUTFChars(args, nullptr);
+        if (!argsChars) {
+            env->ReleaseStringUTFChars(method, methodChars);
+            return nullptr; // OOM
+        }
+    }
+    const std::string result = evk::dispatchPlatformCall(methodChars, argsChars);
+    env->ReleaseStringUTFChars(method, methodChars);
+    if (argsChars) {
+        env->ReleaseStringUTFChars(args, argsChars);
+    }
+    return env->NewStringUTF(result.c_str());
+}
+
 // Java: NativeBridge.nativeSafeAreaChanged(int, int, int, int)
 // 系统窗口 inset（状态栏/刘海/手势条）变化，单位像素，与 surface 坐标系一致。
 extern "C" JNIEXPORT void JNICALL
@@ -197,12 +285,19 @@ Java_com_estarx_vulkan_NativeBridge_nativeSafeAreaChanged(JNIEnv* /*env*/, jclas
 
 // Java: NativeBridge.nativeDestroy()
 extern "C" JNIEXPORT void JNICALL
-Java_com_estarx_vulkan_NativeBridge_nativeDestroy(JNIEnv* /*env*/, jclass /*clazz*/) {
+Java_com_estarx_vulkan_NativeBridge_nativeDestroy(JNIEnv* env, jclass /*clazz*/) {
     evk::ui::cancelAllPointerEvents();
     evk::ui::stopAllAnimations();
     evk::dispatchEvent(evk::EventId::SurfaceDestroyed, nullptr);
     evk::cancelPendingFrame();
     evk::setFrameFunc(nullptr);
+    // 平台通道出向同步注销：invoker 摘除后释放 Java 类全局引用。
+    evk::setPlatformInvoker(nullptr);
+    if (g_nativeBridgeClass) {
+        env->DeleteGlobalRef(g_nativeBridgeClass);
+        g_nativeBridgeClass = nullptr;
+        g_onPlatformInvoke = nullptr;
+    }
     evk::setEngineReady(false);
     g_appStarted = false; // 下次 surfaceCreated 走完整 EngineReady 重建流程
     if (g_compositor) {

@@ -28,4 +28,27 @@ public final class NativeBridge {
 
     // 安全区内边距（像素）：系统窗口 inset 变化时由 WindowInsets 监听回调上报。
     public static native void nativeSafeAreaChanged(int top, int bottom, int left, int right);
+
+    // ---- 平台通道（MethodChannel 式，按方法名路由；同步、UI 线程）----
+
+    // 平台→引擎入向：方法名与 UTF-8 参数串交给 core 路由；未注册方法返回空串。
+    public static native String nativeDispatchPlatformCall(String method, String args);
+
+    // App 侧的平台能力处理器：引擎出向调用经 onPlatformInvoke 转到这里。
+    public interface PlatformHandler {
+        String onInvoke(String method, String args);
+    }
+
+    private static PlatformHandler sPlatformHandler;
+
+    // App 在启动时注册出向处理器（如 MainActivity.onCreate）。
+    public static void setPlatformHandler(PlatformHandler handler) {
+        sPlatformHandler = handler;
+    }
+
+    // 引擎→平台出向的落点（native 经 JNI 回调进来）；未注册时返回空串。
+    public static String onPlatformInvoke(String method, String args) {
+        PlatformHandler handler = sPlatformHandler;
+        return handler != null ? handler.onInvoke(method, args) : "";
+    }
 }

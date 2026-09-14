@@ -16,6 +16,7 @@
 #include "evk/kv_store.h"
 #include "evk/log.h"
 #include "evk/frame_scheduler.h"
+#include "evk/platform_channel.h"
 #include "evk/compositor.h"
 // 完整类型：g_platform->getSurfaceSize 与 compositor->renderer()->setSize 要用。
 #include "evk/render_platform.h"
@@ -127,6 +128,27 @@ int32_t evkIosBackPressed(void) {
 void evkIosSafeArea(float top, float bottom, float left, float right) {
     evk::SafeAreaData data{top, bottom, left, right};
     evk::dispatchEvent(evk::EventId::SafeAreaChanged, &data);
+}
+
+// 平台通道入向（对照 Android nativeDispatchPlatformCall）：同步路由，
+// 结果串由 static 持有到下一次调用，调用方按桥头注释约定立即拷贝。
+const char* evkIosDispatchPlatformCall(const char* method, const char* args) {
+    static std::string result;
+    result = evk::dispatchPlatformCall(method, args);
+    return result.c_str();
+}
+
+// 平台通道出向：把 C 函数指针包成 core 的 PlatformInvoker。
+// 实现返回的 const char* 在此立即拷贝，满足桥头的生命周期约定。
+void evkIosSetPlatformInvoker(EVKIosPlatformInvokeFn fn) {
+    if (!fn) {
+        evk::setPlatformInvoker(nullptr);
+        return;
+    }
+    evk::setPlatformInvoker([fn](const std::string& method, const std::string& args) {
+        const char* result = fn(method.c_str(), args.c_str());
+        return result ? std::string(result) : std::string();
+    });
 }
 
 void evkIosDestroy(void) {

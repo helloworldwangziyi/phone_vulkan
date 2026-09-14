@@ -33,6 +33,7 @@ done
     "$repo_root/tests/ui_runtime_test.cpp" \
     "$repo_root/core/src/app_lifecycle.cpp" \
     "$repo_root/core/src/frame_scheduler.cpp" \
+    "$repo_root/core/src/platform_channel.cpp" \
     "$repo_root/core/src/ui/ui_application.cpp" \
     "$repo_root/core/src/ui/render_view.cpp" \
     "$repo_root/core/src/ui/pointer_input.cpp" \

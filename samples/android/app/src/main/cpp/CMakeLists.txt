@@ -97,6 +97,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/platform/android/cpp/android_vulkan_platform.cpp
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
     ${EVK_ROOT}/core/src/frame_scheduler.cpp
+    ${EVK_ROOT}/core/src/platform_channel.cpp
     ${EVK_ROOT}/core/src/kv_store.cpp
     ${EVK_ROOT}/core/src/compositor.cpp
     ${EVK_ROOT}/core/src/vulkan_renderer.cpp

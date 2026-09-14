@@ -10,6 +10,8 @@
 //   NativeBridge.nativeOnBackPressed()      → evkIosBackPressed()
 //   NativeBridge.nativeSafeAreaChanged(...) → evkIosSafeArea(...)
 //   NativeBridge.nativeDestroy()            → evkIosDestroy()
+//   NativeBridge.nativeDispatchPlatformCall → evkIosDispatchPlatformCall(...)
+//   NativeBridge.onPlatformInvoke（出向）   → evkIosSetPlatformInvoker(...)
 //
 // 约定与 JNI 层相同：本层只做"解包参数 → 转发 core"，不含业务逻辑；
 // 所有函数都在 iOS 主线程（= UI 线程）调用。
@@ -36,6 +38,18 @@ int32_t evkIosBackPressed(void);
 // viewSafeAreaInsetsDidChange 时上报，App 据此内缩布局避开刘海/手势条。
 void evkIosSafeArea(float top, float bottom, float left, float right);
 void evkIosDestroy(void);
+
+// ---- 平台通道（MethodChannel 式，按方法名路由；同步、UI 线程）----
+
+// 平台→引擎入向：按方法名路由到 core 注册的 handler；未注册方法返回空串。
+// 返回串由引擎侧 static 持有，仅本次调用期间有效——调用方须立即拷贝。
+const char* evkIosDispatchPlatformCall(const char* method, const char* args);
+
+// 引擎→平台出向的实现注入：壳层/App 在启动时注册（对照 Java 侧
+// NativeBridge.setPlatformHandler）。实现返回的串同样只须在调用期间
+// 有效（core 立即拷贝成 std::string）；传 NULL 注销。
+typedef const char* (*EVKIosPlatformInvokeFn)(const char* method, const char* args);
+void evkIosSetPlatformInvoker(EVKIosPlatformInvokeFn fn);
 
 #ifdef __cplusplus
 } // extern "C"

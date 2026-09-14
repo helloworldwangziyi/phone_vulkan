@@ -12,6 +12,9 @@ interface NativeBridge {
   beginFrame(frameTimeNanos: number): void;
   onBackPressed(): boolean;
   safeAreaChanged(top: number, bottom: number, left: number, right: number): void;
+  // 平台通道（MethodChannel 式，按方法名路由；同步、UI 线程）。
+  dispatchPlatformCall(method: string, args: string): string;
+  setPlatformInvoker(handler: (method: string, args: string) => string): void;
 }
 
 // 页面级的 onBackPress 只能用 @Entry 组件实现（见 pages/Index.ets），
@@ -70,6 +73,15 @@ export struct VulkanShell {
         // 先于引擎就绪注入私有存储目录：core 的 KeyValueStore 初始化需要平台路径。
         // onLoad 官方保证先于 native 侧 OnSurfaceCreated 触发，时序安全。
         g_bridge.setStoragePath(getContext(this).filesDir);
+        // 平台通道出向注入：引擎 invokePlatform("deviceInfo") 的落点。
+        // 返回设备信息常量串——不引 deviceInfo kit 依赖，保持零权限；
+        // 未匹配的方法返回空串（= 未实现）。
+        g_bridge.setPlatformInvoker((method: string, args: string): string => {
+          if (method === 'deviceInfo') {
+            return 'HarmonyOS device';
+          }
+          return '';
+        });
         // native 句柄就绪：补报一次当前安全区，并启动帧节奏。
         this.reportSafeArea();
         this.startFrames();

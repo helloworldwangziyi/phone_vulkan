@@ -39,6 +39,7 @@
 #include "evk/kv_store.h"
 #include "evk/log.h"
 #include "evk/frame_scheduler.h"
+#include "evk/platform_channel.h"
 #include "evk/compositor.h"
 // 完整类型：g_platform->getSurfaceSize 与 compositor->renderer()->setSize 要用。
 #include "evk/render_platform.h"
@@ -307,6 +308,99 @@ static napi_value SafeAreaChanged(napi_env env, napi_callback_info info) {
 }
 
 // ---------------------------------------------------------------------------
+// 平台通道（MethodChannel 式，按方法名路由；同步、UI 线程）
+// ---------------------------------------------------------------------------
+
+// 两段式读 napi 字符串到 std::string（规则 3 的复用封装）；
+// 非字符串/读失败返回 false。
+static bool readNapiString(napi_env env, napi_value value, std::string* out) {
+    size_t length = 0;
+    if (napi_get_value_string_utf8(env, value, nullptr, 0, &length) != napi_ok) {
+        return false;
+    }
+    out->assign(length, '\0');
+    return napi_get_value_string_utf8(env, value, out->data(), length + 1, &length) == napi_ok;
+}
+
+// ArkTS: bridge.dispatchPlatformCall(method, args): string
+// 平台→引擎入向：解包两个字符串 → core 路由 → 回包结果串；
+// 未注册方法返回空串（与 Android nativeDispatchPlatformCall 同语义）。
+static napi_value DispatchPlatformCall(napi_env env, napi_callback_info info) {
+    size_t argc = 2;
+    napi_value argv[2] = {nullptr, nullptr};
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    std::string method;
+    std::string args;
+    if (argc < 2 || !readNapiString(env, argv[0], &method) ||
+        !readNapiString(env, argv[1], &args)) {
+        return nullptr;
+    }
+    const std::string result = evk::dispatchPlatformCall(method.c_str(), args.c_str());
+    napi_value out = nullptr;
+    napi_create_string_utf8(env, result.c_str(), result.size(), &out);
+    return out;
+}
+
+// ArkTS: bridge.setPlatformInvoker(handler)
+// 引擎→平台出向：ArkTS 注入 (method, args) => string 回调，缓存 env 与
+// 回调引用后包成 core 的 PlatformInvoker；传非函数值（如 null）表示注销。
+// 回调运行在 UI 线程（NAPI 同步调用约定），与通道的线程约定一致。
+static napi_env g_invokerEnv = nullptr;
+static napi_ref g_invokerRef = nullptr;
+
+static std::string invokeArkTsPlatform(const std::string& method, const std::string& args) {
+    if (!g_invokerEnv || !g_invokerRef) {
+        return {};
+    }
+    napi_value callback = nullptr;
+    if (napi_get_reference_value(g_invokerEnv, g_invokerRef, &callback) != napi_ok || !callback) {
+        return {};
+    }
+    napi_value jsMethod = nullptr;
+    napi_value jsArgs = nullptr;
+    napi_value undefined = nullptr;
+    napi_value jsResult = nullptr;
+    napi_create_string_utf8(g_invokerEnv, method.c_str(), method.size(), &jsMethod);
+    napi_create_string_utf8(g_invokerEnv, args.c_str(), args.size(), &jsArgs);
+    napi_get_undefined(g_invokerEnv, &undefined);
+    napi_value callArgv[2] = {jsMethod, jsArgs};
+    if (napi_call_function(g_invokerEnv, undefined, callback, 2, callArgv, &jsResult) != napi_ok ||
+        !jsResult) {
+        return {};
+    }
+    std::string result;
+    if (!readNapiString(g_invokerEnv, jsResult, &result)) {
+        return {}; // 回调未返回字符串：按空串（未实现）处理
+    }
+    return result;
+}
+
+static napi_value SetPlatformInvoker(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value argv[1] = {nullptr};
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    if (argc < 1) {
+        return nullptr;
+    }
+    // 重复注册先摘除旧引用（napi_ref 计数 1，必须配对删除）。
+    if (g_invokerRef) {
+        napi_delete_reference(g_invokerEnv, g_invokerRef);
+        g_invokerRef = nullptr;
+        g_invokerEnv = nullptr;
+        evk::setPlatformInvoker(nullptr);
+    }
+    napi_valuetype type = napi_undefined;
+    napi_typeof(env, argv[0], &type);
+    if (type != napi_function) {
+        return nullptr;
+    }
+    napi_create_reference(env, argv[0], 1, &g_invokerRef);
+    g_invokerEnv = env;
+    evk::setPlatformInvoker(&invokeArkTsPlatform);
+    return nullptr;
+}
+
+// ---------------------------------------------------------------------------
 // 模块注册（规则 1）
 // ---------------------------------------------------------------------------
 
@@ -324,6 +418,10 @@ static napi_value Init(napi_env env, napi_value exports) {
          nullptr},
         {"safeAreaChanged", nullptr, SafeAreaChanged, nullptr, nullptr, nullptr, napi_default,
          nullptr},
+        {"dispatchPlatformCall", nullptr, DispatchPlatformCall, nullptr, nullptr, nullptr,
+         napi_default, nullptr},
+        {"setPlatformInvoker", nullptr, SetPlatformInvoker, nullptr, nullptr, nullptr,
+         napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);
 
