@@ -15,6 +15,7 @@
 #include "evk/ui/animation_scheduler.h"
 #include "evk/ui/pointer_input.h"
 #include "evk/ui/render_view.h"
+#include "evk/ui/semantics.h"
 
 namespace evk::ui {
 namespace {
@@ -68,6 +69,41 @@ public:
 
     bool acceptsPointerInput() const override { return true; }
     bool acceptsPanInput() const override { return true; }
+
+    /// 无障碍内省：可滚动容器角色；内容溢出时才声明滚动动作。
+    void fillSemantics(SemanticsConfig& config) const override {
+        config.role = SemanticsRole::kScroller;
+        if (maxOffsetX() > 0.0f || maxOffsetY() > 0.0f) {
+            config.actions |= kSemanticsActionScrollForward |
+                              kSemanticsActionScrollBackward;
+        }
+    }
+
+    /// 无障碍滚动：沿可滚轴平移一个视口（越界钳制；橡皮筋是视觉态，
+    /// 目标值按正轨算并同步 raw，避免下次手势跳变）。
+    bool performSemanticsAction(uint32_t action) override {
+        if (action != kSemanticsActionScrollForward &&
+            action != kSemanticsActionScrollBackward) {
+            return View::performSemanticsAction(action);
+        }
+        const float dir = action == kSemanticsActionScrollForward ? 1.0f : -1.0f;
+        float targetX = offsetX;
+        float targetY = offsetY;
+        if (maxOffsetY() > 0.0f) {
+            targetY = std::max(0.0f, std::min(maxOffsetY(), offsetY + dir * rect.h));
+        } else if (maxOffsetX() > 0.0f) {
+            targetX = std::max(0.0f, std::min(maxOffsetX(), offsetX + dir * rect.w));
+        } else {
+            return false;
+        }
+        if (targetX == offsetX && targetY == offsetY) {
+            return false;  // 已到边界，未消费
+        }
+        rawX = targetX;
+        rawY = targetY;
+        setDisplayedOffset(targetX, targetY, true);
+        return true;
+    }
 
     float effectiveContentWidth() const {
         return contentWidth > 0.0f ? contentWidth : rect.w;

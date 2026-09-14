@@ -9,6 +9,8 @@
  */
 
 #include "evk/ui/widget_tree.h"
+#include "evk/ui/inherited_widget.h"
+#include "evk/ui/semantics.h"
 
 #include "evk/ui/controls/basic.h"
 #include "evk/ui/controls/backdrop_blur.h"
@@ -20,4 +22,5 @@
 #include "evk/ui/controls/image.h"
 #include "evk/ui/controls/list_view.h"
 #include "evk/ui/controls/scroll_view.h"
+#include "evk/ui/controls/semantics.h"
 #include "evk/ui/controls/text.h"

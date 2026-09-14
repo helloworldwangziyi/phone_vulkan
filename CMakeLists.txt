@@ -110,6 +110,8 @@ add_library(estarx_vulkan_core STATIC
     core/src/ui/view/scroll_control.cpp
     core/src/ui/navigation/navigation_stack.cpp
     core/src/ui/widget_tree.cpp
+    core/src/ui/inherited_widget.cpp
+    core/src/ui/semantics.cpp
     core/src/ui/controls/basic.cpp
     core/src/ui/controls/backdrop_blur.cpp
     core/src/ui/controls/button.cpp
@@ -117,6 +119,7 @@ add_library(estarx_vulkan_core STATIC
     core/src/ui/controls/container.cpp
     core/src/ui/controls/flex.cpp
     core/src/ui/controls/gesture_detector.cpp
+    core/src/ui/controls/semantics_widget.cpp
     core/src/ui/controls/image.cpp
     core/src/ui/controls/list_view.cpp
     core/src/ui/controls/scroll_view.cpp

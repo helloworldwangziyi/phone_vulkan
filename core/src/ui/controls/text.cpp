@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "evk/ui/render_view.h"
+#include "evk/ui/semantics.h"
 #include "evk/ui/text_layout.h"
 
 namespace evk::ui {
@@ -29,6 +30,12 @@ public:
         FontEngine::instance().measureText(content.c_str(), sizePx, font,
                                            &width, &height);
         return constraints.constrain({width, height});
+    }
+
+    /// 无障碍内省：文本内容即朗读标签（手工标注可在收集时覆盖）。
+    void fillSemantics(SemanticsConfig& config) const override {
+        config.label = content;
+        config.role = SemanticsRole::kText;
     }
 };
 
@@ -65,6 +72,12 @@ public:
             widest = std::max(widest, line.width);
         }
         return constraints.constrain({widest, layout.totalHeight()});
+    }
+
+    /// 无障碍内省：文本内容即朗读标签（手工标注可在收集时覆盖）。
+    void fillSemantics(SemanticsConfig& config) const override {
+        config.label = content;
+        config.role = SemanticsRole::kText;
     }
 };
 

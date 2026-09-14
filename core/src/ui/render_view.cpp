@@ -6,6 +6,7 @@
 #include "evk/frame_scheduler.h"
 #include "evk/ui/paint_canvas.h"
 #include "evk/ui/pointer_input.h"
+#include "evk/ui/semantics.h"
 
 namespace {
 
@@ -212,6 +213,22 @@ View::~View() {
 }
 
 void View::handlePointer(const PointerEvent&) {}
+
+void View::fillSemantics(SemanticsConfig&) const {}
+
+bool View::performSemanticsAction(uint32_t action) {
+    // 无障碍动作落到与触摸一致的回调上（坐标给视图中心、视图局部）。
+    const ClickEvent center{rect.w * 0.5f, rect.h * 0.5f};
+    if (action == kSemanticsActionTap && onClick) {
+        onClick(center);
+        return true;
+    }
+    if (action == kSemanticsActionLongPress && onLongPress) {
+        onLongPress(center);
+        return true;
+    }
+    return false;
+}
 
 void View::handlePan(const PanEvent& event) {
     if (onPan) {
@@ -500,8 +517,14 @@ void buildFrame(Canvas& canvas) {
     }
     g_rootView->updateActuals();
     const Rect clip = g_rootView->actualRect();
-    FrameBuildScope scope;
-    g_rootView->paint(canvas, clip);
+    {
+        // 语义收集放 FrameBuildScope 之外：onFrameBuilt 可能经平台通道
+        // 同步外呼，回调链不允许撞上「绘制期间禁止改树」的守卫。
+        FrameBuildScope scope;
+        g_rootView->paint(canvas, clip);
+    }
+    // 无障碍语义树：未启用时零开销短路（见 ui/semantics.h）。
+    SemanticsOwner::instance().onFrameBuilt();
 }
 
 } // namespace evk::ui

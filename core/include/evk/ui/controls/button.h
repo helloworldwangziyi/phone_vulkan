@@ -19,6 +19,9 @@ public:
     ButtonStyle style;
     std::function<void()> onPressed;
     bool enabled = true;
+    /// 无障碍朗读标签（空 = 无标签，TalkBack 只报「按钮」）。按钮本身
+    /// 不含文字（label 由调用方按上下文标注），角色/禁用态由控件内省。
+    std::string semanticsLabel;
 
     Button(ButtonStyle style, std::function<void()> onPressed);
     std::unique_ptr<View> createRenderObject() const override;

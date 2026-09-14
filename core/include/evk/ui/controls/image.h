@@ -17,6 +17,7 @@ namespace evk::ui {
  *
  * 无固有尺寸——在容器里跟随拉伸（配合 SizedBox/Expanded 控制大小）；
  * 顶点色恒白即原样贴图。要染色/九宫格时用 Container::painter 自绘。
+ * 设了 semanticsLabel 才进入无障碍语义树（角色自动为「图片」）。
  */
 class ImageWidget final : public RenderObjectWidget {
 public:
@@ -24,6 +25,8 @@ public:
 
     std::unique_ptr<View> createRenderObject() const override;
     void updateRenderObject(View& view) const override;
+
+    std::string semanticsLabel;  ///< 无障碍朗读标签（空 = 不进语义树）
 
 private:
     TextureId texture_; ///< TextureStore 句柄

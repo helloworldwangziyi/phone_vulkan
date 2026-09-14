@@ -13,6 +13,7 @@
 namespace evk::ui {
 
 class Canvas;
+struct SemanticsConfig;
 
 struct Size {
     float width = 0.0f;
@@ -273,6 +274,21 @@ public:
     std::function<void(const ClickEvent&)> onLongPress;
     std::function<void(const ScaleEvent&)> onScale;
     std::function<void(const PanEvent&)> onPan;
+
+    /// 无障碍语义手工标注（可选；定义见 ui/semantics.h）。空 = 透明节点，
+    /// 孩子上提到最近语义祖先；hidden = true 时整棵子树不进语义树。
+    /// Widget 经 updateRenderObject 写入，优先于 fillSemantics 的内省默认。
+    std::unique_ptr<SemanticsConfig> semantics;
+
+    /// 无障碍内省回填：控件把自身内容/角色写进 config（TextView 回填文本、
+    /// ButtonView 回填按钮角色与禁用态、ScrollView 回填滚动动作）。
+    /// 手工标注（semantics 字段）的非空项优先于此处默认。
+    virtual void fillSemantics(SemanticsConfig& config) const;
+
+    /// 无障碍动作下行（SemanticsOwner::performAction 转发）。默认实现：
+    /// tap → onClick、longPress → onLongPress（回调带视图中心局部坐标）；
+    /// 控件可覆写（ButtonView 走 onPressed）。返回是否消费。
+    virtual bool performSemanticsAction(uint32_t action);
 
     virtual bool acceptsPointerInput() const { return false; }
     virtual bool acceptsPanInput() const { return static_cast<bool>(onPan); }

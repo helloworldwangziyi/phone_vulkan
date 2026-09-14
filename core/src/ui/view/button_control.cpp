@@ -10,6 +10,7 @@
 #include "evk/frame_scheduler.h"
 #include "evk/ui/pointer_input.h"
 #include "evk/ui/render_view.h"
+#include "evk/ui/semantics.h"
 
 namespace evk::ui {
 namespace {
@@ -29,6 +30,22 @@ public:
     bool pressed = false;
 
     bool acceptsPointerInput() const override { return true; }
+
+    /// 无障碍内省：按钮角色 + tap 动作；禁用态上镜（朗读「已禁用」）。
+    void fillSemantics(SemanticsConfig& config) const override {
+        config.role = SemanticsRole::kButton;
+        config.actions |= kSemanticsActionTap;
+        config.disabled = !enabled;
+    }
+
+    /// 无障碍 tap 走与触摸 Up 相同的 onPressed 回调（禁用时不响应）。
+    bool performSemanticsAction(uint32_t action) override {
+        if (action == kSemanticsActionTap && enabled && onPressed) {
+            onPressed();
+            return true;
+        }
+        return View::performSemanticsAction(action);
+    }
 
     void updateColor() {
         const uint32_t color = !enabled

@@ -2,8 +2,8 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-test_binary="${TMPDIR:-/tmp}/ui_runtime_test"
-obj_dir="${TMPDIR:-/tmp}/ui_runtime_test_obj"
+test_binary="${TMPDIR:-/tmp}/inherited_widget_test"
+obj_dir="${TMPDIR:-/tmp}/inherited_widget_test_obj"
 cxx=${CXX:-c++}
 cc=${CC:-cc}
 sdk_flags=
@@ -30,7 +30,7 @@ done
     -I"$repo_root/third_party/stb" \
     -I"$repo_root/third_party/libunibreak" \
     $unibreak_objs \
-    "$repo_root/tests/ui_runtime_test.cpp" \
+    "$repo_root/tests/inherited_widget_test.cpp" \
     "$repo_root/core/src/app_lifecycle.cpp" \
     "$repo_root/core/src/frame_scheduler.cpp" \
     "$repo_root/core/src/platform_channel.cpp" \
@@ -65,7 +65,4 @@ done
     "$repo_root/core/src/ui/navigation/navigation_stack.cpp" \
     -o "$test_binary"
 
-# 字体测试需要两个字体文件路径作为运行参数（argv[1]=拉丁、argv[2]=中文）。
-"$test_binary" \
-    "$repo_root/core/assets/fonts/roboto_regular_subset.ttf" \
-    "$repo_root/core/assets/fonts/notosanssc_regular_subset.ttf"
+"$test_binary"

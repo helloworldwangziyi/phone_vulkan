@@ -39,6 +39,7 @@
 #include <utility>
 
 #include "evk/frame_scheduler.h"
+#include "evk/ui/inherited_widget.h"
 
 namespace evk::ui {
 namespace {
@@ -417,12 +418,42 @@ void Element::mount(
 }
 
 void Element::update(std::unique_ptr<Widget> widget) {
+    willUpdateWidget(*widget);
     widget_ = std::move(widget);
     updateElement();
 }
 
+void Element::willUpdateWidget(const Widget&) {}
+
+const InheritedWidget* Element::dependOnInherited(
+    const std::type_info& type, bool registerDependency) {
+    // 沿 parent_ 链上溯，取最近的类型匹配者（嵌套同名时内层遮蔽外层）。
+    for (Element* ancestor = parent_; ancestor; ancestor = ancestor->parent_) {
+        auto* inherited = dynamic_cast<InheritedElement*>(ancestor);
+        if (!inherited) {
+            continue;
+        }
+        const Widget& candidate = inherited->widget();
+        if (typeid(candidate) != type) {
+            continue;
+        }
+        if (registerDependency) {
+            inherited->addDependent(this);
+            inheritedElements_.insert(inherited);
+        }
+        return static_cast<const InheritedWidget*>(&inherited->widget());
+    }
+    return nullptr;
+}
+
 void Element::unmount() {
     mounted_ = false;
+    // 摘除登记过的树内依赖。InheritedElement 必为本节点祖先，而 unmount
+    // 一律先拆孩子再拆自身——走到这里时对方一定还活着。
+    for (InheritedElement* inherited : inheritedElements_) {
+        inherited->removeDependent(this);
+    }
+    inheritedElements_.clear();
     widget_.reset();
     parent_ = nullptr;
     renderParent_ = nullptr;

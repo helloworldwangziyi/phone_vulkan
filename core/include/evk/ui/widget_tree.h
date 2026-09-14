@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 #include <typeinfo>
 #include <utility>
@@ -63,6 +64,8 @@
 namespace evk::ui {
 
 class Element;
+class InheritedElement;
+class InheritedWidget;
 class Navigator;
 class State;
 class StatefulWidget;
@@ -71,13 +74,37 @@ class StatefulWidget;
  * @brief build() 里能拿到的框架句柄，由 Element 自己实现。
  *
  * build() 里访问不到其他 Element，只能通过它：navigator() 用于跳页，
- * renderObject() 取本节点对应的 View（读取信息用，不要直接改）。
+ * renderObject() 取本节点对应的 View（读取信息用，不要直接改）；
+ * dependOnInheritedWidgetOfExactType<T>() 沿树向上查找最近的 T 类型
+ * InheritedWidget（树内依赖下发，见 inherited_widget.h）。
  */
 class BuildContext {
 public:
     virtual ~BuildContext() = default;
     virtual Navigator& navigator() const = 0;
     virtual View* renderObject() const = 0;
+
+    /**
+     * @brief 向上查找最近的 T 类型 InheritedWidget 并登记依赖：它数据
+     *        变更（updateShouldNotify 为真）时本节点会被通知重建。
+     *        在 build() 里调用；未找到返回 nullptr。
+     */
+    template <typename T>
+    const T* dependOnInheritedWidgetOfExactType() {
+        return static_cast<const T*>(dependOnInherited(typeid(T), true));
+    }
+
+    /// 同上的只读版：不登记依赖，数据变更时不会通知本节点重建。
+    template <typename T>
+    const T* findInheritedWidgetOfExactType() {
+        return static_cast<const T*>(dependOnInherited(typeid(T), false));
+    }
+
+protected:
+    /// 由 Element 实现：沿 parent_ 链上溯查找。registerDependency 为真时
+    /// 把本节点登记进目标 InheritedElement 的依赖表（unmount 时摘除）。
+    virtual const InheritedWidget* dependOnInherited(
+        const std::type_info& type, bool registerDependency) = 0;
 };
 
 /**
@@ -371,11 +398,22 @@ protected:
         std::unique_ptr<Widget> widget,
         View* renderParent);
 
+    /**
+     * @brief update 时在新 Widget 替换旧副本之前调用（此刻新旧都拿得到）。
+     *        默认空实现；InheritedElement 覆写它先算好 updateShouldNotify。
+     */
+    virtual void willUpdateWidget(const Widget& newWidget);
+
+    const InheritedWidget* dependOnInherited(
+        const std::type_info& type, bool registerDependency) override;
+
     std::unique_ptr<Widget> widget_;   ///< 当前持有的 Widget 副本（对比基准）
     Element* parent_ = nullptr;        ///< Element 树上的父节点
     View* renderParent_ = nullptr;     ///< 子 View 应挂到的父 View
     Navigator* navigator_ = nullptr;   ///< 导航器（BuildContext::navigator 用）
     bool mounted_ = false;             ///< 是否在岗
+    /// 本节点登记过依赖的 InheritedElement（unmount 时反向摘除）。
+    std::set<InheritedElement*> inheritedElements_;
 };
 
 /**

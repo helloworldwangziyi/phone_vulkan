@@ -7,6 +7,7 @@
 #include "evk/ui/event_bus.h"
 #include "evk/ui/pointer_input.h"
 #include "evk/ui/render_view.h"
+#include "evk/ui/semantics.h"
 #include "evk/ui/widget_tree.h"
 
 namespace {
@@ -43,6 +44,10 @@ void runApp(std::unique_ptr<Widget> home, AppOptions options) {
         options.navigationStyle);
     setRootView(&g_navigator->view());
     applyLayout();
+    // 提前实例化 SemanticsOwner：其构造函数注册 a11y/enabled、a11y/action
+    // 入向处理器。平台壳在 EngineReady 后（首帧 buildFrame 之前）就可能
+    // 上行无障碍开关，处理器必须先就位，否则首次启用推送会被丢弃。
+    SemanticsOwner::instance();
     g_navigator->push(std::move(home), false);
 }
 

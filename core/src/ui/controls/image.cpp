@@ -1,6 +1,9 @@
 #include "evk/ui/controls/image.h"
 
+#include <memory>
+
 #include "evk/ui/render_view.h"
+#include "evk/ui/semantics.h"
 
 namespace evk::ui {
 
@@ -18,6 +21,13 @@ void ImageWidget::updateRenderObject(View& view) const {
         const Size size = paint.size();
         paint.drawImage(texture, {0.0f, 0.0f, size.width, size.height});
     };
+    if (!semanticsLabel.empty()) {
+        if (!view.semantics) {
+            view.semantics = std::make_unique<SemanticsConfig>();
+        }
+        view.semantics->label = semanticsLabel;
+        view.semantics->role = SemanticsRole::kImage;
+    }
 }
 
 std::unique_ptr<Widget> image(TextureId texture) {
