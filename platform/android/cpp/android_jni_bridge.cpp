@@ -159,14 +159,14 @@ Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass clazz, jobjec
 
     g_platform = evkCreateAndroidPlatform(env, surface);
     if (!g_platform) {
-        EVK_LOGE("failed to create Android platform");
+        EVK_LOGE("android", "engine_start_failed phase=create_platform");
         return;
     }
 
     g_compositor = new evk::Compositor(g_platform);
     if (!g_compositor->initialize()) {
         // 失败时按创建的反序清理干净，保证下次 surfaceCreated 能干净重试。
-        EVK_LOGE("failed to initialize Vulkan renderer");
+        EVK_LOGE("android", "engine_start_failed phase=initialize_renderer");
         delete g_compositor;
         g_compositor = nullptr;
         evkDestroyAndroidPlatform(g_platform);
@@ -174,7 +174,7 @@ Java_com_estarx_vulkan_NativeBridge_nativeInit(JNIEnv* env, jclass clazz, jobjec
         return;
     }
 
-    EVK_LOGI("Vulkan renderer initialized");
+    EVK_LOGI("android", "engine_started renderer=vulkan");
     // 平台壳的"画一帧"实现注册给 core，App 的 requestRender() 由此触发；
     // 帧编排（buildFrame + 首帧日志 + render）内聚在 evk::Compositor。
     evk::setFrameFunc([](int64_t) { if (g_compositor) g_compositor->renderFrame(); });
@@ -308,5 +308,5 @@ Java_com_estarx_vulkan_NativeBridge_nativeDestroy(JNIEnv* env, jclass /*clazz*/)
         evkDestroyAndroidPlatform(g_platform);
         g_platform = nullptr;
     }
-    EVK_LOGI("Vulkan renderer destroyed");
+    EVK_LOGI("android", "engine_stopped renderer=vulkan");
 }

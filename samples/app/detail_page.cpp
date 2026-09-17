@@ -117,7 +117,7 @@ std::unique_ptr<evk::ui::Widget> DetailPage::build(
             button(
                 {theme.primary, theme.primaryPressed, theme.primaryDisabled},
                 [routeContext, variant] {
-                    EVK_LOGI("detail page pushes another detail page");
+                    EVK_LOGI("navigation", "detail_page_push_requested");
                     Navigator::of(*routeContext).push(
                         makeWidget<DetailPage>(variant + 1), true);
                 }))));

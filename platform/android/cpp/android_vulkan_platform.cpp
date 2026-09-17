@@ -44,13 +44,13 @@ public:
 
     bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) override {
         if (!surface_) {
-            EVK_LOGE("Android surface is null");
+            EVK_LOGE("android", "surface_create_failed reason=surface_null");
             return false;
         }
 
         window_ = ANativeWindow_fromSurface(env_, surface_);
         if (!window_) {
-            EVK_LOGE("ANativeWindow_fromSurface failed");
+            EVK_LOGE("android", "surface_create_failed reason=native_window_failed");
             return false;
         }
 
@@ -59,7 +59,7 @@ public:
         createInfo.window = window_;
 
         if (vkCreateAndroidSurfaceKHR(instance, &createInfo, nullptr, surface) != VK_SUCCESS) {
-            EVK_LOGE("vkCreateAndroidSurfaceKHR failed");
+            EVK_LOGE("android", "surface_create_failed reason=vulkan_surface_failed");
             return false;
         }
         return true;

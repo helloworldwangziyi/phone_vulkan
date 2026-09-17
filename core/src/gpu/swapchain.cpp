@@ -158,7 +158,7 @@ bool Swapchain::createSwapchain() {
     // 记录下来：Renderer 录制命令时的投影与裁剪要按它做旋转补偿，
     // 否则折叠屏内屏竖持（currentTransform=ROTATE_90）时画面是横的。
     surfaceTransform_ = caps.currentTransform;
-    EVK_LOGI("swapchain extent={}x{} transform={}",
+    EVK_LOGI("swapchain", "configured width={} height={} transform={}",
              extent.width, extent.height, static_cast<int>(caps.currentTransform));
     // compositeAlpha 不透明：不与系统里其它内容做 alpha 合成。
     createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -200,7 +200,7 @@ bool Swapchain::createSwapchain() {
 
     // 创建交换链；失败多为所选参数组合不被驱动支持。
     if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapchain_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateSwapchainKHR failed");
+        EVK_LOGE("swapchain", "create_failed");
         return false;
     }
 
@@ -242,7 +242,7 @@ bool Swapchain::createImageViews() {
         createInfo.subresourceRange.layerCount = 1;
 
         if (vkCreateImageView(device, &createInfo, nullptr, &swapchainImageViews_[i]) != VK_SUCCESS) {
-            EVK_LOGE("vkCreateImageView failed");
+            EVK_LOGE("swapchain", "create_image_view_failed index={}", i);
             return false;
         }
     }
@@ -291,7 +291,7 @@ bool Swapchain::createColorResources() {
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (vkCreateImage(device, &imageInfo, nullptr, &msaaColorImage_) != VK_SUCCESS) {
-        EVK_LOGE("msaa vkCreateImage failed");
+        EVK_LOGE("swapchain", "create_msaa_image_failed memory=transient");
         msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
         return false;
     }
@@ -319,7 +319,7 @@ bool Swapchain::createColorResources() {
         msaaColorImage_ = VK_NULL_HANDLE;
         imageInfo.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         if (vkCreateImage(device, &imageInfo, nullptr, &msaaColorImage_) != VK_SUCCESS) {
-            EVK_LOGE("msaa vkCreateImage (non-transient) failed");
+            EVK_LOGE("swapchain", "create_msaa_image_failed memory=device_local");
             msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
             return false;
         }
@@ -333,14 +333,14 @@ bool Swapchain::createColorResources() {
     allocInfo.allocationSize = memReq.size;
     allocInfo.memoryTypeIndex = memoryType;
     if (vkAllocateMemory(device, &allocInfo, nullptr, &msaaColorImageMemory_) != VK_SUCCESS) {
-        EVK_LOGE("msaa vkAllocateMemory failed");
+        EVK_LOGE("swapchain", "allocate_msaa_memory_failed");
         vkDestroyImage(device, msaaColorImage_, nullptr);
         msaaColorImage_ = VK_NULL_HANDLE;
         msaaSamples_ = VK_SAMPLE_COUNT_1_BIT;
         return false;
     }
     if (vkBindImageMemory(device, msaaColorImage_, msaaColorImageMemory_, 0) != VK_SUCCESS) {
-        EVK_LOGE("msaa vkBindImageMemory failed");
+        EVK_LOGE("swapchain", "bind_msaa_memory_failed");
         vkFreeMemory(device, msaaColorImageMemory_, nullptr);
         vkDestroyImage(device, msaaColorImage_, nullptr);
         msaaColorImageMemory_ = VK_NULL_HANDLE;
@@ -358,7 +358,7 @@ bool Swapchain::createColorResources() {
     viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.layerCount = 1;
     if (vkCreateImageView(device, &viewInfo, nullptr, &msaaColorImageView_) != VK_SUCCESS) {
-        EVK_LOGE("msaa vkCreateImageView failed");
+        EVK_LOGE("swapchain", "create_msaa_image_view_failed");
         vkDestroyImage(device, msaaColorImage_, nullptr);
         vkFreeMemory(device, msaaColorImageMemory_, nullptr);
         msaaColorImage_ = VK_NULL_HANDLE;
@@ -457,7 +457,7 @@ bool Swapchain::createRenderPass() {
     createInfo.pDependencies = &dependency;
 
     if (vkCreateRenderPass(context_.device(), &createInfo, nullptr, &renderPass_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateRenderPass failed");
+        EVK_LOGE("swapchain", "create_render_pass_failed");
         return false;
     }
     return true;
@@ -488,7 +488,7 @@ bool Swapchain::createFramebuffers() {
         createInfo.layers = 1;
 
         if (vkCreateFramebuffer(device, &createInfo, nullptr, &swapchainFramebuffers_[i]) != VK_SUCCESS) {
-            EVK_LOGE("vkCreateFramebuffer failed");
+            EVK_LOGE("swapchain", "create_framebuffer_failed index={}", i);
             return false;
         }
     }

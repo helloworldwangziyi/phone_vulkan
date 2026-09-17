@@ -39,14 +39,14 @@ public:
 
     bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) override {
         if (!window_) {
-            EVK_LOGE("OHOS native window is null");
+            EVK_LOGE("harmony", "surface_create_failed reason=native_window_null");
             return false;
         }
         VkSurfaceCreateInfoOHOS createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SURFACE_CREATE_INFO_OHOS;
         createInfo.window = window_;
         if (vkCreateSurfaceOHOS(instance, &createInfo, nullptr, surface) != VK_SUCCESS) {
-            EVK_LOGE("vkCreateSurfaceOHOS failed");
+            EVK_LOGE("harmony", "surface_create_failed reason=vulkan_surface_failed");
             return false;
         }
         return true;

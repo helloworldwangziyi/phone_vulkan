@@ -99,21 +99,21 @@ static void OnSurfaceCreatedCB(OH_NativeXComponent* component, void* window) {
     uint64_t surfaceHeight = 0;
     if (OH_NativeXComponent_GetXComponentSize(component, window, &surfaceWidth, &surfaceHeight) !=
         OH_NATIVEXCOMPONENT_RESULT_SUCCESS) {
-        EVK_LOGE("OH_NativeXComponent_GetXComponentSize failed");
+        EVK_LOGE("harmony", "engine_start_failed phase=get_component_size");
         return;
     }
 
     g_platform = evkCreateHongmengPlatform(window, static_cast<int32_t>(surfaceWidth),
                                            static_cast<int32_t>(surfaceHeight));
     if (!g_platform) {
-        EVK_LOGE("failed to create Hongmeng platform");
+        EVK_LOGE("harmony", "engine_start_failed phase=create_platform");
         return;
     }
 
     g_compositor = new evk::Compositor(g_platform);
     if (!g_compositor->initialize()) {
         // 失败时按创建的反序清理干净，保证下次 OnSurfaceCreated 能干净重试。
-        EVK_LOGE("failed to initialize Vulkan renderer");
+        EVK_LOGE("harmony", "engine_start_failed phase=initialize_renderer");
         delete g_compositor;
         g_compositor = nullptr;
         evkDestroyHongmengPlatform(g_platform);
@@ -121,7 +121,7 @@ static void OnSurfaceCreatedCB(OH_NativeXComponent* component, void* window) {
         return;
     }
 
-    EVK_LOGI("Vulkan renderer initialized");
+    EVK_LOGI("harmony", "engine_started renderer=vulkan");
     // 平台壳的"画一帧"实现注册给 core，App 的 requestRender() 由此触发；
     // 帧编排（buildFrame + 首帧日志 + render）内聚在 evk::Compositor。
     evk::setFrameFunc([](int64_t) { if (g_compositor) g_compositor->renderFrame(); });
@@ -173,7 +173,7 @@ static void OnSurfaceDestroyedCB(OH_NativeXComponent* /*component*/, void* /*win
         evkDestroyHongmengPlatform(g_platform);
         g_platform = nullptr;
     }
-    EVK_LOGI("Vulkan renderer destroyed");
+    EVK_LOGI("harmony", "engine_stopped renderer=vulkan");
 }
 
 // 本层只把 XComponent 触摸类型翻译成跨平台 PointerAction

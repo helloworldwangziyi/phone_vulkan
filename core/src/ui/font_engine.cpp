@@ -81,7 +81,7 @@ FontId FontEngine::addFont(const void* ttfData, size_t size) {
     // TTC 合集取第 0 个字体；普通 TTF 此调用返回 0。
     const int offset = stbtt_GetFontOffsetForIndex(record.data.data(), 0);
     if (offset < 0 || !stbtt_InitFont(info, record.data.data(), offset)) {
-        EVK_LOGW("addFont: not a parsable TrueType font ({} bytes)", size);
+        EVK_LOGW("text", "font_add_failed reason=invalid_truetype bytes={}", size);
         delete info;
         return kInvalidFont;
     }
@@ -252,7 +252,7 @@ const FontEngine::CachedGlyph* FontEngine::rasterizeGlyph(int fontIndex, int gly
             if (static_cast<int>(pages_.size()) >= kMaxAtlasPages) {
                 static bool warned = false;
                 if (!warned) {
-                    EVK_LOGW("font atlas full ({} pages); new glyphs are dropped",
+                    EVK_LOGW("text", "atlas_full pages={} action=drop_new_glyphs",
                              kMaxAtlasPages);
                     warned = true;
                 }

@@ -20,16 +20,16 @@ void KeyValueStore::initialize(const std::string& rootDir) {
         return; // 幂等：surface 重建等重复初始化直接跳过
     }
     if (rootDir.empty()) {
-        EVK_LOGE("KeyValueStore initialize failed: empty rootDir");
+        EVK_LOGE("storage", "initialize_failed reason=empty_root_dir");
         return;
     }
     // 日志级别压到 Warning：MMKV 的 Info 级日志在每次写盘时都会输出。
     MMKV::initializeMMKV(rootDir, MMKVLogWarning);
     self.store_ = MMKV::defaultMMKV();
     if (self.store_) {
-        EVK_LOGI("KeyValueStore ready, root={}", rootDir);
+        EVK_LOGI("storage", "initialized root={}", rootDir);
     } else {
-        EVK_LOGE("KeyValueStore initialize failed: defaultMMKV is null");
+        EVK_LOGE("storage", "initialize_failed reason=default_store_null");
     }
 }
 
@@ -41,8 +41,8 @@ void KeyValueStore::warnNotReadyOnce() const {
     static bool warned = false;
     if (!warned) {
         warned = true;
-        EVK_LOGW("KeyValueStore not initialized; get returns fallback, put is dropped. "
-                 "Platform shell should call KeyValueStore::initialize() first.");
+        EVK_LOGW("storage",
+                 "not_initialized read=fallback write=dropped action=initialize_first");
     }
 }
 

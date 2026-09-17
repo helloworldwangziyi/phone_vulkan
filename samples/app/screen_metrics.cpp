@@ -30,7 +30,7 @@ void appSetScreenSize(float width, float height) {
     /// 取宽高两个比例的较小者：保证设计稿内容在任何比例屏幕上完整可见，
     /// 极端比例（如折叠屏展开的方屏）下内容等比缩小而不是被裁切。
     g_scaleRatio = std::min(width / kDesignWidth, height / kDesignHeight);
-    EVK_LOGI("screen size: {:.0f}x{:.0f}, design scale ratio={:.4f}",
+    EVK_LOGI("layout", "screen_metrics width={:.0f} height={:.0f} scale={:.4f}",
              width, height, g_scaleRatio);
 }
 

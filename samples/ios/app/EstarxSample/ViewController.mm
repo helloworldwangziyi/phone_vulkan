@@ -28,7 +28,7 @@ static const char* samplePlatformInvoke(const char* method, const char* args) {
         NSString* json = @(args);
         const NSUInteger nodeCount =
             [json componentsSeparatedByString:@"\"id\""].count - 1;
-        NSLog(@"a11y/update: %lu nodes, %lu bytes",
+        NSLog(@"[evk][accessibility][semantics_updated nodes=%lu bytes=%lu]",
               (unsigned long)nodeCount, (unsigned long)json.length);
         return "";
     }

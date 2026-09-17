@@ -83,7 +83,7 @@ bool OffscreenEffects::createImage(VkExtent2D extent, VkFormat format,
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (vkCreateImage(device, &imageInfo, nullptr, image) != VK_SUCCESS) {
-        EVK_LOGE("offscreen vkCreateImage failed");
+        EVK_LOGE("offscreen", "create_image_failed");
         return false;
     }
 
@@ -96,7 +96,7 @@ bool OffscreenEffects::createImage(VkExtent2D extent, VkFormat format,
         memReq.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (vkAllocateMemory(device, &allocInfo, nullptr, memory) != VK_SUCCESS ||
         vkBindImageMemory(device, *image, *memory, 0) != VK_SUCCESS) {
-        EVK_LOGE("offscreen image memory failed");
+        EVK_LOGE("offscreen", "create_image_failed operation=allocate_memory");
         return false;
     }
 
@@ -109,7 +109,7 @@ bool OffscreenEffects::createImage(VkExtent2D extent, VkFormat format,
     viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.layerCount = 1;
     if (vkCreateImageView(device, &viewInfo, nullptr, view) != VK_SUCCESS) {
-        EVK_LOGE("offscreen vkCreateImageView failed");
+        EVK_LOGE("offscreen", "create_image_view_failed");
         return false;
     }
     return true;
@@ -190,7 +190,7 @@ bool OffscreenEffects::createScenePasses(VkFormat format,
         VkRenderPass* target = load ? &sceneLoadPass_ : &sceneClearPass_;
         if (vkCreateRenderPass(context_.device(), &createInfo, nullptr, target) !=
             VK_SUCCESS) {
-            EVK_LOGE("offscreen scene render pass failed");
+            EVK_LOGE("offscreen", "create_render_pass_failed target=scene");
             return false;
         }
     }
@@ -238,7 +238,7 @@ bool OffscreenEffects::createBlurPass(VkFormat format) {
 
     if (vkCreateRenderPass(context_.device(), &createInfo, nullptr, &blurPass_) !=
         VK_SUCCESS) {
-        EVK_LOGE("offscreen blur render pass failed");
+        EVK_LOGE("offscreen", "create_render_pass_failed target=blur");
         return false;
     }
     return true;
@@ -259,7 +259,7 @@ bool OffscreenEffects::createFramebuffers() {
     createInfo.layers = 1;
     if (vkCreateFramebuffer(device, &createInfo, nullptr, &sceneFramebuffer_) !=
         VK_SUCCESS) {
-        EVK_LOGE("offscreen scene framebuffer failed");
+        EVK_LOGE("offscreen", "create_framebuffer_failed target=scene");
         return false;
     }
 
@@ -271,7 +271,7 @@ bool OffscreenEffects::createFramebuffers() {
         createInfo.height = pingExtent_.height;
         if (vkCreateFramebuffer(device, &createInfo, nullptr,
                                 &pingFramebuffer_[i]) != VK_SUCCESS) {
-            EVK_LOGE("offscreen blur framebuffer failed");
+            EVK_LOGE("offscreen", "create_framebuffer_failed target=blur index={}", i);
             return false;
         }
     }
@@ -293,7 +293,7 @@ bool OffscreenEffects::createDescriptors(
     samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
     samplerInfo.maxLod = 0.0f;
     if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler_) != VK_SUCCESS) {
-        EVK_LOGE("offscreen vkCreateSampler failed");
+        EVK_LOGE("offscreen", "create_sampler_failed");
         return false;
     }
 
@@ -308,7 +308,7 @@ bool OffscreenEffects::createDescriptors(
     poolInfo.pPoolSizes = &poolSize;
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool_) !=
         VK_SUCCESS) {
-        EVK_LOGE("offscreen vkCreateDescriptorPool failed");
+        EVK_LOGE("offscreen", "create_descriptor_pool_failed");
         return false;
     }
 
@@ -321,7 +321,7 @@ bool OffscreenEffects::createDescriptors(
     allocInfo.descriptorSetCount = 3;
     allocInfo.pSetLayouts = layouts;
     if (vkAllocateDescriptorSets(device, &allocInfo, sets) != VK_SUCCESS) {
-        EVK_LOGE("offscreen vkAllocateDescriptorSets failed");
+        EVK_LOGE("offscreen", "allocate_descriptor_sets_failed");
         return false;
     }
     sceneSet_ = sets[0];
@@ -463,7 +463,7 @@ bool OffscreenEffects::createPipelines(VkRenderPass mainRenderPass,
                   &sdfBlitPipeline_) &&
         createOne(uiFrag, mainRenderPass, msaaSamples, true, &blitPipeline_);
     if (!ok) {
-        EVK_LOGE("offscreen vkCreateGraphicsPipelines failed");
+        EVK_LOGE("offscreen", "create_graphics_pipelines_failed");
     }
 
     vkDestroyShaderModule(device, fullscreenVert, nullptr);

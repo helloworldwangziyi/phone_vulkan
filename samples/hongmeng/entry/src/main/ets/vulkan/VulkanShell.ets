@@ -91,7 +91,8 @@ export struct VulkanShell {
             // 节点数按 "id" 键出现次数粗算：core 保证每个节点恰好一个 "id"
             // 字段；change=-1（关闭无障碍推的空树）时计数为 0，天然覆盖。
             const nodeCount: number = args.split('"id"').length - 1;
-            hilog.info(DOMAIN, TAG, 'a11y/update: %{public}d nodes, %{public}d bytes',
+            hilog.info(DOMAIN, TAG,
+              '[evk][accessibility][semantics_updated nodes=%{public}d bytes=%{public}d]',
               nodeCount, args.length);
             return '';
           }

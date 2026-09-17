@@ -57,7 +57,7 @@ bool Renderer::initialize() {
     // 离屏效果设施（背景模糊）：尺寸/格式/采样数依赖 swapchain，失败仅降级
     // （模糊标记批被忽略，内容照画），不阻断启动。
     if (!createOffscreenEffects()) {
-        EVK_LOGW("offscreen effects unavailable; backdrop blur disabled");
+        EVK_LOGW("renderer", "offscreen_unavailable phase=initialize blur=disabled");
     }
     // ④ 执行设施：命令池、顶点缓冲、命令缓冲、同步原语，与 swapchain 尺寸无关。
     if (!createCommandPool()) return false;
@@ -153,7 +153,7 @@ bool Renderer::createCommandPool() {
     poolInfo.queueFamilyIndex = graphicsFamily;
 
     if (vkCreateCommandPool(device, &poolInfo, nullptr, &commandPool_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateCommandPool failed");
+        EVK_LOGE("renderer", "create_command_pool_failed");
         return false;
     }
     return true;
@@ -194,7 +194,7 @@ bool Renderer::createVertexBuffer(uint32_t frameSlot, uint32_t capacity) {
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &newBuffer) != VK_SUCCESS) {
-        EVK_LOGE("vertex buffer vkCreateBuffer failed");
+        EVK_LOGE("renderer", "create_vertex_buffer_failed operation=create_buffer");
         return false;
     }
 
@@ -214,13 +214,13 @@ bool Renderer::createVertexBuffer(uint32_t frameSlot, uint32_t capacity) {
 
     // 按需求尺寸和选定类型分配设备内存。
     if (vkAllocateMemory(device, &allocInfo, nullptr, &newMemory) != VK_SUCCESS) {
-        EVK_LOGE("vertex buffer vkAllocateMemory failed");
+        EVK_LOGE("renderer", "create_vertex_buffer_failed operation=allocate_memory");
         vkDestroyBuffer(device, newBuffer, nullptr);
         return false;
     }
 
     if (vkBindBufferMemory(device, newBuffer, newMemory, 0) != VK_SUCCESS) {
-        EVK_LOGE("vertex buffer vkBindBufferMemory failed");
+        EVK_LOGE("renderer", "create_vertex_buffer_failed operation=bind_memory");
         vkFreeMemory(device, newMemory, nullptr);
         vkDestroyBuffer(device, newBuffer, nullptr);
         return false;
@@ -282,7 +282,7 @@ bool Renderer::uploadVertices(const ui::UiVertex* data, uint32_t count,
     void* mapped = nullptr;
     if (vkMapMemory(context_.device(), vertexBufferMemorys_[frameSlot], 0,
                     byteSize, 0, &mapped) != VK_SUCCESS) {
-        EVK_LOGE("vertex buffer vkMapMemory failed");
+        EVK_LOGE("renderer", "vertex_upload_failed operation=map_memory");
         return false;
     }
     std::memcpy(mapped, data, static_cast<size_t>(byteSize));
@@ -304,7 +304,7 @@ bool Renderer::createCommandBuffers() {
     allocInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers_.size());
 
     if (vkAllocateCommandBuffers(context_.device(), &allocInfo, commandBuffers_.data()) != VK_SUCCESS) {
-        EVK_LOGE("vkAllocateCommandBuffers failed");
+        EVK_LOGE("renderer", "allocate_command_buffers_failed");
         return false;
     }
     return true;
@@ -335,7 +335,7 @@ bool Renderer::createSyncObjects() {
         if (vkCreateSemaphore(device, &semInfo, nullptr, &imageAvailableSemaphores_[i]) != VK_SUCCESS ||
             vkCreateSemaphore(device, &semInfo, nullptr, &renderFinishedSemaphores_[i]) != VK_SUCCESS ||
             vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences_[i]) != VK_SUCCESS) {
-            EVK_LOGE("createSyncObjects failed");
+            EVK_LOGE("renderer", "create_sync_objects_failed frame_slot={}", i);
             return false;
         }
     }
@@ -358,7 +358,7 @@ void Renderer::recreateSwapchain() {
                        textureCache_.descriptorSetLayout());
     swapchain_.createFramebuffers();
     if (!createOffscreenEffects()) {
-        EVK_LOGW("offscreen effects unavailable after recreate; backdrop blur disabled");
+        EVK_LOGW("renderer", "offscreen_unavailable phase=recreate blur=disabled");
     }
 }
 
@@ -403,7 +403,8 @@ bool Renderer::render(const ui::Canvas& canvas) {
             continue;
         // SUBOPTIMAL 也算拿到图像（只是与 surface 不再完全匹配），照常渲染，present 后再重建。
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-            EVK_LOGE("vkAcquireNextImageKHR failed: {}", static_cast<int>(result));
+            EVK_LOGE("renderer", "acquire_image_failed result={}",
+                     static_cast<int>(result));
             return false;
         }
 
@@ -414,7 +415,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
             if (!uploadVertices(canvas.vertices().data(),
                                 static_cast<uint32_t>(canvas.vertices().size()),
                                 currentFrame_)) {
-                EVK_LOGE("UI vertex upload failed");
+                EVK_LOGE("renderer", "vertex_upload_failed operation=upload");
                 return false;
             }
         }
@@ -451,7 +452,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
         // 正是步骤①等待的那个信号。
         if (vkQueueSubmit(context_.graphicsQueue(), 1, &submitInfo,
                           inFlightFences_[currentFrame_]) != VK_SUCCESS) {
-            EVK_LOGE("vkQueueSubmit failed");
+            EVK_LOGE("renderer", "queue_submit_failed");
             return false;
         }
 
@@ -475,7 +476,8 @@ bool Renderer::render(const ui::Canvas& canvas) {
             swapchain_.requestRebuild();
             continue;
         } else if (result != VK_SUCCESS) {
-            EVK_LOGE("vkQueuePresentKHR failed: {}", static_cast<int>(result));
+            EVK_LOGE("renderer", "queue_present_failed result={}",
+                     static_cast<int>(result));
             return false;
         }
 
@@ -486,7 +488,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
 
     // 重试耗尽（surface 持续变化中，如快速连续旋转）：放弃本帧不算失败，
     // 后续尺寸事件还会触发渲染，届时继续收敛。
-    EVK_LOGW("render: swapchain still out of date after {} attempts, frame skipped",
+    EVK_LOGW("renderer", "frame_skipped reason=swapchain_out_of_date attempts={}",
              kMaxFrameAttempts);
     return true;
 }

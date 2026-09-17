@@ -37,6 +37,7 @@ static bool g_appStarted = false;
 
 // 壳层：视图与 Metal 层就绪（可能多次：退后台重建）。幂等。
 void evkIosInit(const void* layer) {
+    evk::log::init("estarx-vulkan");
     if (g_compositor) {
         return;
     }
@@ -49,18 +50,18 @@ void evkIosInit(const void* layer) {
         if (paths.count > 0) {
             evk::KeyValueStore::initialize(paths.firstObject.UTF8String);
         } else {
-            EVK_LOGE("failed to locate Documents directory");
+            EVK_LOGE("ios", "storage_path_failed directory=documents");
         }
     }
     g_platform = evkCreateIosPlatform(layer);
     if (!g_platform) {
-        EVK_LOGE("failed to create iOS platform");
+        EVK_LOGE("ios", "engine_start_failed phase=create_platform");
         return;
     }
     g_compositor = new evk::Compositor(g_platform);
     if (!g_compositor->initialize()) {
         // 失败时按创建的反序清理干净，保证下次能干净重试。
-        EVK_LOGE("failed to initialize Vulkan renderer");
+        EVK_LOGE("ios", "engine_start_failed phase=initialize_renderer");
         delete g_compositor;
         g_compositor = nullptr;
         evkDestroyIosPlatform(g_platform);
@@ -68,7 +69,7 @@ void evkIosInit(const void* layer) {
         return;
     }
 
-    EVK_LOGI("Vulkan renderer initialized (MoltenVK)");
+    EVK_LOGI("ios", "engine_started renderer=moltenvk");
     // 帧编排（buildFrame + 首帧日志 + render）内聚在 evk::Compositor。
     evk::setFrameFunc([](int64_t) { if (g_compositor) g_compositor->renderFrame(); });
     // 渲染器初始化完成：core 进入就绪状态，之后 App 才能安全创建视图。
@@ -167,5 +168,5 @@ void evkIosDestroy(void) {
         evkDestroyIosPlatform(g_platform);
         g_platform = nullptr;
     }
-    EVK_LOGI("Vulkan renderer destroyed");
+    EVK_LOGI("ios", "engine_stopped renderer=moltenvk");
 }

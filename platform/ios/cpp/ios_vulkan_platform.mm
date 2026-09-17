@@ -38,7 +38,7 @@ public:
 
     bool createVulkanSurface(VkInstance instance, VkSurfaceKHR* surface) override {
         if (!layer_) {
-            EVK_LOGE("iOS metal layer is null");
+            EVK_LOGE("ios", "surface_create_failed reason=metal_layer_null");
             return false;
         }
         VkMetalSurfaceCreateInfoEXT createInfo{};
@@ -46,7 +46,7 @@ public:
         createInfo.pLayer = layer_;
         if (vkCreateMetalSurfaceEXT(instance, &createInfo, nullptr, surface) !=
             VK_SUCCESS) {
-            EVK_LOGE("vkCreateMetalSurfaceEXT failed");
+            EVK_LOGE("ios", "surface_create_failed reason=vulkan_surface_failed");
             return false;
         }
         return true;

@@ -412,7 +412,7 @@ public:
                     column(std::move(rows)),
                     contentHeight,
                     [](float x, float y) {
-                        EVK_LOGI("quote list offset=({:.1f}, {:.1f})", x, y);
+                        EVK_LOGI("watchlist", "scroll_offset x={:.1f} y={:.1f}", x, y);
                     })),
             1.0f);
 

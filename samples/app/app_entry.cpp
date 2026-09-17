@@ -23,10 +23,10 @@ evk::ui::NavigationStyle navigationStyle(const AppTheme& theme) {
 
 void createUi() {
     if (evk::ui::appNavigator()) {
-        EVK_LOGI("UI already mounted; duplicate EngineReady ignored");
+        EVK_LOGI("app", "mount_skipped reason=already_mounted");
         return;
     }
-    EVK_LOGI("mounting Flutter-style UI root");
+    EVK_LOGI("app", "mount_started ui_model=flutter_style");
     appFonts::registerFonts(); ///< 先注册字体，首个含文字的 build() 才能排版
     appImages::ensureRegistered(); ///< 程序化位图（径向渐变徽章） ///< 先注册字体，首个含文字的 build() 才能排版
     evk::ui::runApp(
@@ -48,12 +48,12 @@ bool appEvent(evk::EventId id, const void* data) {
                 static_cast<float>(size->width),
                 static_cast<float>(size->height));
             evk::ui::setViewportSize(g_screenWidth, g_screenHeight);
-            EVK_LOGI("UI viewport set to {:.0f}x{:.0f}",
+            EVK_LOGI("layout", "viewport_updated width={:.0f} height={:.0f}",
                      g_screenWidth, g_screenHeight);
             break;
         }
         case evk::EventId::EngineReady:
-            EVK_LOGI("EngineReady received by App");
+            EVK_LOGI("lifecycle", "engine_ready_received");
             createUi();
             break;
         case evk::EventId::SurfaceDestroyed:
@@ -64,7 +64,8 @@ bool appEvent(evk::EventId id, const void* data) {
             const auto* insets = static_cast<const evk::SafeAreaData*>(data);
             evk::ui::setSafeAreaInsets(
                 insets->top, insets->bottom, insets->left, insets->right);
-            EVK_LOGI("safe area insets: {:.0f},{:.0f},{:.0f},{:.0f}",
+            EVK_LOGI("layout",
+                     "safe_area_updated top={:.0f} bottom={:.0f} left={:.0f} right={:.0f}",
                      insets->top, insets->bottom, insets->left, insets->right);
             break;
         }

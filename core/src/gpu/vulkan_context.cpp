@@ -28,15 +28,15 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
 
     // 将 Vulkan 校验消息严重级别映射到日志级别。
     // severity 是位掩码且按位递增，用 >= 比较即可分级，Debug 兜底。
-    // 消息前缀 evk-validation 便于在日志里过滤校验层输出。
+    // validation 功能域便于单独过滤 Vulkan 校验层输出。
     if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-        EVK_LOGE("[evk-validation] {}", data->pMessage);
+        EVK_LOGE("validation", "message text={}", data->pMessage);
     } else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        EVK_LOGW("[evk-validation] {}", data->pMessage);
+        EVK_LOGW("validation", "message text={}", data->pMessage);
     } else if (severity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
-        EVK_LOGI("[evk-validation] {}", data->pMessage);
+        EVK_LOGI("validation", "message text={}", data->pMessage);
     } else {
-        EVK_LOGD("[evk-validation] {}", data->pMessage);
+        EVK_LOGD("validation", "message text={}", data->pMessage);
     }
     // 返回 VK_FALSE 表示"不中止触发这条消息的 Vulkan 调用"：校验层只报告、不改变程序行为；
     // 返回 VK_TRUE 才会让该调用以 VK_ERROR_VALIDATION_FAILED_EXT 失败（几乎只用于调试）。
@@ -194,7 +194,7 @@ bool VulkanContext::createInstance() {
 
     // vkCreateInstance 是整个 Vulkan 栈第一个真正干活的调用；失败通常是缺扩展或驱动问题。
     if (vkCreateInstance(&createInfo, nullptr, &instance_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateInstance failed");
+        EVK_LOGE("vulkan", "create_instance_failed");
         return false;
     }
 
@@ -241,7 +241,7 @@ bool VulkanContext::pickPhysicalDevice() {
     vkEnumeratePhysicalDevices(instance_, &count, nullptr);
     // count 为 0 说明设备上根本没有 Vulkan 驱动，直接失败。
     if (count == 0) {
-        EVK_LOGE("no Vulkan-capable GPU found");
+        EVK_LOGE("vulkan", "physical_device_not_found reason=no_vulkan_gpu");
         return false;
     }
 
@@ -291,7 +291,7 @@ bool VulkanContext::pickPhysicalDevice() {
     }
 
     // 遍历完所有 GPU 都不满足要求，只能报错放弃。
-    EVK_LOGE("no suitable GPU found");
+    EVK_LOGE("vulkan", "physical_device_not_found reason=no_suitable_gpu");
     return false;
 }
 
@@ -357,7 +357,7 @@ bool VulkanContext::createLogicalDevice() {
     // 逻辑设备 vs 物理设备：physical 是硬件本身，logical 是我们与硬件交互的"会话"，
     // 之后几乎所有 Vulkan 调用都以 device_ 为第一个参数。
     if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateDevice failed");
+        EVK_LOGE("vulkan", "create_device_failed");
         return false;
     }
 
@@ -399,7 +399,7 @@ VkShaderModule VulkanContext::createShaderModule(const uint32_t* code,
     // 这里开销很小：SPIR-V 到 GPU 指令的真正编译发生在管线创建时。
     VkShaderModule module = VK_NULL_HANDLE;
     if (vkCreateShaderModule(device_, &createInfo, nullptr, &module) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateShaderModule failed");
+        EVK_LOGE("vulkan", "create_shader_module_failed bytes={}", codeSize);
         return VK_NULL_HANDLE;
     }
     return module;

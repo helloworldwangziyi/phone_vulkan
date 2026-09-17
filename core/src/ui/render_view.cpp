@@ -250,7 +250,7 @@ void View::handleScale(const ScaleEvent& event) {
  */
 Size View::layout(const BoxConstraints& constraints) {
     if (g_buildingFrame) {
-        EVK_LOGW("View::layout cannot mutate the tree during paint");
+        EVK_LOGW("layout", "mutation_rejected operation=layout phase=paint");
         return {rect.w, rect.h};
     }
     if (!layoutDirty_ && hasConstraints_ && constraints == constraints_) {
@@ -272,7 +272,7 @@ Size View::performLayout(const BoxConstraints& constraints) {
 
 void View::setPosition(float x, float y) {
     if (g_buildingFrame) {
-        EVK_LOGW("View::setPosition cannot mutate the tree during paint");
+        EVK_LOGW("layout", "mutation_rejected operation=set_position phase=paint");
         return;
     }
     if (rect.x == x && rect.y == y) {
@@ -313,7 +313,7 @@ void View::flushLayout() {
 
 void View::setBounds(float x, float y, float width, float height) {
     if (g_buildingFrame) {
-        EVK_LOGW("View::setBounds cannot mutate the tree during paint");
+        EVK_LOGW("layout", "mutation_rejected operation=set_bounds phase=paint");
         return;
     }
     setPosition(x, y);
@@ -490,11 +490,11 @@ View* rootView() {
 
 void setRootView(View* view) {
     if (g_buildingFrame) {
-        EVK_LOGW("setRootView cannot mutate the tree during paint");
+        EVK_LOGW("ui_tree", "mutation_rejected operation=set_root_view phase=paint");
         return;
     }
     if (view && view->parent) {
-        EVK_LOGW("setRootView requires a detached view");
+        EVK_LOGW("ui_tree", "set_root_view_rejected reason=view_attached");
         return;
     }
     g_rootView = view;

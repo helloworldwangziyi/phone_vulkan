@@ -7,11 +7,11 @@ const DOMAIN = 0x0000;
 
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
-    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
+    hilog.info(DOMAIN, TAG, '[evk][lifecycle][ability_created]');
   }
 
   onDestroy(): void {
-    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onDestroy');
+    hilog.info(DOMAIN, TAG, '[evk][lifecycle][ability_destroyed]');
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
@@ -22,23 +22,24 @@ export default class EntryAbility extends UIAbility {
 
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
-        hilog.error(DOMAIN, TAG, 'Failed to load the content. Cause: %{public}s',
+        hilog.error(DOMAIN, TAG,
+          '[evk][lifecycle][page_load_failed reason=%{public}s]',
           JSON.stringify(err) ?? '');
         return;
       }
-      hilog.info(DOMAIN, TAG, 'Succeeded in loading the content.');
+      hilog.info(DOMAIN, TAG, '[evk][lifecycle][page_loaded]');
     });
   }
 
   onWindowStageDestroy(): void {
-    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onWindowStageDestroy');
+    hilog.info(DOMAIN, TAG, '[evk][lifecycle][window_stage_destroyed]');
   }
 
   onForeground(): void {
-    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onForeground');
+    hilog.info(DOMAIN, TAG, '[evk][lifecycle][entered_foreground]');
   }
 
   onBackground(): void {
-    hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onBackground');
+    hilog.info(DOMAIN, TAG, '[evk][lifecycle][entered_background]');
   }
 }

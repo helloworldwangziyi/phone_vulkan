@@ -165,7 +165,7 @@ bool UiPipeline::create(VkRenderPass renderPass, VkExtent2D extent,
     layoutInfo.pPushConstantRanges = &pushConstant;
 
     if (vkCreatePipelineLayout(device, &layoutInfo, nullptr, &pipelineLayout_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreatePipelineLayout failed");
+        EVK_LOGE("pipeline", "create_layout_failed");
         vkDestroyShaderModule(device, mainVert, nullptr);
         vkDestroyShaderModule(device, mainFrag, nullptr);
         vkDestroyShaderModule(device, sdfVert, nullptr);
@@ -208,7 +208,7 @@ bool UiPipeline::create(VkRenderPass renderPass, VkExtent2D extent,
     const bool ok = createOne(mainVert, mainFrag, &mainPipeline_) &&
                     createOne(sdfVert, sdfFrag, &sdfPipeline_);
     if (!ok) {
-        EVK_LOGE("vkCreateGraphicsPipelines failed");
+        EVK_LOGE("pipeline", "create_graphics_pipelines_failed");
     }
 
     // 管线建完后 SPIR-V 已被"消化"，shader module 可即刻销毁。

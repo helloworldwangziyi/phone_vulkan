@@ -43,7 +43,7 @@ bool TextureCache::initialize() {
     samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     samplerInfo.maxLod = VK_LOD_CLAMP_NONE;
     if (vkCreateSampler(device, &samplerInfo, nullptr, &sampler_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateSampler failed");
+        EVK_LOGE("texture", "create_sampler_failed");
         return false;
     }
 
@@ -58,7 +58,7 @@ bool TextureCache::initialize() {
     layoutInfo.bindingCount = 1;
     layoutInfo.pBindings = &binding;
     if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateDescriptorSetLayout failed");
+        EVK_LOGE("texture", "create_descriptor_set_layout_failed");
         return false;
     }
 
@@ -72,7 +72,7 @@ bool TextureCache::initialize() {
     poolInfo.poolSizeCount = 1;
     poolInfo.pPoolSizes = &poolSize;
     if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool_) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateDescriptorPool failed");
+        EVK_LOGE("texture", "create_descriptor_pool_failed");
         return false;
     }
 
@@ -116,7 +116,7 @@ bool TextureCache::ensureTextureUploadCapacity(uint32_t frameSlot,
     bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     if (vkCreateBuffer(device, &bufferInfo, nullptr, &newBuffer) != VK_SUCCESS) {
-        EVK_LOGE("texture upload vkCreateBuffer failed");
+        EVK_LOGE("texture", "upload_buffer_create_failed");
         return false;
     }
 
@@ -129,12 +129,12 @@ bool TextureCache::ensureTextureUploadCapacity(uint32_t frameSlot,
         memReq.memoryTypeBits,
         VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     if (vkAllocateMemory(device, &allocInfo, nullptr, &newMemory) != VK_SUCCESS) {
-        EVK_LOGE("texture upload vkAllocateMemory failed");
+        EVK_LOGE("texture", "upload_buffer_allocate_memory_failed");
         vkDestroyBuffer(device, newBuffer, nullptr);
         return false;
     }
     if (vkBindBufferMemory(device, newBuffer, newMemory, 0) != VK_SUCCESS) {
-        EVK_LOGE("texture upload vkBindBufferMemory failed");
+        EVK_LOGE("texture", "upload_buffer_bind_memory_failed");
         vkFreeMemory(device, newMemory, nullptr);
         vkDestroyBuffer(device, newBuffer, nullptr);
         return false;
@@ -181,7 +181,7 @@ bool TextureCache::createSampledTexture(TextureObj& tex, uint32_t width,
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     if (vkCreateImage(device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateImage failed");
+        EVK_LOGE("texture", "create_image_failed");
         return false;
     }
 
@@ -193,13 +193,13 @@ bool TextureCache::createSampledTexture(TextureObj& tex, uint32_t width,
     allocInfo.memoryTypeIndex = context_.findMemoryType(memReq.memoryTypeBits,
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
     if (vkAllocateMemory(device, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS) {
-        EVK_LOGE("texture vkAllocateMemory failed");
+        EVK_LOGE("texture", "allocate_image_memory_failed");
         vkDestroyImage(device, tex.image, nullptr);
         tex.image = VK_NULL_HANDLE;
         return false;
     }
     if (vkBindImageMemory(device, tex.image, tex.memory, 0) != VK_SUCCESS) {
-        EVK_LOGE("texture vkBindImageMemory failed");
+        EVK_LOGE("texture", "bind_image_memory_failed");
         vkFreeMemory(device, tex.memory, nullptr);
         vkDestroyImage(device, tex.image, nullptr);
         tex.memory = VK_NULL_HANDLE;
@@ -216,7 +216,7 @@ bool TextureCache::createSampledTexture(TextureObj& tex, uint32_t width,
     viewInfo.subresourceRange.levelCount = tex.mipLevels;
     viewInfo.subresourceRange.layerCount = 1;
     if (vkCreateImageView(device, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
-        EVK_LOGE("vkCreateImageView failed");
+        EVK_LOGE("texture", "create_image_view_failed");
         vkDestroyImage(device, tex.image, nullptr);
         vkFreeMemory(device, tex.memory, nullptr);
         tex.image = VK_NULL_HANDLE;
@@ -230,7 +230,7 @@ bool TextureCache::createSampledTexture(TextureObj& tex, uint32_t width,
     setInfo.descriptorSetCount = 1;
     setInfo.pSetLayouts = &descriptorSetLayout_;
     if (vkAllocateDescriptorSets(device, &setInfo, &tex.set) != VK_SUCCESS) {
-        EVK_LOGE("vkAllocateDescriptorSets failed");
+        EVK_LOGE("texture", "allocate_descriptor_set_failed");
         vkDestroyImageView(device, tex.view, nullptr);
         vkDestroyImage(device, tex.image, nullptr);
         vkFreeMemory(device, tex.memory, nullptr);
@@ -278,7 +278,8 @@ void TextureCache::ensureStoreTextures() {
             if (!createSampledTexture(created, source_->width(textureId),
                                       source_->height(textureId), mipLevels)) {
                 // 本帧建不出就留空槽，下一帧重试；期间该纹理的绘制退化为白块。
-                EVK_LOGW("texture {} unavailable; retried next frame", id);
+                EVK_LOGW("texture", "create_failed texture_id={} action=retry_next_frame",
+                         id);
                 continue;
             }
             tex = created;
@@ -354,7 +355,7 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
     }
 
     if (!ensureTextureUploadCapacity(frameSlot, total)) {
-        EVK_LOGE("unable to allocate {} bytes for texture upload",
+        EVK_LOGE("texture", "upload_capacity_failed bytes={}",
                  static_cast<uint64_t>(total));
         return;
     }
@@ -364,7 +365,7 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
     void* mapped = nullptr;
     if (vkMapMemory(device, textureUploadMemorys_[frameSlot], 0, total, 0,
                     &mapped) != VK_SUCCESS) {
-        EVK_LOGE("texture upload vkMapMemory failed");
+        EVK_LOGE("texture", "upload_map_memory_failed");
         return;
     }
     for (const PendingCopy& copy : copies) {
@@ -376,13 +377,15 @@ void TextureCache::uploadPendingTextures(VkCommandBuffer cmd, uint32_t frameSlot
             if (!source_->copyRegion(copy.textureId, copy.x, copy.y, copy.width,
                                      copy.height, destination,
                                      static_cast<size_t>(copy.size))) {
-                EVK_LOGE("texture {} region conversion failed", copy.textureId);
+                EVK_LOGE("texture", "region_conversion_failed texture_id={}",
+                         copy.textureId);
                 vkUnmapMemory(device, textureUploadMemorys_[frameSlot]);
                 return;
             }
         } else if (!source_->copyMipChain(copy.textureId, destination,
                                           static_cast<size_t>(copy.size))) {
-            EVK_LOGE("texture {} mip chain conversion failed", copy.textureId);
+            EVK_LOGE("texture", "mip_chain_conversion_failed texture_id={}",
+                     copy.textureId);
             vkUnmapMemory(device, textureUploadMemorys_[frameSlot]);
             return;
         }

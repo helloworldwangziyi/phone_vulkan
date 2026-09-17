@@ -35,7 +35,7 @@ void Compositor::renderFrame() {
     ui::buildFrame(canvas_);
     if (!firstFrameLogged_) {
         firstFrameLogged_ = true;
-        EVK_LOGI("first UI frame: vertices={}, batches={}",
+        EVK_LOGI("render", "first_frame vertices={} batches={}",
                  canvas_.vertices().size(), canvas_.batches().size());
     }
     renderer_->render(canvas_);

@@ -46,7 +46,7 @@ void registerFonts() {
                           sizeof(evk::assets::kFontNotoSansScRegular));
     gCjkBold = engine.addFont(evk::assets::kFontNotoSansScBold,
                               sizeof(evk::assets::kFontNotoSansScBold));
-    EVK_LOGI("fonts registered: latin={} cjk={} cjkBold={}",
+    EVK_LOGI("text", "fonts_registered latin={} cjk={} cjk_bold={}",
              static_cast<int>(gLatin), static_cast<int>(gCjk),
              static_cast<int>(gCjkBold));
 }
@@ -54,7 +54,7 @@ void registerFonts() {
 void prewarm() {
     if (g_screenWidth <= 0.0f) {
         // SurfaceChanged 还没来：appCalc 换算结果是 0，预热无意义。
-        EVK_LOGI("font prewarm skipped: screen size not ready");
+        EVK_LOGI("text", "font_prewarm_skipped reason=screen_size_unavailable");
         return;
     }
     using evk::ui::kFontAny;
@@ -110,7 +110,7 @@ void prewarm() {
     // 底部 Tab 标签。
     prewarmText("自选行情交易资讯", watchDp(9.5f), cjk());
 
-    EVK_LOGI("font prewarm done: atlas pages={}",
+    EVK_LOGI("text", "font_prewarm_completed atlas_pages={}",
              evk::ui::FontEngine::instance().pageCount());
 }
 
