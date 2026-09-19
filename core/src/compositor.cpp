@@ -1,44 +1,136 @@
-/**
- * @file compositor.cpp
- * @brief 帧编排器实现：buildFrame → 首帧日志 → renderer->render。
- */
 #include "evk/compositor.h"
 
-// EVK_LOGI 日志宏：spdlog 封装，全局统一的日志入口。
+#include "evk/frame_metrics.h"
+#include "evk/frame_pipeline.h"
+#include "evk/frame_scheduler.h"
 #include "evk/log.h"
 #include "evk/vulkan_renderer.h"
-// ui::buildFrame：视图树 → Canvas 的帧构建入口。
 #include "evk/ui/render_view.h"
-// TextureStore → gpu::ITextureSource 的 header-only 适配器（UI 层提供）。
 #include "ui/texture_store_source.h"
+
+#include <atomic>
+#include <stdexcept>
 
 namespace evk {
 
-Compositor::Compositor(IPlatform* platform)
-    : textureSource_(std::make_unique<ui::TextureStoreSource>()),
-      renderer_(std::make_unique<Renderer>(platform, textureSource_.get())) {}
+struct Compositor::Impl {
+    struct Frame {
+        ui::Canvas canvas;
+        std::vector<ui::TextureUpdate> textures;
+        uint32_t width = 0, height = 0;
+        uint64_t generation = 0;
+        FrameTiming timing;
+        FrameClock::time_point queued;
+    };
 
-// 析构定义在实现文件：成员是前置声明类型的 unique_ptr，此处类型才完整。
+    IPlatform* platform;
+    // UI 独占；Raster 只读取 Frame 中的尺寸副本及原子 generation。
+    uint32_t width = 0, height = 0;
+    std::atomic<uint64_t> generation{1};
+    bool firstFrame = true;
+    // 以下两个对象只在 Raster 创建、使用和销毁。
+    std::unique_ptr<ui::TextureStoreSource> textures;
+    std::unique_ptr<Renderer> renderer;
+    FramePipeline<Frame> pipeline;
+
+    explicit Impl(IPlatform* value) : platform(value) {}
+    ~Impl() { pipeline.stop(); }
+
+    void raster(const Frame& frame) {
+        FrameTiming timing = frame.timing;
+        timing.milliseconds[static_cast<size_t>(FramePhase::Queue)] = frameMilliseconds(frame.queued);
+        FrameTimingScope scope(timing);
+        {
+            FramePhaseScope rasterScope(FramePhase::Raster);
+            // 过期几何可以跳过，纹理增量必须按序接收，不能丢 atlas 字形。
+            textures->apply(frame.textures);
+            if (frame.generation != generation.load()) return;
+            if (rasterGeneration != frame.generation) {
+                renderer->setSize(frame.width, frame.height);
+                rasterGeneration = frame.generation;
+            }
+            const auto result = renderer->render(frame.canvas);
+            if (result == RenderResult::Retry) {
+                requestRender();
+                return;
+            }
+            if (result == RenderResult::Failed) {
+                EVK_LOGE("render", "raster_failed frame={} action=stop", timing.sequence);
+                throw std::runtime_error("Raster rendering failed");
+            }
+        }
+        FrameMetrics::instance().record(timing);
+        if (++rendered % 120 == 1) {
+            EVK_LOGD("render", "frame_timing frame={} ui_tasks_ms={:.2f} rebuild_ms={:.2f} layout_ms={:.2f} paint_ms={:.2f} snapshot_ms={:.2f} queue_ms={:.2f} raster_ms={:.2f} upload_ms={:.2f}",
+                     timing.sequence, timing.ms(FramePhase::UiTasks), timing.ms(FramePhase::Rebuild),
+                     timing.ms(FramePhase::Layout), timing.ms(FramePhase::Paint),
+                     timing.ms(FramePhase::TextureSnapshot), timing.ms(FramePhase::Queue),
+                     timing.ms(FramePhase::Raster), timing.ms(FramePhase::VertexUpload));
+        }
+    }
+    uint64_t rasterGeneration = 0, rendered = 0;
+};
+
+Compositor::Compositor(IPlatform* platform) : impl_(std::make_unique<Impl>(platform)) {}
 Compositor::~Compositor() = default;
 
 bool Compositor::initialize() {
-    return renderer_->initialize();
+    auto& state = *impl_;
+    // UIKit/JNI 平台属性只在调用线程查询，后续 resize 随帧下发。
+    state.platform->getSurfaceSize(&state.width, &state.height);
+    if (!state.width || !state.height) return false;
+    const uint32_t width = state.width, height = state.height;
+    return state.pipeline.start([&state, width, height] {
+        state.textures = std::make_unique<ui::TextureStoreSource>();
+        state.renderer = std::make_unique<Renderer>(state.platform, state.textures.get());
+        state.renderer->setSize(width, height);
+        state.rasterGeneration = state.generation.load();
+        return state.renderer->initialize();
+    }, [&state](const Impl::Frame& frame) { state.raster(frame); }, [&state] {
+        state.renderer.reset();
+        state.textures.reset();
+    });
 }
 
-Renderer* Compositor::renderer() const {
-    return renderer_.get();
+void Compositor::setSize(uint32_t width, uint32_t height) {
+    impl_->width = width;
+    impl_->height = height;
+    requestSwapchainRebuild();
+}
+
+void Compositor::requestSwapchainRebuild() {
+    ++impl_->generation;
+    requestRender();
 }
 
 void Compositor::renderFrame() {
-    // 构建视图树内容（内部执行 View draw callback）后交给渲染器；
-    // 首帧打一次顶点/批次统计日志。
-    ui::buildFrame(canvas_);
-    if (!firstFrameLogged_) {
-        firstFrameLogged_ = true;
-        EVK_LOGI("render", "first_frame vertices={} batches={}",
-                 canvas_.vertices().size(), canvas_.batches().size());
+    auto& state = *impl_;
+    if (!state.width || !state.height || !state.pipeline.running()) return;
+    const bool submitted = state.pipeline.produce([&state](Impl::Frame& frame) {
+        FrameTiming local;
+        FrameTiming& timing = activeFrameTiming ? *activeFrameTiming : local;
+        FrameTimingScope scope(timing);
+        ui::buildFrame(frame.canvas);
+        {
+            FramePhaseScope snapshot(FramePhase::TextureSnapshot);
+            frame.textures = ui::TextureStore::instance().takeUpdates(state.firstFrame);
+        }
+        frame.width = state.width;
+        frame.height = state.height;
+        frame.generation = state.generation.load();
+        timing.vertices = frame.canvas.vertices().size();
+        timing.batches = frame.canvas.batches().size();
+        frame.timing = timing;
+        frame.queued = FrameClock::now();
+        if (state.firstFrame) {
+            state.firstFrame = false;
+            EVK_LOGI("render", "first_frame vertices={} batches={}", timing.vertices, timing.batches);
+        }
+    });
+    if (!submitted) {
+        FrameMetrics::instance().defer();
+        requestRender(); // 保留脏请求，下个 VSync 用最新 UI 状态重试。
     }
-    renderer_->render(canvas_);
 }
 
 } // namespace evk

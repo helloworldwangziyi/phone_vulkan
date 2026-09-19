@@ -271,4 +271,29 @@ void TextureStore::reset() {
     entries_.clear();
 }
 
+std::vector<TextureUpdate> TextureStore::takeUpdates(bool all) {
+    std::vector<TextureUpdate> updates;
+    for (size_t i = 0; i < entries_.size(); ++i) {
+        auto& entry = entries_[i];
+        if (!all && !entry.dirty) continue;
+        TextureUpdate update;
+        update.id = static_cast<uint32_t>(i + 1);
+        update.width = entry.width;
+        update.height = entry.height;
+        update.mipmapped = entry.mipmapped;
+        update.region = all ? gpu::TextureRegion{0, 0, entry.width, entry.height}
+                            : entry.dirtyRegion;
+        const auto& r = update.region;
+        update.pixels.resize(static_cast<size_t>(r.w) * r.h);
+        for (uint32_t y = 0; y < r.h; ++y) {
+            std::copy_n(entry.data.data() + static_cast<size_t>(y + r.y) * entry.width + r.x,
+                        r.w, update.pixels.data() + static_cast<size_t>(y) * r.w);
+        }
+        updates.push_back(std::move(update));
+    }
+    // 全部复制成功后才消费，分配失败不会丢掉先前纹理的脏标记。
+    for (const auto& update : updates) consumeDirty(update.id, nullptr);
+    return updates;
+}
+
 } // namespace evk::ui

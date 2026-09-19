@@ -8,6 +8,7 @@
  */
 // Renderer 主头文件：声明本文件要实现的所有方法与句柄成员。
 #include "evk/vulkan_renderer.h"
+#include "evk/frame_metrics.h"
 // EVK_LOGI/W/E 日志宏：spdlog 封装，全局统一的日志入口。
 #include "evk/log.h"
 
@@ -64,6 +65,7 @@ bool Renderer::initialize() {
     if (!createVertexBuffers()) return false;
     if (!createCommandBuffers()) return false;
     if (!createSyncObjects()) return false;
+    swapchain_.takeRebuildRequest(); // 初始尺寸已用于建链，不必在首帧重复重建。
     return true;
 }
 
@@ -256,6 +258,7 @@ void Renderer::destroyVertexBuffers() {
 
 bool Renderer::uploadVertices(const ui::UiVertex* data, uint32_t count,
                               uint32_t frameSlot) {
+    FramePhaseScope phase(FramePhase::VertexUpload);
     if (count == 0) {
         return true;
     }
@@ -342,7 +345,7 @@ bool Renderer::createSyncObjects() {
     return true;
 }
 
-void Renderer::recreateSwapchain() {
+bool Renderer::recreateSwapchain() {
     // 先等 GPU 空闲，释放依赖 swapchain 的状态，再从头重建。
     // 重建期间不能有任何帧在飞：先 vkDeviceWaitIdle 让 GPU 完全空闲。
     vkDeviceWaitIdle(context_.device());
@@ -352,14 +355,15 @@ void Renderer::recreateSwapchain() {
     offscreenEffects_.destroy();
     uiPipeline_.destroy();
     swapchain_.cleanup();
-    swapchain_.create();
-    uiPipeline_.create(swapchain_.renderPass(), swapchain_.extent(),
+    if (!swapchain_.create()) return false;
+    if (!uiPipeline_.create(swapchain_.renderPass(), swapchain_.extent(),
                        swapchain_.msaaSamples(),
-                       textureCache_.descriptorSetLayout());
-    swapchain_.createFramebuffers();
+                       textureCache_.descriptorSetLayout())) return false;
+    if (!swapchain_.createFramebuffers()) return false;
     if (!createOffscreenEffects()) {
         EVK_LOGW("renderer", "offscreen_unavailable phase=recreate blur=disabled");
     }
+    return true;
 }
 
 void Renderer::setSize(uint32_t width, uint32_t height) {
@@ -370,7 +374,7 @@ void Renderer::requestSwapchainRebuild() {
     swapchain_.requestRebuild();
 }
 
-bool Renderer::render(const ui::Canvas& canvas) {
+RenderResult Renderer::render(const ui::Canvas& canvas) {
     // 尺寸变化（旋转等）时先重建 swapchain 再画帧：否则本帧会按旧 swapchain 尺寸
     // 投影、画进旧尺寸的图像，呈现出去的是变形/裁剪的画面；本渲染器是按需模型，
     // 之后没有新帧覆盖，错误会一直挂到下次事件。
@@ -381,31 +385,40 @@ bool Renderer::render(const ui::Canvas& canvas) {
     // 靠下一帧自然收敛），所以本帧内立刻重建重画，直到交换链与 surface 匹配。
     for (uint32_t attempt = 0; attempt < kMaxFrameAttempts; ++attempt) {
         if (swapchain_.takeRebuildRequest()) {
-            recreateSwapchain();
+            if (!recreateSwapchain()) return RenderResult::Failed;
         }
         // 每帧流程：等待 fence、获取图像、录制命令、提交执行、最后呈现。
         // ① 等本帧槽位的 fence：确保它上一轮的渲染已完成，
         // 这把 CPU 领先 GPU 的帧数限制在 kMaxFramesInFlight 以内，防止无限堆积。
-        vkWaitForFences(context_.device(), 1, &inFlightFences_[currentFrame_],
-                        VK_TRUE, UINT64_MAX);
+        // 窗口退后台时不能无限等图像；超时把绘制请求留到下一次 VSync，
+        // 让 Raster 能返回队列并响应 stop（不影响 GPU 已提交帧的生命周期）。
+        constexpr uint64_t waitNanos = 16000000;
+        const VkResult fenceResult = vkWaitForFences(
+            context_.device(), 1, &inFlightFences_[currentFrame_], VK_TRUE, waitNanos);
+        if (fenceResult == VK_TIMEOUT) return RenderResult::Retry;
+        if (fenceResult != VK_SUCCESS) {
+            EVK_LOGE("renderer", "wait_fence_failed result={}", static_cast<int>(fenceResult));
+            return RenderResult::Failed;
+        }
 
         // ② acquire：向交换链申请下一张可写图像；图像就绪时 GPU 会 signal imageAvailableSemaphore。
         uint32_t imageIndex = 0;
         VkResult result = vkAcquireNextImageKHR(context_.device(), swapchain_.handle(),
-            UINT64_MAX, imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE,
+            waitNanos, imageAvailableSemaphores_[currentFrame_], VK_NULL_HANDLE,
             &imageIndex);
+        if (result == VK_TIMEOUT || result == VK_NOT_READY) return RenderResult::Retry;
 
         // 这一帧还没来得及渲染，swapchain 就已经失效了。
         // OUT_OF_DATE 说明交换链与 surface 已不匹配（尺寸/旋转变化）：
         // 立刻重建并重试本帧（旧实现直接放弃本帧，按需模型下画面会整帧丢失）。
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-            recreateSwapchain();
+            if (!recreateSwapchain()) return RenderResult::Failed;
             continue;
         // SUBOPTIMAL 也算拿到图像（只是与 surface 不再完全匹配），照常渲染，present 后再重建。
         } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
             EVK_LOGE("renderer", "acquire_image_failed result={}",
                      static_cast<int>(result));
-            return false;
+            return RenderResult::Failed;
         }
 
         // acquire 成功后先把本帧顶点写进动态缓冲，再录命令。空 canvas 跳过上传，
@@ -416,7 +429,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
                                 static_cast<uint32_t>(canvas.vertices().size()),
                                 currentFrame_)) {
                 EVK_LOGE("renderer", "vertex_upload_failed operation=upload");
-                return false;
+                return RenderResult::Failed;
             }
         }
 
@@ -453,7 +466,7 @@ bool Renderer::render(const ui::Canvas& canvas) {
         if (vkQueueSubmit(context_.graphicsQueue(), 1, &submitInfo,
                           inFlightFences_[currentFrame_]) != VK_SUCCESS) {
             EVK_LOGE("renderer", "queue_submit_failed");
-            return false;
+            return RenderResult::Failed;
         }
 
         // ⑥ present：把渲染好的图像交回交换链排队上屏。
@@ -478,19 +491,19 @@ bool Renderer::render(const ui::Canvas& canvas) {
         } else if (result != VK_SUCCESS) {
             EVK_LOGE("renderer", "queue_present_failed result={}",
                      static_cast<int>(result));
-            return false;
+            return RenderResult::Failed;
         }
 
         // ⑦ 轮转帧槽位 0→1→0→1：下一帧换用另一套 semaphore / fence / 命令缓冲。
         currentFrame_ = (currentFrame_ + 1) % gpu::kMaxFramesInFlight;
-        return true;
+        return RenderResult::Rendered;
     }
 
     // 重试耗尽（surface 持续变化中，如快速连续旋转）：放弃本帧不算失败，
-    // 后续尺寸事件还会触发渲染，届时继续收敛。
+    // 由 Compositor 保留下一帧请求，保证静止 UI 也会继续收敛。
     EVK_LOGW("renderer", "frame_skipped reason=swapchain_out_of_date attempts={}",
              kMaxFrameAttempts);
-    return true;
+    return RenderResult::Retry;
 }
 
 namespace {

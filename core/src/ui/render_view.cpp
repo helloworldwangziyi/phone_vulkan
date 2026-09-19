@@ -1,4 +1,5 @@
 #include "evk/ui/render_view.h"
+#include "evk/frame_metrics.h"
 
 #include <algorithm>
 
@@ -249,6 +250,7 @@ void View::handleScale(const ScaleEvent& event) {
  * 从根下来）经过干净子树的开销因此为零。真正布局一次才标一次重绘。
  */
 Size View::layout(const BoxConstraints& constraints) {
+    FramePhaseScope phase(FramePhase::Layout);
     if (g_buildingFrame) {
         EVK_LOGW("layout", "mutation_rejected operation=layout phase=paint");
         return {rect.w, rect.h};
@@ -521,6 +523,7 @@ void buildFrame(Canvas& canvas) {
         // 语义收集放 FrameBuildScope 之外：onFrameBuilt 可能经平台通道
         // 同步外呼，回调链不允许撞上「绘制期间禁止改树」的守卫。
         FrameBuildScope scope;
+        FramePhaseScope phase(FramePhase::Paint);
         g_rootView->paint(canvas, clip);
     }
     // 无障碍语义树：未启用时零开销短路（见 ui/semantics.h）。

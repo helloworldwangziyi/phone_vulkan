@@ -1,4 +1,5 @@
 #include "evk/ui/event_bus.h"
+#include "evk/frame_scheduler.h"
 
 #include <algorithm>
 #include <mutex>
@@ -130,6 +131,7 @@ void postUi(std::function<void()> task) {
     }
     std::lock_guard<std::mutex> lock(g_taskMutex);
     g_tasks.push_back(std::move(task));
+    evk::requestRender();
 }
 
 void drainUiTasks() {

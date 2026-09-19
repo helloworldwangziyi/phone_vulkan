@@ -3,6 +3,7 @@
  * @brief 按需渲染循环实现：dirty 标志 + VSync 驱动的帧调度。
  */
 #include "evk/frame_scheduler.h"
+#include "evk/frame_metrics.h"
 
 #include <atomic>
 
@@ -39,10 +40,20 @@ void requestRender() {
 }
 
 bool beginFrame(int64_t frameTimeNanos) {
+    static uint64_t sequence = 0;
+    FrameTiming timing;
+    timing.sequence = ++sequence;
+    FrameTimingScope timingScope(timing);
     // 跨线程任务先执行：任务内可能改视图、启动动画、置 dirty，当帧即可体现。
-    ui::drainUiTasks();
+    {
+        FramePhaseScope phase(FramePhase::UiTasks);
+        ui::drainUiTasks();
+    }
     // 动画先走：tick 内修改视图会置 dirty，当帧即可绘制。
-    ui::tickAnimations(frameTimeNanos);
+    {
+        FramePhaseScope phase(FramePhase::Animation);
+        ui::tickAnimations(frameTimeNanos);
+    }
     if (!g_frameFunc || !g_framePending.exchange(false, std::memory_order_acq_rel)) {
         return false;
     }

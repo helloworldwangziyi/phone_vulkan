@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E57A11000000000000000701 /* worker_pool.cpp in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000700 /* worker_pool.cpp */; };
 		E57A110000000000000000B1 /* ios_app_entry.m in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000001 /* ios_app_entry.m */; };
 		E57A110000000000000000B2 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000003 /* AppDelegate.m */; };
 		E57A110000000000000000B3 /* ViewController.mm in Sources */ = {isa = PBXBuildFile; fileRef = E57A11000000000000000005 /* ViewController.mm */; };
@@ -100,6 +101,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		E57A11000000000000000700 /* worker_pool.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = worker_pool.cpp; path = ../../../core/src/worker_pool.cpp; sourceTree = "<group>"; };
 		E57A11000000000000000001 /* ios_app_entry.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = ios_app_entry.m; sourceTree = "<group>"; };
 		E57A11000000000000000002 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		E57A11000000000000000003 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
@@ -233,6 +235,7 @@
 			children = (
 				E57A11000000000000000010 /* app_lifecycle.cpp */,
 				E57A11000000000000000011 /* frame_scheduler.cpp */,
+				E57A11000000000000000700 /* worker_pool.cpp */,
 				E57A11000000000000000012 /* vulkan_renderer.cpp */,
 				E57A11000000000000000048 /* compositor.cpp */,
 				E57A11000000000000000049 /* vulkan_context.cpp */,
@@ -467,6 +470,7 @@
 				E57A110000000000000000B3 /* ViewController.mm in Sources */,
 				E57A11000000000000000101 /* app_lifecycle.cpp in Sources */,
 				E57A11000000000000000102 /* frame_scheduler.cpp in Sources */,
+				E57A11000000000000000701 /* worker_pool.cpp in Sources */,
 				E57A11000000000000000103 /* vulkan_renderer.cpp in Sources */,
 				E57A11000000000000000148 /* compositor.cpp in Sources */,
 				E57A11000000000000000149 /* vulkan_context.cpp in Sources */,

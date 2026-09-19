@@ -18,9 +18,8 @@
 #include "evk/frame_scheduler.h"
 #include "evk/platform_channel.h"
 #include "evk/compositor.h"
-// 完整类型：g_platform->getSurfaceSize 与 compositor->renderer()->setSize 要用。
+// 完整类型：g_platform->getSurfaceSize 要用。
 #include "evk/render_platform.h"
-#include "evk/vulkan_renderer.h"
 #include "evk/ui/animation_scheduler.h"
 #include "evk/ui/ui_application.h"
 #include "evk/ui/pointer_input.h"
@@ -93,7 +92,7 @@ void evkIosResize(int32_t width, int32_t height) {
     evk::SurfaceChangedData data{width, height};
     evk::dispatchEvent(evk::EventId::SurfaceChanged, &data);
     if (g_compositor) {
-        g_compositor->renderer()->setSize(static_cast<uint32_t>(width),
+        g_compositor->setSize(static_cast<uint32_t>(width),
                                           static_cast<uint32_t>(height));
     }
     evk::requestRender();

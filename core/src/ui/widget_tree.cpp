@@ -34,6 +34,7 @@
  */
 
 #include "evk/ui/widget_tree.h"
+#include "evk/frame_metrics.h"
 
 #include <cassert>
 #include <utility>
@@ -347,6 +348,7 @@ const StatefulWidget& State::widget() const {
  * 数据的第一道防线（第二道是调用方自己检查 mounted/取消标志）。
  */
 void State::setState(std::function<void()> mutate) {
+    FramePhaseScope phase(FramePhase::Rebuild);
     if (!mounted()) {
         return;
     }

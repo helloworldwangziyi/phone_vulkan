@@ -22,6 +22,8 @@
 
 namespace evk {
 
+enum class RenderResult { Rendered, Retry, Failed };
+
 /**
  * @brief 极简自包含的 Vulkan 渲染器。
  *
@@ -29,7 +31,8 @@ namespace evk {
  * swapchain/MSAA/render pass 归 gpu::Swapchain，管线归 gpu::UiPipeline，
  * 纹理归 gpu::TextureCache；本类只做帧编排（acquire → 录制 → 提交 →
  * present）并持有命令池、动态顶点缓冲与同步原语。
- * 原生 surface 由 IPlatform 提供。
+ * 原生 surface 由 IPlatform 提供。全部方法仅在 Raster 线程调用，
+ * UI 尺寸事件须经过 Compositor，不得直接调用本类。
  */
 class Renderer {
 public:
@@ -54,9 +57,9 @@ public:
     /**
      * @brief 把 Canvas 收集的本帧几何绘制成一帧。
      * @param canvas 本帧收集的 UI 几何
-     * @return true 表示绘制成功
+     * @return Rendered 已呈现；Retry 等待超时/尺寸尚未稳定，需下一帧重试。
      */
-    bool render(const ui::Canvas& canvas);
+    RenderResult render(const ui::Canvas& canvas);
 
     /**
      * @brief 通知渲染器 surface 尺寸已变化。
@@ -83,7 +86,7 @@ private:
     /**
      * @brief swapchain 重建编排：管线与 swapchain 资源同批销毁后按原序重建。
      */
-    void recreateSwapchain();
+    bool recreateSwapchain();
     void recordCommandBuffer(VkCommandBuffer cmd, uint32_t imageIndex, const ui::Canvas& canvas);
 
     /**

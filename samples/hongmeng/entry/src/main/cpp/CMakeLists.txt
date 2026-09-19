@@ -98,6 +98,7 @@ add_library(estarx_vulkan SHARED
     ${EVK_ROOT}/platform/hongmeng/cpp/hongmeng_vulkan_platform.cpp
     ${EVK_ROOT}/core/src/app_lifecycle.cpp
     ${EVK_ROOT}/core/src/frame_scheduler.cpp
+    ${EVK_ROOT}/core/src/worker_pool.cpp
     ${EVK_ROOT}/core/src/platform_channel.cpp
     ${EVK_ROOT}/core/src/kv_store.cpp
     ${EVK_ROOT}/core/src/compositor.cpp

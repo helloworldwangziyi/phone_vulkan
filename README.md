@@ -113,6 +113,11 @@ See 文档/构建指南.md (Chinese) for signing and debugging details.
 
 ## Other platforms
 
+The shared engine builds UI frames on the platform/UI thread and submits them
+through a bounded two-slot pipeline to a dedicated raster thread. Background
+value-message computation is available through `evk::WorkerPool`; see
+[the threading guide](文档/多线程指南.md) for ownership, cancellation, and profiling.
+
 Implement evk::IPlatform for the target window system. Platform code only owns
 the Vulkan surface, VSync source, pointer translation, and surface lifecycle;
 the Widget, Element, State, navigation, and render trees stay shared.

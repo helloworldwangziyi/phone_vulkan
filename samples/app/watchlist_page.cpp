@@ -4,20 +4,19 @@
 #include "watchlist_page.h"
 
 #include <algorithm>
-#include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
 #include "app_fonts.h"
 #include "screen_metrics.h"
 #include "evk/kv_store.h"
+#include "evk/worker_pool.h"
 #include "evk/ui/event_bus.h"
+#include "evk/ui/animation_scheduler.h"
 #include "evk/ui/font_engine.h"
 #include "evk/ui/widgets.h"
 
@@ -178,36 +177,30 @@ public:
                           0, kBottomNavCount - 1);
     }
 
-    ~WatchlistPageState() override { cancelThreads(); }
+    ~WatchlistPageState() override { cancelTasks(); }
 
     void didMount() override {
-        // 行情推送模拟：每秒一次随机游走价格，postUi 回 UI 线程 setState。
-        // 正是「列表随行情通知变化」的场景——文字全部命中字形缓存，每帧
-        // 只是重建顶点，不会有 atlas 重传尖峰。
-        tickCancel_ = std::make_shared<std::atomic_bool>(false);
+        // VSync 计时，每秒把值快照交给 Worker 计算，再经 postUi 更新状态。
+        // 计时不占用 Worker，也不创建睡眠中的临时线程。
+        tickCancel_ = std::make_shared<bool>(false);
         const auto cancel = tickCancel_;
-        std::thread([this, cancel] {
-            while (!cancel->load()) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-                if (cancel->load()) {
-                    return;
-                }
-                evk::ui::postUi([this, cancel] {
-                    if (cancel->load() || !mounted()) {
-                        return;
-                    }
-                    setState([this] { tickPrices(); });
-                });
+        evk::ui::startAnimation([this, cancel, previous = int64_t{-1}](int64_t now) mutable {
+            if (*cancel) return true;
+            if (previous < 0) previous = now;
+            if (now - previous >= 1000000000LL) {
+                previous = now;
+                tickPrices();
             }
-        }).detach();
+            return false;
+        });
     }
 
     bool onWillLeave(bool) override {
-        cancelThreads();
+        cancelTasks();
         return true;
     }
 
-    void dispose() override { cancelThreads(); }
+    void dispose() override { cancelTasks(); }
 
     std::unique_ptr<evk::ui::Widget> build(evk::ui::BuildContext&) override {
         using namespace evk::ui;
@@ -490,6 +483,7 @@ private:
             return;
         }
         std::string name = rows_[static_cast<size_t>(index)].name;
+        priceTask_.cancel(); // 旧快照不能把刚删除的行重新带回来。
         setState([this, index, name] {
             rows_.erase(rows_.begin() + index);
             toast_ = name + "已从自选删除";
@@ -497,41 +491,51 @@ private:
         // 1.6s 后自动消失；代数戳防连续点按时旧定时器误清新 Toast。
         const uint32_t gen = ++toastGen_;
         const auto cancel = tickCancel_;
-        std::thread([this, gen, cancel] {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1600));
-            evk::ui::postUi([this, gen, cancel] {
-                if ((cancel && cancel->load()) || !mounted() ||
-                    gen != toastGen_) {
-                    return;
-                }
-                setState([this] { toast_.clear(); });
-            });
-        }).detach();
+        evk::ui::startAnimation([this, gen, cancel, start = int64_t{-1}](int64_t now) mutable {
+            if ((cancel && *cancel) || gen != toastGen_) return true;
+            if (start < 0) start = now;
+            if (now - start < 1600000000LL) return false;
+            setState([this] { toast_.clear(); });
+            return true;
+        });
     }
 
     /// 每秒行情：价格随机游走 ±0.2%，成交量微增，展示串全部重算。
     void tickPrices() {
-        for (QuoteRow& row : rows_) {
-            const float r = nextRandom();
-            const double delta = row.price * 0.002 * (static_cast<double>(r) - 0.5) * 2.0;
-            row.price = std::max(1.0, row.price + delta);
-            row.volume += nextRandom() * 80.0;
-            syncTexts(row);
-        }
+        struct Snapshot {
+            std::vector<QuoteRow> rows;
+            uint32_t rng;
+        };
+        priceTask_ = evk::WorkerPool::instance().compute(
+            Snapshot{rows_, rngState_},
+            +[](Snapshot snapshot) {
+                const auto random = [&snapshot] {
+                    snapshot.rng ^= snapshot.rng << 13;
+                    snapshot.rng ^= snapshot.rng >> 17;
+                    snapshot.rng ^= snapshot.rng << 5;
+                    return static_cast<float>(snapshot.rng & 0xFFFFFFu) /
+                           static_cast<float>(0x1000000u);
+                };
+                for (auto& row : snapshot.rows) {
+                    const double delta = row.price * 0.002 * (random() - 0.5) * 2.0;
+                    row.price = std::max(1.0, row.price + delta);
+                    row.volume += random() * 80.0;
+                    syncTexts(row);
+                }
+                return snapshot;
+            },
+            [this](Snapshot snapshot) {
+                setState([this, &snapshot] {
+                    rows_ = std::move(snapshot.rows);
+                    rngState_ = snapshot.rng;
+                });
+            });
     }
 
-    /// xorshift32：行情模拟够用的轻量随机源（UI 线程独占，无锁）。
-    float nextRandom() {
-        rngState_ ^= rngState_ << 13;
-        rngState_ ^= rngState_ >> 17;
-        rngState_ ^= rngState_ << 5;
-        return static_cast<float>(rngState_ & 0xFFFFFFu) /
-               static_cast<float>(0x1000000u);
-    }
-
-    void cancelThreads() {
+    void cancelTasks() {
+        priceTask_.cancel();
         if (tickCancel_) {
-            tickCancel_->store(true);
+            *tickCancel_ = true;
         }
     }
 
@@ -541,7 +545,8 @@ private:
     std::string toast_; ///< 空 = 隐藏
     uint32_t toastGen_ = 0;
     uint32_t rngState_ = 0x2F6E2B1u;
-    std::shared_ptr<std::atomic_bool> tickCancel_;
+    std::shared_ptr<bool> tickCancel_; // 只在 UI 线程访问的计时器取消标记。
+    evk::WorkerTask priceTask_;
 };
 
 } // namespace

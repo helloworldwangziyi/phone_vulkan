@@ -14,7 +14,7 @@
 //   - 尺寸获取：Android 可随时 ANativeWindow_getWidth 现查；鸿蒙要在
 //     XComponent 回调里用 OH_NativeXComponent_GetXComponentSize 查，
 //     因此尺寸随构造传入并缓存；之后的尺寸变化走 nativeResize 事件通道
-//     （dispatchEvent(SurfaceChanged) + renderer()->setSize），不经过本类。
+//     （dispatchEvent(SurfaceChanged) + compositor->setSize），不经过本类。
 //
 // VK_USE_PLATFORM_OHOS 由构建系统定义（见 samples/hongmeng/.../CMakeLists.txt），
 // 定义后 vulkan.h 才会包含 vulkan_ohos.h，暴露 vkCreateSurfaceOHOS 等声明。

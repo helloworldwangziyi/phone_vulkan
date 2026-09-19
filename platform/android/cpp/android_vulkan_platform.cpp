@@ -11,9 +11,11 @@ namespace evk {
 class AndroidPlatform : public IPlatform {
 public:
     AndroidPlatform(JNIEnv* env, jobject surface)
-        : env_(env), surface_(surface) {
+        : surface_(surface) {
         // 析构时要 DeleteGlobalRef，需要 JavaVM 反查/附着当前线程拿 env。
         env->GetJavaVM(&jvm_);
+        // JNI 仅在创建平台对象的 UI 线程使用，Raster 只持有原生窗口。
+        if (surface_) window_ = ANativeWindow_fromSurface(env, surface_);
     }
 
     ~AndroidPlatform() {
@@ -48,7 +50,6 @@ public:
             return false;
         }
 
-        window_ = ANativeWindow_fromSurface(env_, surface_);
         if (!window_) {
             EVK_LOGE("android", "surface_create_failed reason=native_window_failed");
             return false;
@@ -76,7 +77,6 @@ public:
     }
 
 private:
-    JNIEnv* env_ = nullptr;
     jobject surface_ = nullptr; // 全局引用，析构时 DeleteGlobalRef
     JavaVM* jvm_ = nullptr;
     ANativeWindow* window_ = nullptr;

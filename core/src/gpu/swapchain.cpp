@@ -33,8 +33,7 @@ bool Swapchain::create() {
 
 void Swapchain::setSize(uint32_t width, uint32_t height) {
     // 真正的重建会在 render() 里做，那时更安全。
-    // 只记尺寸并置标志位：本函数可能在渲染途中被平台线程调用，
-    // 直接重建会撞上在飞的帧，所以延迟到 render() 的安全点再做。
+    // 本函数仅由 Raster 线程调用；平台尺寸先交给 Compositor，随帧下发。
     width_ = width;
     height_ = height;
     framebufferResized_ = true;
@@ -110,7 +109,8 @@ bool Swapchain::createSwapchain() {
     } else {
         // UINT32_MAX 表示尺寸可由我们自由选（桌面窗口常见）：向平台要当前像素尺寸，
         // 再 clamp 到驱动允许的 [minImageExtent, maxImageExtent] 区间。
-        context_.platform()->getSurfaceSize(&width_, &height_);
+        // Compositor 已在 UI 线程取尺寸并调用 setSize。Raster 不读 UIKit/JNI。
+        if (width_ == 0 || height_ == 0) return false;
         extent.width = std::max(caps.minImageExtent.width, std::min(caps.maxImageExtent.width, width_));
         extent.height = std::max(caps.minImageExtent.height, std::min(caps.maxImageExtent.height, height_));
     }

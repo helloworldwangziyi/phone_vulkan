@@ -53,6 +53,8 @@ private:
     EventBus() = default;
 };
 
+// 任意线程投递并 requestRender；任务在下一次 VSync 的 UI 帧头执行。
+// 闭包须自行保证生命周期（WorkerPool 已提供可取消的交付）。
 void postUi(std::function<void()> task);
 void drainUiTasks();
 

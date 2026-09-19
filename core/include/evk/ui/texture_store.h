@@ -21,6 +21,14 @@
 
 namespace evk::ui {
 
+// UI → Raster 的独占值快照，像素仍是 0xRRGGBBAA，矩形逐行紧密排列。
+struct TextureUpdate {
+    uint32_t id = 0, width = 0, height = 0;
+    bool mipmapped = false;
+    gpu::TextureRegion region;
+    std::vector<uint32_t> pixels;
+};
+
 /// 纹理句柄：从 1 起；0 保留给渲染器的白纹理。
 using TextureId = uint32_t;
 constexpr TextureId kInvalidTexture = 0;
@@ -119,8 +127,12 @@ public:
     /// 清空全部登记（测试用；运行中调用会让既有 id 失效）。
     void reset();
 
+    // 仅 UI 调用。复制脏区后清除脏标记；新 Raster 实例首帧传 all=true。
+    std::vector<TextureUpdate> takeUpdates(bool all = false);
+
 private:
     TextureStore() = default;
+    friend class TextureStoreSource; // Raster 私有副本，不访问 UI 单例。
 
     struct Entry {
         uint32_t width = 0;

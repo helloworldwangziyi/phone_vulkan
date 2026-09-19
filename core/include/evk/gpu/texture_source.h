@@ -19,7 +19,8 @@ struct TextureRegion {
  *
  * TextureCache 只经本接口取纹理信息与像素，不再直接依赖 UI 层的
  * TextureStore 单例；UI 层用 header-only 适配器（ui/texture_store_source.h）
- * 把 TextureStore 接到本接口。纹理 id 从 1 起，0 保留给渲染器的白纹理。
+ * 把 Raster 私有纹理副本接到本接口；UI 单例只发送值快照。
+ * 纹理 id 从 1 起，0 保留给渲染器的白纹理。
  */
 class ITextureSource {
 public:

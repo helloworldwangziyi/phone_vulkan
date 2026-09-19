@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.22.1)
 
 # C：third_party/libunibreak（UAX #14 断行）为纯 C 源码。
 project(estarx_vulkan LANGUAGES C CXX)
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -87,6 +88,7 @@ execute_process(
 add_library(estarx_vulkan_core STATIC
     core/src/app_lifecycle.cpp
     core/src/frame_scheduler.cpp
+    core/src/worker_pool.cpp
     core/src/platform_channel.cpp
     core/src/compositor.cpp
     core/src/vulkan_renderer.cpp
@@ -144,6 +146,8 @@ target_include_directories(estarx_vulkan_core
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb
         ${CMAKE_CURRENT_SOURCE_DIR}/third_party/libunibreak
 )
+
+target_link_libraries(estarx_vulkan_core PUBLIC Threads::Threads)
 
 if (ANDROID)
     # vulkan_renderer.cpp / android_vulkan_platform.cpp 用到 VK_KHR_android_surface 扩展的类型与常量，
